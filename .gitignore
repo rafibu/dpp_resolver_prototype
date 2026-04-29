@@ -1,0 +1,28 @@
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build outputs
+build/
+dist/
+target/
+out/
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+
+### Local Files ###
+
+prototype_user_stories.md
+tech_stack.md
