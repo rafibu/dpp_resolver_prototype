@@ -1,0 +1,52 @@
+@use '../../../../styles/var' as *;
+@use '../../../../styles/mix' as *;
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: $padding-large;
+}
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label {
+    font-size: rem(12px);
+    font-weight: 600;
+    color: $gray-dark;
+    text-transform: uppercase;
+  }
+
+  span, a {
+    font-size: rem(16px);
+    color: $text;
+  }
+
+  a {
+    color: $accent;
+    &:hover { text-decoration: underline; }
+  }
+}
+
+.type-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.type-badge {
+  background: $secondary;
+  color: white;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: rem(13px);
+}
+
+.loading-state {
+  text-align: center;
+  padding: $padding-large;
+  color: $gray-dark;
+}

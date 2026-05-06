@@ -1,15 +1,14 @@
 package ch.bfh.dpp_resolver.admin.services;
 
 import ch.bfh.dpp_resolver.admin.dto.PlatformMappingDTO;
-import ch.bfh.dpp_resolver.admin.models.PlatformMapping;
+import ch.bfh.dpp_resolver.admin.models.Platform;
 import ch.bfh.dpp_resolver.admin.models.SubjectType;
-import ch.bfh.dpp_resolver.admin.repositories.PlatformMappingRepository;
+import ch.bfh.dpp_resolver.admin.repositories.PlatformRepository;
 import ch.bfh.dpp_resolver.admin.repositories.SubjectTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collection;
 import java.util.List;
 
 /**
@@ -20,41 +19,43 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PlatformMappingService {
 
-    private final PlatformMappingRepository mappingRepository;
+    private final PlatformRepository platformRepository;
     private final SubjectTypeRepository subjectTypeRepository;
 
     @Transactional(readOnly = true)
     public List<PlatformMappingDTO> findAll() {
-        return mappingRepository.findAll().stream().map(PlatformMappingService::toDTO).toList();
+        return platformRepository.findAll().stream().map(PlatformMappingService::toDTO).toList();
     }
 
     @Transactional(readOnly = true)
     public List<PlatformMappingDTO> findAllBySubjectType(String subjectTypeName) {
         SubjectType subjectType = subjectTypeRepository.findByName(subjectTypeName).orElseThrow();
-        return mappingRepository.findAllBySubjectType(subjectType).stream().map(PlatformMappingService::toDTO).toList();
+        return subjectType.getPlatforms().stream().map(PlatformMappingService::toDTO).toList();
     }
 
     @Transactional
     public PlatformMappingDTO save(PlatformMappingDTO platformMappingDTO) {
-        SubjectType subjectType = subjectTypeRepository.findByName(platformMappingDTO.getSubjectType()).orElseThrow();
-        PlatformMapping mapping = fromDTO(platformMappingDTO, subjectType);
-        return toDTO(mappingRepository.save(mapping));
+        List<SubjectType> subjectTypes = platformMappingDTO.getSubjectTypes().stream()
+                .map(st -> subjectTypeRepository.findByName(st).orElseThrow())
+                .toList();
+
+        Platform foundOrNew = platformRepository.findByAbbreviation(platformMappingDTO.getIssuerId()).orElse(new Platform());
+        mapFromDTO(platformMappingDTO, foundOrNew, subjectTypes);
+        return toDTO(platformRepository.save(foundOrNew));
     }
 
-    private static PlatformMapping fromDTO(PlatformMappingDTO dto, SubjectType subjectType) {
-        PlatformMapping entity = new PlatformMapping();
-        entity.setSubjectType(subjectType);
+    private static void mapFromDTO(PlatformMappingDTO dto, Platform entity, List<SubjectType> subjectTypes) {
+        entity.setSubjectTypes(subjectTypes);
         entity.setPlatformName(dto.getPlatform());
-        entity.setAbbreviation(dto.getAbbreviation());
+        entity.setAbbreviation(dto.getIssuerId());
         entity.setResolutionUrl(dto.getResolutionUrl());
-        return entity;
     }
 
-    private static PlatformMappingDTO toDTO(PlatformMapping entity) {
+    private static PlatformMappingDTO toDTO(Platform entity) {
         return PlatformMappingDTO.builder()
-                .subjectType(entity.getSubjectType().getName())
+                .subjectTypes(entity.getSubjectTypes().stream().map(SubjectType::getName).toList())
                 .platform(entity.getPlatformName())
-                .abbreviation(entity.getAbbreviation())
+                .issuerId(entity.getAbbreviation())
                 .resolutionUrl(entity.getResolutionUrl())
                 .build();
     }

@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  *
  * @author rbu on 20.04.2026
@@ -14,8 +16,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PlatformMappingDTO {
-    String subjectType;
     String platform;
-    String abbreviation;
+    String issuerId;
     String resolutionUrl;
+    List<String> subjectTypes;
 }

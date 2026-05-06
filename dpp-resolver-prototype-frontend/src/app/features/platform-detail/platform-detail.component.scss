@@ -1,0 +1,72 @@
+@use '../../../styles/var' as *;
+@use '../../../styles/mix' as *;
+
+.detail-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.detail-header {
+  margin-bottom: $padding-large;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: $padding-medium;
+  margin-bottom: $padding-medium;
+
+  h2 {
+    margin: 0;
+    font-size: rem(24px);
+  }
+}
+
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: rem(12px);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: white;
+
+  &.running { background: $success; }
+  &.paused { background: $gray-dark; }
+  &.error { background: $error; }
+  &.starting { background: $warning; }
+}
+
+.tabs {
+  display: flex;
+  gap: $padding-small;
+  border-bottom: 2px solid $gray-light;
+}
+
+.tab-link {
+  padding: $padding-small $padding-large;
+  font-weight: 600;
+  color: $gray-dark;
+  border-bottom: 4px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+
+  &:hover {
+    color: $primary;
+    background: rgba($accent, 0.05);
+  }
+
+  &.active {
+    color: $accent;
+    border-bottom-color: $accent;
+  }
+}
+
+.tab-content {
+  flex: 1;
+  background: white;
+  border-radius: $border-radius;
+  padding: $padding-large;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  overflow-y: auto;
+}

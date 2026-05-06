@@ -32,12 +32,7 @@ public class SubjectTypeController {
         if (subjectTypeDTO.getName() == null) {
             return ResponseEntity.badRequest().build();
         }
-        try {
-            subjectTypeService.save(subjectTypeDTO);
-            return ResponseEntity.status(HttpStatus.CREATED).body(subjectTypeDTO);
-        } catch (IllegalArgumentException e) {
-            log.error("SubjectType could not be saved", e);
-            return ResponseEntity.badRequest().build();
-        }
+        subjectTypeService.save(subjectTypeDTO);
+        return ResponseEntity.status(HttpStatus.CREATED).body(subjectTypeDTO);
     }
 }

@@ -1,0 +1,144 @@
+@use '../styles/var' as *;
+@use '../styles/mix' as *;
+
+.bootstrap-container {
+  @include flex-center;
+  flex-direction: column;
+  height: 100vh;
+  gap: $padding-medium;
+
+  p {
+    color: $gray-dark;
+    font-size: rem(18px);
+  }
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid $gray-light;
+  border-top-color: $accent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-card {
+  @include card;
+  text-align: center;
+  max-width: 400px;
+
+  h1 {
+    color: $error;
+    margin-bottom: $padding-medium;
+  }
+
+  .url {
+    font-family: monospace;
+    background: #f8f9fa;
+    padding: $padding-small;
+    margin: $padding-medium 0;
+    font-size: rem(14px);
+  }
+}
+
+.btn {
+  @include button-base;
+  &-primary {
+    background: $accent;
+    color: white;
+    &:hover { background: darken($accent, 10%); }
+  }
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-header {
+  height: $header-height;
+  background: $primary;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 $padding-large;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  z-index: 10;
+
+  h1 {
+    color: white;
+    font-size: rem(20px);
+    margin: 0;
+  }
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: $padding-small;
+  font-size: rem(14px);
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  &.running { background: $success; }
+  &.error { background: $error; }
+}
+
+.app-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: $sidebar-width;
+  background: $white;
+  border-right: 1px solid $gray-light;
+  padding: $padding-medium;
+  overflow-y: auto;
+}
+
+.main-area {
+  flex: 1;
+  padding: $padding-large;
+  overflow-y: auto;
+  background: $background;
+}
+
+.toast-container {
+  position: fixed;
+  bottom: $padding-large;
+  right: $padding-large;
+  display: flex;
+  flex-direction: column;
+  gap: $padding-small;
+  z-index: 1000;
+}
+
+.toast {
+  padding: $padding-medium;
+  border-radius: $border-radius;
+  color: white;
+  min-width: 250px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  cursor: pointer;
+  animation: slideIn 0.3s ease-out;
+
+  &.success { background: $success; }
+  &.error { background: $error; }
+  &.info { background: $accent; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

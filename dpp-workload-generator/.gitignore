@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+output/
+*.csv
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/

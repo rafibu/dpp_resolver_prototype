@@ -1,0 +1,24 @@
+# Default federation configuration.
+# The Factory reads this on startup and ensures these two platforms are running.
+# Port allocation for dynamically spawned platforms starts at 8083.
+
+resolver:
+  port: 8080
+
+platforms:
+  - platform_id: platform-a
+    stack: spring-postgres          # Java / Spring Boot / Postgres
+    issuer_id: issuerA
+    subject_types:
+      - pv_module
+      - junction_box
+    port: 8081
+    db_volume: postgres-a
+
+  - platform_id: platform-b
+    stack: fastapi-mongo            # Python / FastAPI / MongoDB
+    issuer_id: issuerB
+    subject_types:
+      - battery
+    port: 8082
+    db_volume: mongo-b

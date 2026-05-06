@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Battery",
+  "type": "object",
+  "properties": {
+    "capacity_kwh": { "type": "number" },
+    "chemistry": { "type": "string" },
+    "cycles": { "type": "integer" }
+  },
+  "required": ["capacity_kwh", "chemistry"]
+}

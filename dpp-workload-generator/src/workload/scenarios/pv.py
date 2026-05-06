@@ -1,0 +1,107 @@
+import structlog
+from typing import List, Dict, Optional
+from pydantic import BaseModel
+from ..federation import FederationOverview, PlatformInfo
+from ..clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse
+from ..schemas.generator import generate_schema
+from ..payloads import generate_valid_payload, generate_dpp_id, ReferenceSpec
+
+logger = structlog.get_logger(__name__)
+
+class PvScenarioResult(BaseModel):
+    pv_module: DppResponse
+    battery: DppResponse
+    inverter: DppResponse
+    platform_mapping: Dict[str, str]
+
+async def generate_pv_scenario(federation: FederationOverview, seed: int | None = None) -> PvScenarioResult:
+    """
+    Materialize the PV/battery/inverter scenario from the paper's running example.
+    
+    Algorithm:
+    1. Verify the federation has platforms supporting pv_module, battery, inverter
+    2. Seed all three schemas at version 1.0 via Resolver
+    3. Issue battery DPP on the platform handling battery
+    4. Issue inverter DPP on the platform handling inverter
+    5. Issue PV-module DPP on the platform handling pv_module, with hard dependencies on the battery and inverter
+    """
+    if not federation.resolver:
+        raise RuntimeError("Federation has no resolver")
+    
+    resolver = ResolverClient(federation.resolver.external_url)
+    
+    # 1. Verify support
+    platforms = federation.platforms
+    def find_p(st):
+        for p in platforms:
+            if st in p.subject_types:
+                return p
+        return None
+
+    p_pv = find_p("pv_module")
+    p_ba = find_p("battery")
+    p_in = find_p("inverter")
+    
+    if not all([p_pv, p_ba, p_in]):
+        missing = [st for st, p in [("pv_module", p_pv), ("battery", p_ba), ("inverter", p_in)] if not p]
+        logger.warning("missing_subject_type_support", missing=missing)
+        # If specific platforms are missing, we use available platforms as fallback
+        # but the task implies they should be there.
+        if not platforms:
+            raise RuntimeError("No platforms available")
+        p_pv = p_pv or platforms[0]
+        p_ba = p_ba or platforms[1 % len(platforms)]
+        p_in = p_in or platforms[2 % len(platforms)]
+
+    # 2. Seed schemas
+    for st in ["pv_module", "battery", "inverter"]:
+        schema = generate_schema(st, with_dependencies=(st == "pv_module"))
+        await resolver.publish_schema(st, 1, 0, schema)
+
+    # 3. Issue battery
+    async with PlatformClient(p_ba) as client:
+        dpp_id = generate_dpp_id(p_ba.issuer_id, "battery", 1)
+        spec = IssueDppSpec(
+            dpp_id=dpp_id,
+            schema_version=DppSchemaVersion(subject_type="battery", major_version=1, minor_version=0),
+            dpp_payload=generate_valid_payload({}, seed=seed + 1 if seed else None)
+        )
+        logger.info("creating_pv_scenario_battery", platform=p_ba.platform_id)
+        battery_resp = await client.issue_dpp(spec)
+
+    # 4. Issue inverter
+    async with PlatformClient(p_in) as client:
+        dpp_id = generate_dpp_id(p_in.issuer_id, "inverter", 1)
+        spec = IssueDppSpec(
+            dpp_id=dpp_id,
+            schema_version=DppSchemaVersion(subject_type="inverter", major_version=1, minor_version=0),
+            dpp_payload=generate_valid_payload({}, seed=seed + 2 if seed else None)
+        )
+        logger.info("creating_pv_scenario_inverter", platform=p_in.platform_id)
+        inverter_resp = await client.issue_dpp(spec)
+
+    # 5. Issue PV-module
+    async with PlatformClient(p_pv) as client:
+        dependencies = [
+            ReferenceSpec(subject_type="battery", dpp_id=battery_resp.dpp_id, version=battery_resp.version),
+            ReferenceSpec(subject_type="inverter", dpp_id=inverter_resp.dpp_id, version=inverter_resp.version)
+        ]
+        dpp_id = generate_dpp_id(p_pv.issuer_id, "pv_module", 1)
+        spec = IssueDppSpec(
+            dpp_id=dpp_id,
+            schema_version=DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0),
+            dpp_payload=generate_valid_payload({}, dependencies=dependencies, seed=seed)
+        )
+        logger.info("creating_pv_scenario_root", platform=p_pv.platform_id)
+        pv_resp = await client.issue_dpp(spec)
+
+    return PvScenarioResult(
+        pv_module=pv_resp,
+        battery=battery_resp,
+        inverter=inverter_resp,
+        platform_mapping={
+            pv_resp.dpp_id: p_pv.external_url,
+            battery_resp.dpp_id: p_ba.external_url,
+            inverter_resp.dpp_id: p_in.external_url
+        }
+    )

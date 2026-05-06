@@ -1,0 +1,37 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>ch.bfh</groupId>
+    <artifactId>dpp-resolver-prototype</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+
+    <name>DPP Resolver Prototype</name>
+    <description>
+        A Monorepo, which contains a prototype for a federated Digital Product Passport (DPP) landscape.
+        It provides one governance resolver platform which routes the DPPs to their respective DPP platforms and
+        publishes new schema artifacts.
+    </description>
+
+    <developers>
+        <developer>
+            <name>Rafael Burkhalter</name>
+            <email>rafael.burkhalter@bfh.ch</email>
+            <organization>Bern University of Applied Sciences</organization>
+            <organizationUrl>https://www.bfh.ch</organizationUrl>
+        </developer>
+    </developers>
+
+    <modules>
+        <module>dpp_resolver</module>
+        <module>generic_dpp_platform_java</module>
+        <module>generic_dpp_platform_python</module>
+        <module>dpp-platform-factory</module>
+        <module>dpp-workload-generator</module>
+        <module>dpp-resolver-prototype-frontend</module>
+    </modules>
+
+</project>

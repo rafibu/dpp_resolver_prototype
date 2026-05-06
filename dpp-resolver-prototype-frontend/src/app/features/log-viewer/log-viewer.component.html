@@ -1,0 +1,40 @@
+<div class="log-viewer">
+  <div class="log-toolbar">
+    <div class="toolbar-left">
+      <input type="text" [(ngModel)]="searchTerm" placeholder="Search logs..." class="search-input">
+      <button class="btn btn-secondary btn-sm" (click)="togglePause()">
+        {{ isPaused() ? '▶ Resume' : '⏸ Pause' }}
+      </button>
+    </div>
+
+    <div class="toolbar-right">
+      @if (!autoScroll()) {
+        <button class="btn btn-accent btn-sm" (click)="scrollToBottom()">↓ Scroll to bottom</button>
+      }
+      <span class="log-count">{{ filteredLogs().length }} lines</span>
+    </div>
+  </div>
+
+  <div class="log-container" #logContainer (scroll)="onScroll()">
+    @for (line of filteredLogs(); track $index) {
+      <div class="log-line" [ngClass]="getLevelClass(line.level)">
+        <span class="log-level">{{ line.level }}</span>
+        <span class="log-message">{{ line.message }}</span>
+
+        <div class="line-actions">
+          <button class="copy-btn" title="Copy line" (click)="copyLine(line)">📋</button>
+        </div>
+
+        <span class="log-timestamp">{{ line.timestamp | date:'HH:mm:ss.SSS' }}</span>
+      </div>
+    } @empty {
+      <div class="empty-logs">
+        @if (searchTerm()) {
+          No logs match "{{ searchTerm() }}"
+        } @else {
+          Waiting for logs...
+        }
+      </div>
+    }
+  </div>
+</div>

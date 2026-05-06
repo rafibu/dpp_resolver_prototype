@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Write(generic_dpp_platform_python/**)",
+      "Edit(generic_dpp_platform_python/**)",
+      "Write(factory/**)",
+      "Edit(factory/**)"
+    ]
+  }
+}

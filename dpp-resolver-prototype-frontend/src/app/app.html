@@ -1,0 +1,45 @@
+@if (state() === 'loading') {
+  <div class="bootstrap-container">
+    <div class="spinner"></div>
+    <p>Connecting to factory...</p>
+  </div>
+} @else if (state() === 'error') {
+  <div class="bootstrap-container">
+    <div class="error-card">
+      <h1>Connection Error</h1>
+      <p>{{ errorMessage() }}</p>
+      <p class="url">URL: {{ factoryUrl }}</p>
+      <button class="btn btn-primary" (click)="retry()">Retry</button>
+    </div>
+  </div>
+} @else {
+  <div class="app-layout">
+    <header class="app-header">
+      <div class="brand">
+        <h1 [routerLink]="['/']" style="cursor: pointer">DPP Resolver Prototype</h1>
+      </div>
+      <div class="status" [title]="'Last sync: ' + (pollingService.lastSuccess() | date:'HH:mm:ss')">
+        <span class="status-dot" [ngClass]="pollingService.hasError() ? 'error' : 'running'"></span>
+        {{ pollingService.hasError() ? 'Sync Error' : 'Live Sync' }}
+      </div>
+    </header>
+
+    <div class="app-content">
+      <aside class="sidebar">
+        <app-sidebar />
+      </aside>
+
+      <main class="main-area">
+        <router-outlet />
+      </main>
+    </div>
+  </div>
+
+  <div class="toast-container">
+    @for (toast of toasts(); track toast.id) {
+      <div class="toast" [ngClass]="toast.type" (click)="removeToast(toast.id)">
+        {{ toast.message }}
+      </div>
+    }
+  </div>
+}

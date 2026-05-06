@@ -16,19 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DppSchemaControllerTest extends ControllerTest {
 
-    @Autowired
-    private DppSchemaRepository dppSchemaRepository;
-
-    @Autowired
-    private SubjectTypeRepository subjectTypeRepository;
-
     private final ObjectMapper mapper = new ObjectMapper();
-
-    @AfterEach
-    void tearDown() {
-        dppSchemaRepository.deleteAll();
-        subjectTypeRepository.deleteAll();
-    }
 
     @Test
     void createAndGetSchema_happyPath() throws Exception {

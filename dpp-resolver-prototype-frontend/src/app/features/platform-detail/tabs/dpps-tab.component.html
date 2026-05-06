@@ -1,0 +1,62 @@
+<div class="tab-pane">
+  <div class="action-bar">
+    <button class="btn btn-primary btn-sm" (click)="openCreateModal()">+ Create DPP</button>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-state">Loading DPPs...</div>
+  } @else {
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>DPP ID</th>
+          <th>Subject Type</th>
+          <th>Version</th>
+          <th>Last Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (dpp of dpps(); track dpp.dpp_id) {
+          <tr class="clickable-row" (click)="toggleExpand(dpp.dpp_id)" [ngClass]="{ 'expanded': expandedDpp() === dpp.dpp_id }">
+            <td>{{ dpp.dpp_id }}</td>
+            <td><span class="type-badge">{{ dpp.subject_type }}</span></td>
+            <td>v{{ dpp.current_version }}</td>
+            <td>{{ dpp.last_updated | date:'medium' }}</td>
+            <td class="arrow">{{ expandedDpp() === dpp.dpp_id ? '▼' : '▶' }}</td>
+          </tr>
+
+          @if (expandedDpp() === dpp.dpp_id) {
+            <tr class="history-row">
+              <td colspan="5">
+                <div class="history-container">
+                  @if (loadingDetail()) {
+                    <div class="loading-sm">Loading history...</div>
+                  } @else if (dppDetail()) {
+                    <h4>Revision History</h4>
+                    <ul class="revision-list">
+                      @for (rev of dppDetail()?.revisions; track rev.version) {
+                        <li class="revision-item" [routerLink]="['/platforms', platformId(), 'dpps', dpp.dpp_id, 'revisions', rev.version]">
+                          <span class="rev-version">v{{ rev.version }}</span>
+                          <span class="rev-schema">{{ rev.schema_ref }}</span>
+                          <span class="rev-hash" [title]="rev.hash">{{ rev.hash.substring(0, 10) }}...</span>
+                          <span class="rev-date">{{ rev.timestamp | date:'short' }}</span>
+                        </li>
+                      }
+                    </ul>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        } @empty {
+          <tr>
+            <td colspan="5" class="empty-cell">No DPPs found on this platform.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+</div>
+
+<app-create-dpp-modal #createDppModal />

@@ -1,0 +1,62 @@
+<div class="modal-overlay" [class.open]="isOpen()">
+  <div class="modal-container">
+    <header class="modal-header">
+      <h2>Issue New DPP <small>on {{ platformId() }}</small></h2>
+      <button class="close-btn" (click)="close()">×</button>
+    </header>
+
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>DPP ID</label>
+          <input type="text" [(ngModel)]="dppId" placeholder="issuer-xxxx">
+          <small class="hint">Prefix: {{ issuerId() }}</small>
+        </div>
+
+        <div class="form-group">
+          <label>Subject Type</label>
+          <select [(ngModel)]="selectedSubjectType" (change)="onSubjectTypeChange()">
+            @for (type of subjectTypes(); track type) {
+              <option [value]="type">{{ type }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Schema Version</label>
+          <select [(ngModel)]="selectedSchema" (change)="onSchemaChange()">
+            @for (schema of schemas(); track schema.major + '.' + schema.minor) {
+              <option [ngValue]="schema">{{ schema.major }}.{{ schema.minor }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="editor-section">
+        <label>Payload</label>
+        <div class="monaco-wrapper">
+          <ngx-monaco-editor
+            [options]="editorOptions"
+            [ngModel]="code()"
+            (ngModelChange)="onCodeChange($event)"
+          ></ngx-monaco-editor>
+        </div>
+      </div>
+
+      <div class="validation-section">
+        @if (validationErrors().length === 0) {
+          <p class="valid-msg">Payload is valid.</p>
+        } @else {
+          <div class="error-msg">
+            Invalid payload: {{ validationErrors().length }} errors found.
+          </div>
+        }
+      </div>
+    </div>
+
+    <footer class="modal-footer">
+      <button class="btn btn-secondary" (click)="close()">Cancel</button>
+      <button class="btn btn-primary" [disabled]="validationErrors().length > 0 || !dppId()" (click)="onSubmit()">Issue DPP</button>
+    </footer>
+  </div>
+</div>

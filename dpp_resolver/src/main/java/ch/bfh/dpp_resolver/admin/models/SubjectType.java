@@ -4,6 +4,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  *
  * @author rbu on 17.04.2026
@@ -22,4 +25,8 @@ public class SubjectType {
     private String name;
     @Column(name = "description")
     private String description;
+
+    @ManyToMany(mappedBy = "subjectTypes")
+    private List<Platform> platforms = new ArrayList<>();
+
 }

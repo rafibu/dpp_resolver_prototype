@@ -1,0 +1,36 @@
+<div class="tab-pane">
+  @if (loading()) {
+    <div class="loading-state">Loading status...</div>
+  } @else if (platform()) {
+    <div class="status-grid">
+      <div class="status-item">
+        <label>Platform ID</label>
+        <span>{{ platform()?.platform_id }}</span>
+      </div>
+      <div class="status-item">
+        <label>Stack</label>
+        <span>{{ platform()?.stack }}</span>
+      </div>
+      <div class="status-item">
+        <label>Issuer ID</label>
+        <span>{{ platform()?.issuer_id }}</span>
+      </div>
+      <div class="status-item">
+        <label>External URL</label>
+        <a [href]="platform()?.external_url" target="_blank">{{ platform()?.external_url }}</a>
+      </div>
+      <div class="status-item">
+        <label>Created At</label>
+        <span>{{ platform()?.created_at | date:'medium' }}</span>
+      </div>
+      <div class="status-item">
+        <label>Subject Types</label>
+        <div class="type-list">
+          @for (type of platform()?.subject_types; track type) {
+            <span class="type-badge">{{ type }}</span>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

@@ -1,0 +1,32 @@
+services:
+  factory:
+    build:
+      context: ./dpp-platform-factory
+      dockerfile: Dockerfile
+    container_name: dpp-factory
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DPP_FACTORY_ORPHANS=shutdown
+      - DPP_FACTORY_KEEP_RUNNING=false
+    networks:
+      - dpp-net
+
+  frontend:
+    build:
+      context: ./dpp-resolver-prototype-frontend
+      dockerfile: Dockerfile
+    container_name: dpp-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - factory
+    networks:
+      - dpp-net
+
+networks:
+  dpp-net:
+    name: dpp-net
+    external: false

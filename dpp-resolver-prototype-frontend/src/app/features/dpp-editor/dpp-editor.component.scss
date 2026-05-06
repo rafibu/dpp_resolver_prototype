@@ -1,0 +1,147 @@
+@use '../../../styles/var' as *;
+@use '../../../styles/mix' as *;
+
+.editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: $padding-medium;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  h2 {
+    margin: 0;
+    font-size: rem(20px);
+
+    small {
+      color: $gray-dark;
+      font-weight: 400;
+      margin-left: $padding-small;
+    }
+  }
+}
+
+.back-link {
+  display: block;
+  margin-bottom: 4px;
+  font-size: rem(12px);
+  color: $accent;
+  font-weight: 600;
+
+  &:hover { text-decoration: underline; }
+}
+
+.header-right {
+  display: flex;
+  gap: $padding-small;
+}
+
+.metadata-panel {
+  display: flex;
+  gap: $padding-large;
+  background: white;
+  padding: $padding-medium;
+  border-radius: $border-radius;
+  border: 1px solid $gray-light;
+  font-size: rem(13px);
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label {
+    font-weight: 600;
+    color: $gray-dark;
+    text-transform: uppercase;
+    font-size: rem(11px);
+  }
+
+  span { color: $text; }
+
+  .hash {
+    font-family: monospace;
+    &.success { color: $success; }
+    &.failure { color: $error; }
+  }
+}
+
+.hash-check { color: $success; font-weight: bold; margin-left: 4px; }
+.hash-fail { color: $error; font-weight: bold; margin-left: 4px; }
+
+.editor-main {
+  flex: 1;
+  display: flex;
+  gap: $padding-medium;
+  min-height: 0; /* Important for flex child with overflow */
+}
+
+.monaco-wrapper {
+  flex: 1;
+  border: 1px solid $gray-light;
+  border-radius: $border-radius;
+  overflow: hidden;
+  background: white;
+
+  ngx-monaco-editor {
+    height: 100%;
+    width: 100%;
+  }
+}
+
+.validation-panel {
+  width: 300px;
+  background: white;
+  border: 1px solid $gray-light;
+  border-radius: $border-radius;
+  padding: $padding-medium;
+  overflow-y: auto;
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: $padding-small;
+    font-size: rem(14px);
+    border-bottom: 1px solid $gray-light;
+    padding-bottom: 4px;
+  }
+}
+
+.valid-msg {
+  color: $success;
+  font-weight: 600;
+  font-size: rem(13px);
+}
+
+.error-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: rem(12px);
+
+  li {
+    padding: $padding-small;
+    background: rgba($error, 0.05);
+    border-left: 3px solid $error;
+    border-radius: 2px;
+    margin-bottom: $padding-small;
+
+    pre {
+      margin-top: 4px;
+      font-size: 10px;
+      color: $gray-dark;
+      white-space: pre-wrap;
+    }
+  }
+}
+
+.btn {
+  @include button-base;
+  &-sm { padding: 4px 12px; font-size: 12px; }
+  &-primary { background: $accent; color: white; }
+  &-secondary { background: $gray-light; color: $text; }
+}

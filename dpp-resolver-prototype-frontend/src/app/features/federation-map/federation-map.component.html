@@ -1,0 +1,56 @@
+<div class="map-container">
+  <ngx-graph
+    layout="dagre"
+    [nodes]="nodes()"
+    [links]="links()"
+    [autoZoom]="true"
+    [autoCenter]="true"
+    [enableZoom]="true"
+    [draggingEnabled]="false"
+  >
+    <ng-template #nodeTemplate let-node>
+      <svg:g class="node" (click)="onNodeClick(node)">
+        @if (node.data.type === 'resolver') {
+          <svg:rect
+            [attr.width]="140"
+            [attr.height]="60"
+            [attr.fill]="'#2c3e50'"
+            rx="10"
+            ry="10"
+          />
+          <svg:text alignment-baseline="central" x="70" y="30" text-anchor="middle" fill="white" font-weight="bold">
+            {{ node.label }}
+          </svg:text>
+        } @else {
+          <svg:rect
+            [attr.width]="160"
+            [attr.height]="100"
+            [attr.fill]="'white'"
+            [attr.stroke]="getStatusColor(node.data.status)"
+            stroke-width="3"
+            rx="5"
+            ry="5"
+          />
+          <svg:text alignment-baseline="central" x="10" y="25" font-weight="bold" fill="#2c3e50">
+            ID: {{ node.label }}
+          </svg:text>
+          <svg:text alignment-baseline="central" x="10" y="45" font-size="12" fill="#7f8c8d">
+            Issuer: {{ node.data.issuer }}
+          </svg:text>
+          <svg:text alignment-baseline="central" x="10" y="65" font-size="10" fill="#95a5a6">
+            Types: {{ node.data.subjectTypes.join(', ') }}
+          </svg:text>
+          <svg:text alignment-baseline="central" x="10" y="85" font-size="12" [attr.fill]="getStatusColor(node.data.status)" font-weight="bold">
+            {{ node.data.status }}
+          </svg:text>
+        }
+      </svg:g>
+    </ng-template>
+
+    <ng-template #linkTemplate let-link>
+      <svg:g class="edge">
+        <svg:path class="line" stroke="#bdc3c7" stroke-width="2" marker-end="url(#arrow)"></svg:path>
+      </svg:g>
+    </ng-template>
+  </ngx-graph>
+</div>

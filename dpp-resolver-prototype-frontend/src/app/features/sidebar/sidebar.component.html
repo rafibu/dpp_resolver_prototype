@@ -1,0 +1,46 @@
+<div class="sidebar-container">
+  <nav class="sidebar-nav">
+    <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-item">
+      <span class="nav-icon">🗺️</span> Federation Map
+    </a>
+    <a routerLink="/scenarios" routerLinkActive="active" class="nav-item">
+      <span class="nav-icon">🚀</span> Scenario Runner
+    </a>
+  </nav>
+
+  <div class="sidebar-header">
+    <h2>Platforms</h2>
+    <button class="btn btn-sm btn-accent" (click)="onSpawnNew()">+ Spawn</button>
+  </div>
+
+  <div class="platform-list">
+    @for (platform of platforms(); track platform.platform_id) {
+      <div class="platform-item" [routerLink]="['/platforms', platform.platform_id]" routerLinkActive="active">
+        <div class="platform-info">
+          <span class="status-dot" [ngClass]="platform.status.toLowerCase()"></span>
+          <span class="platform-id">{{ platform.platform_id }}</span>
+        </div>
+
+        <div class="platform-actions" (click)="$event.stopPropagation()">
+          @if (processing()[platform.platform_id]) {
+            <span class="spinner-sm"></span>
+          } @else {
+            @if (platform.status === 'RUNNING') {
+              <button class="action-btn" title="Pause" (click)="onPause(platform.platform_id)">⏸</button>
+            } @else if (platform.status === 'PAUSED') {
+              <button class="action-btn" title="Resume" (click)="onResume(platform.platform_id)">▶</button>
+            }
+            <button class="action-btn" title="Reset" (click)="onReset(platform.platform_id)">🔄</button>
+            <button class="action-btn delete" title="Delete"
+                    [disabled]="isDefaultPlatform(platform.platform_id)"
+                    (click)="onDelete(platform.platform_id)">🗑</button>
+          }
+        </div>
+      </div>
+    } @empty {
+      <p class="empty-msg">No platforms found.</p>
+    }
+  </div>
+</div>
+
+<app-spawn-platform-modal #spawnModal />

@@ -1,0 +1,22 @@
+<div class="detail-container">
+  <div class="detail-header">
+    <div class="title-row">
+      <h2>Platform: {{ platformId() }}</h2>
+      @if (platform()) {
+        <span class="status-badge" [ngClass]="platform()?.status?.toLowerCase()">
+          {{ platform()?.status }}
+        </span>
+      }
+    </div>
+
+    <nav class="tabs">
+      <a routerLink="dpps" routerLinkActive="active" class="tab-link">DPPs</a>
+      <a routerLink="logs" routerLinkActive="active" class="tab-link">Logs</a>
+      <a routerLink="status" routerLinkActive="active" class="tab-link">Status</a>
+    </nav>
+  </div>
+
+  <div class="tab-content">
+    <router-outlet />
+  </div>
+</div>

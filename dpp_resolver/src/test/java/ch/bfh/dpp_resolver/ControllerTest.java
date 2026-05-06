@@ -50,11 +50,15 @@ public abstract class ControllerTest {
     @Autowired
     private WebApplicationContext webappContext;
 
+    @Autowired
+    protected TestDatabaseCleaner databaseCleaner;
+
     @BeforeEach
     public void setup() {
         if (mvc == null) {
             mvc = MockMvcBuilders.webAppContextSetup(webappContext).build();
         }
+        databaseCleaner.clean();
     }
 
     /**

@@ -1,0 +1,130 @@
+@use '../../../../styles/var' as *;
+@use '../../../../styles/mix' as *;
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s;
+
+  &.open {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+.modal-container {
+  background: white;
+  width: 800px;
+  max-width: 95%;
+  max-height: 90vh;
+  border-radius: $border-radius;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+  padding: $padding-medium $padding-large;
+  border-bottom: 1px solid $gray-light;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  h2 {
+    margin: 0;
+    font-size: rem(18px);
+    small { color: $gray-dark; font-weight: 400; }
+  }
+}
+
+.close-btn {
+  font-size: 24px;
+  color: $gray-dark;
+  &:hover { color: $primary; }
+}
+
+.modal-body {
+  padding: $padding-large;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: $padding-medium;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $padding-medium;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label {
+    font-size: rem(12px);
+    font-weight: 600;
+    color: $gray-dark;
+  }
+
+  input, select {
+    padding: 8px;
+    border: 1px solid $gray-light;
+    border-radius: 4px;
+    font-size: rem(14px);
+    &:focus { outline: none; border-color: $accent; }
+  }
+
+  .hint { font-size: rem(10px); color: $gray-dark; }
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 300px;
+
+  label { font-size: rem(12px); font-weight: 600; color: $gray-dark; }
+}
+
+.monaco-wrapper {
+  flex: 1;
+  border: 1px solid $gray-light;
+  border-radius: 4px;
+  overflow: hidden;
+
+  ngx-monaco-editor { height: 300px; width: 100%; }
+}
+
+.validation-section {
+  font-size: rem(13px);
+}
+
+.valid-msg { color: $success; font-weight: 600; }
+.error-msg { color: $error; font-weight: 600; }
+
+.modal-footer {
+  padding: $padding-medium $padding-large;
+  border-top: 1px solid $gray-light;
+  display: flex;
+  justify-content: flex-end;
+  gap: $padding-medium;
+}
+
+.btn {
+  @include button-base;
+  &-primary { background: $accent; color: white; }
+  &-secondary { background: $gray-light; color: $text; }
+}

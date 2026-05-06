@@ -1,0 +1,159 @@
+@use '../../../styles/var' as *;
+@use '../../../styles/mix' as *;
+
+.sidebar-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: $padding-large;
+  border-bottom: 1px solid $gray-light;
+  padding-bottom: $padding-medium;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: $padding-small;
+  padding: $padding-small $padding-medium;
+  border-radius: $border-radius;
+  font-size: rem(14px);
+  color: $text;
+  font-weight: 500;
+  transition: background 0.2s;
+
+  &:hover { background: rgba($accent, 0.05); }
+  &.active { background: rgba($accent, 0.1); color: $accent; }
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $padding-medium;
+
+  h2 {
+    font-size: rem(18px);
+    margin: 0;
+  }
+}
+
+.platform-list {
+  display: flex;
+  flex-direction: column;
+  gap: $padding-small;
+}
+
+.platform-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $padding-small $padding-medium;
+  border-radius: $border-radius;
+  cursor: pointer;
+  transition: background $transition-speed;
+  border: 1px solid transparent;
+
+  &:hover {
+    background: rgba($accent, 0.05);
+  }
+
+  &.active {
+    background: rgba($accent, 0.1);
+    border-color: rgba($accent, 0.2);
+
+    .platform-id {
+      font-weight: 600;
+      color: $accent;
+    }
+  }
+}
+
+.platform-info {
+  display: flex;
+  align-items: center;
+  gap: $padding-small;
+}
+
+.platform-id {
+  font-size: rem(14px);
+  color: $text;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &.running { background: $success; }
+  &.paused { background: $gray-dark; }
+  &.error { background: $error; }
+  &.starting { background: $warning; }
+}
+
+.platform-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.action-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba($black, 0.1);
+  }
+
+  &.delete:hover {
+    background: rgba($error, 0.1);
+    color: $error;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.btn {
+  @include button-base;
+  &-sm {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  &-accent {
+    background: $accent;
+    color: white;
+  }
+}
+
+.spinner-sm {
+  width: 16px;
+  height: 16px;
+  border: 2px solid $gray-light;
+  border-top-color: $accent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.empty-msg {
+  text-align: center;
+  color: $gray-dark;
+  font-size: rem(14px);
+  margin-top: $padding-large;
+}

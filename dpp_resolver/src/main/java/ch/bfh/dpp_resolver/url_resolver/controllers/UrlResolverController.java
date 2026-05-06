@@ -4,11 +4,14 @@ import ch.bfh.dpp_resolver.url_resolver.services.UrlResolverService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.view.RedirectView;
+
+import java.net.URI;
 
 /**
  * Controller for handling URL resolution requests.
@@ -33,13 +36,21 @@ public class UrlResolverController {
      * @throws ResponseStatusException if no URL could be resolved for the given parameters
      */
     @GetMapping("/{subjectType}/{issuerQualifiedDppId}")
-    public RedirectView resolveUrl(@PathVariable String subjectType, @PathVariable String issuerQualifiedDppId) {
+    public ResponseEntity<Void> resolveUrl(@PathVariable String subjectType, @PathVariable String issuerQualifiedDppId) {
         log.info("Resolve URL for SubjectType: {}, DPPId: {}", subjectType, issuerQualifiedDppId);
-        String url = urlResolverService.resolveUrl(subjectType, issuerQualifiedDppId);
-        if (url == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "DPP with this DPPId does not exist");
+        try {
+            String resolvedUrl = urlResolverService.resolveUrl(subjectType, issuerQualifiedDppId);
+            if (resolvedUrl == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "DPP with this DPPId does not exist");
+            }
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(resolvedUrl))
+                    .header("X-DPP-Subject-Type", subjectType)
+                    .header("X-DPP-Reference-Type", "SOFT")
+                    .build();
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-        return new RedirectView(url);
     }
 
     /**
@@ -53,12 +64,21 @@ public class UrlResolverController {
      * @throws ResponseStatusException if no URL could be resolved for the given parameters
      */
     @GetMapping("/{subjectType}/{issuerQualifiedDppId}/{revision}")
-    public RedirectView resolveUrlWithRevision(@PathVariable String subjectType, @PathVariable String issuerQualifiedDppId, @PathVariable Integer revision) {
+    public ResponseEntity<Void> resolveUrlWithRevision(@PathVariable String subjectType, @PathVariable String issuerQualifiedDppId, @PathVariable String revision) {
         log.info("Resolve URL for SubjectType: {}, DPPId: {}, Revision: {}", subjectType, issuerQualifiedDppId, revision);
-        String url = urlResolverService.resolveUrl(subjectType, issuerQualifiedDppId, revision);
-        if (url == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "DPP with this DPPId and revision does not exist");
+        try {
+            String resolvedUrl = urlResolverService.resolveUrl(subjectType, issuerQualifiedDppId, revision);
+            if (resolvedUrl == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "DPP with this DPPId and revision does not exist");
+            }
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(resolvedUrl))
+                    .header("X-DPP-Subject-Type", subjectType)
+                    .header("X-DPP-Resolved-Revision", String.valueOf(revision))
+                    .header("X-DPP-Reference-Type", "HARD")
+                    .build();
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-        return new RedirectView(url);
     }
 }

@@ -1,0 +1,110 @@
+@use '../../../../styles/var' as *;
+@use '../../../../styles/mix' as *;
+
+.action-bar {
+  margin-bottom: $padding-medium;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    text-align: left;
+    padding: $padding-small;
+    border-bottom: 2px solid $gray-light;
+    color: $gray-dark;
+    font-size: rem(14px);
+  }
+
+  td {
+    padding: $padding-medium $padding-small;
+    border-bottom: 1px solid $gray-light;
+  }
+}
+
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba($accent, 0.03);
+  }
+
+  &.expanded {
+    background: rgba($accent, 0.05);
+  }
+}
+
+.type-badge {
+  background: $secondary;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: rem(12px);
+}
+
+.arrow {
+  color: $gray-light;
+  font-size: 12px;
+}
+
+.history-row td {
+  padding: 0;
+  border-bottom: 1px solid $gray-light;
+}
+
+.history-container {
+  padding: $padding-medium;
+  background: #fdfdfd;
+
+  h4 {
+    margin-top: 0;
+    margin-bottom: $padding-small;
+    font-size: rem(14px);
+    color: $primary;
+  }
+}
+
+.revision-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.revision-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $padding-small;
+  background: white;
+  border: 1px solid $gray-light;
+  border-radius: 4px;
+  font-size: rem(13px);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: $accent;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+}
+
+.rev-version { font-weight: 600; color: $accent; width: 40px; }
+.rev-schema { flex: 1; margin: 0 $padding-medium; color: $text; }
+.rev-hash { font-family: monospace; color: $gray-dark; margin-right: $padding-medium; }
+.rev-date { color: $gray-dark; font-size: rem(11px); }
+
+.loading-state, .loading-sm {
+  text-align: center;
+  padding: $padding-large;
+  color: $gray-dark;
+}
+
+.empty-cell {
+  text-align: center;
+  padding: $padding-large;
+  color: $gray-dark;
+}

@@ -1,8 +1,8 @@
 package ch.bfh.dpp_resolver.url_resolver.services;
 
-import ch.bfh.dpp_resolver.admin.models.PlatformMapping;
+import ch.bfh.dpp_resolver.admin.models.Platform;
 import ch.bfh.dpp_resolver.admin.models.SubjectType;
-import ch.bfh.dpp_resolver.admin.repositories.PlatformMappingRepository;
+import ch.bfh.dpp_resolver.admin.repositories.PlatformRepository;
 import ch.bfh.dpp_resolver.admin.repositories.SubjectTypeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class UrlResolverService {
 
-    private final PlatformMappingRepository mappingRepository;
+    private final PlatformRepository platformRepository;
     private final SubjectTypeRepository subjectTypeRepository;
 
     /**
@@ -23,7 +23,7 @@ public class UrlResolverService {
      * full method with an optional revision number set to null.
      *
      * @param subjectType the name of the subject type to be resolved
-     * @param dppId the identifier used for mapping, in the format 'issuer-qualifiedDppId'
+     * @param dppId       the identifier used for mapping, in the format 'issuer-qualifiedDppId'
      * @return the resolved URL as a string, or null if no mapping exists for the given combination of inputs
      */
     public String resolveUrl(String subjectType, String dppId) {
@@ -36,23 +36,41 @@ public class UrlResolverService {
      * a resolution URL.
      *
      * @param subjectType the name of the subject type to be resolved
-     * @param dppId the identifier used for mapping, in the format 'issuer-qualifiedDppId'
-     * @param revision the optional revision number to be appended to the URL, or null if no revision is provided
+     * @param dppId       the identifier used for mapping, in the format 'issuer-qualifiedDppId'
+     * @param revision    the optional revision number to be appended to the URL, or null if no revision is provided
      * @return the resolved URL as a string, or null if no mapping exists for the given combination of inputs
      */
-    public String resolveUrl(String subjectType, String dppId, Integer revision) {
-
-        SubjectType subject = subjectTypeRepository.findByName(subjectType).orElseThrow();
+    public String resolveUrl(String subjectType, String dppId, String revision) {
 
         String issuer = extractIssuer(dppId);
 
-        PlatformMapping mapping = mappingRepository.findBySubjectTypeAndAbbreviation(subject, issuer).orElse(null);
+        Integer major = null, minor = null;
+        if (revision != null) {
+            String[] parts = revision.split("[./\\\\]");
+            if (parts.length > 2) {
+                throw new IllegalArgumentException("Revision must be in format 'major.minor' or 'major/minor'");
+            }
+            if (parts.length >= 1) {
+                major = Integer.parseInt(parts[0].trim());
+            }
+            if (parts.length == 2) {
+                minor = Integer.parseInt(parts[1].trim());
+            }
+        }
+
+        SubjectType subject = subjectTypeRepository.findByName(subjectType).orElseThrow();
+
+        Platform mapping = platformRepository.findByAbbreviation(issuer).orElse(null);
 
         if (mapping == null) {
             return null;
         }
 
-        return createUrl(mapping, dppId, revision);
+        if (!mapping.getSubjectTypes().contains(subject)) {
+            return null;
+        }
+
+        return createUrl(mapping, dppId, subjectType, major, minor);
     }
 
     /**
@@ -72,11 +90,28 @@ public class UrlResolverService {
         return splitDppId[0];
     }
 
-    private static String createUrl(PlatformMapping mapping, String dppId, Integer revision) {
+    private static String createUrl(Platform mapping, String dppId, String subjectType, Integer major, Integer minor) {
         String baseUrl = mapping.getResolutionUrl();
         if (!baseUrl.contains("{dppId}")) {
             throw new IllegalArgumentException("Resolution URL must contain {dppId} placeholder");
         }
-        return baseUrl.replace("{dppId}", dppId) + (revision != null ? "/" + revision : "");
+        String resolvedUrl = baseUrl
+                .replace("{dppId}", dppId)
+                .replace("{subjectType}", subjectType);
+
+        if (major != null) {
+            if (baseUrl.contains("{major}")) {
+                resolvedUrl = resolvedUrl.replace("{major}", major.toString());
+                if (minor != null) {
+                    resolvedUrl = resolvedUrl.replace("{minor}", minor.toString());
+                } else {
+                    resolvedUrl = resolvedUrl.replace(".{minor}", "").replace("{minor}", "");
+                }
+            } else {
+                resolvedUrl = resolvedUrl + "/" + major + (minor != null ? "." + minor : "");
+            }
+        }
+
+        return resolvedUrl;
     }
 }
