@@ -41,7 +41,6 @@ public class ResolverConnector {
     private final DppSchemaRepository dppSchemaRepository;
     private final RestTemplate restTemplate;
     private final RestTemplate noRedirectRestTemplate;
-
     public ResolverConnector(
             PlatformConfigService configService,
             SubjectTypeRepository subjectTypeRepository,
@@ -58,9 +57,21 @@ public class ResolverConnector {
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     /**
-     * Fetches and stores the latest schema for a given subject type.
-     * The method works as is explained in the operation system (Section 5).
-     * @param subjectType The subject type to synchronize.
+     * Fetches and stores schemas for a subject type from the resolver into this platform's local schema cache.
+     * <p>
+     * This method is the DPP-platform-side implementation of the {@code cacheSchema} operation from the
+     * transition system. It does not publish schemas and does not mutate the resolver's authoritative schema set.
+     * It only copies resolver-published schemas into the local platform cache so that later {@code issue} and
+     * {@code revise} operations can validate payloads against pinned schema versions.
+     * </p>
+     * <p>
+     * The cache is monotonic at the application level: already cached schema versions are left unchanged and only
+     * previously unknown versions are inserted.
+     * </p>
+     *
+     * @param subjectType the subject type whose schemas should be synchronized from the resolver
+     * @throws IllegalStateException    if the resolver base URL is not configured
+     * @throws IllegalArgumentException if the subject type is not known on this platform
      */
     @Transactional
     public void cacheSchema(String subjectType) {
@@ -104,13 +115,26 @@ public class ResolverConnector {
     }
 
     /**
-     * Resolves a DPP revision through the Resolver.
+     * Resolves and fetches a hard DPP reference through the resolver.
+     * <p>
+     * This method implements the platform-side use of the formal {@code resolve} operation for hard references.
+     * The resolver is first asked to resolve the issuer-qualified DPP identity to a concrete platform URL
+     * using {@link #resolveDppRevisionUrl(String, String, Integer)}. The returned URL is then fetched from the
+     * hosting platform.
+     * </p>
+     * <p>
+     * Only hard references are resolved by this method. Therefore, {@code version} must be present. Soft references
+     * are intentionally not resolved during issuance because the formal model treats them as informational links
+     * that do not affect hard resolvability.
+     * </p>
      *
-     * @param subjectType The subject type of the DPP.
-     * @param dppId       The federated ID of the DPP.
-     * @param version     The specific version to resolve (must be present for hard references).
-     * @return The resolved DppRevisionResponseDTO.
-     * @throws DppReferenceResolutionException if resolution or fetching fails.
+     * @param subjectType the subject type of the referenced DPP
+     * @param dppId       the issuer-qualified DPP identifier
+     * @param version     the concrete revision version; required for hard references
+     * @return the resolved DPP revision fetched from its current hosting platform
+     * @throws IllegalArgumentException          if {@code version} is null
+     * @throws DppReferenceResolutionException   if the resolver cannot resolve the reference or the target platform
+     *                                           cannot return the requested revision
      */
     public DppRevisionResponseDTO resolveDppRevision(String subjectType, String dppId, Integer version) {
         if (version == null) {
@@ -138,13 +162,26 @@ public class ResolverConnector {
     }
 
     /**
-     * Resolves the URL of a DPP revision through the Resolver using GET and 302 Location.
+     * Resolves a hard reference to the URL of the platform currently hosting the target revision.
+     * <p>
+     * This method realizes the resolver indirection described in the transition system: references do not encode
+     * platform locations directly. Instead, this platform asks the resolver to map the issuer-qualified DPP identity
+     * to the current hosting platform. The resolver response is expected to be an HTTP redirect whose
+     * {@code Location} header points to the concrete revision endpoint on the hosting platform.
+     * </p>
+     * <p>
+     * The method deliberately uses a non-redirecting {@link RestTemplate} so that the redirect target can be
+     * inspected and used as the resolved platform URL.
+     * </p>
      *
-     * @param subjectType The subject type of the DPP.
-     * @param dppId       The federated ID of the DPP.
-     * @param version     The version.
-     * @return The resolved URI from the Location header.
-     * @throws DppReferenceResolutionException if resolution fails.
+     * @param subjectType the subject type of the referenced DPP
+     * @param dppId       the issuer-qualified DPP identifier
+     * @param version     the concrete revision version; required for hard references
+     * @return the platform URL returned by the resolver in the redirect {@code Location} header
+     * @throws IllegalStateException            if the resolver base URL is not configured
+     * @throws IllegalArgumentException         if {@code version} is null
+     * @throws DppReferenceResolutionException  if the resolver returns an error, no redirect location, or an
+     *                                          unexpected status
      */
     public URI resolveDppRevisionUrl(String subjectType, String dppId, Integer version) {
         PlatformConfigDTO platformConfig = configService.getPlatformConfig();

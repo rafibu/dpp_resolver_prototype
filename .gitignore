@@ -1,6 +1,7 @@
 # IDE
 .idea/
 .vscode/
+/generic_dpp_platform/generic_dpp_platform_java.iml
 
 # OS
 .DS_Store
@@ -25,4 +26,3 @@ node_modules/
 # AI Files
 
 .claude
-CLAUDE.md

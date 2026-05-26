@@ -164,7 +164,7 @@ public class HashIntegrityTest {
                 .dppPayload(payload)
                 .build();
 
-        DppRevisionResponseDTO resp = dppRevisionService.createDppRevisionForExistingDpp(testDpp.getDppId(), req);
+        DppRevisionResponseDTO resp = dppRevisionService.reviseExistingDpp(testDpp.getDppId(), req);
         String hash = resp.getPayloadHash();
 
         assertNotNull(hash, "Hash should not be null");
@@ -193,7 +193,7 @@ public class HashIntegrityTest {
                         .build())
                 .dppPayload(Map.of("data", "consistency-test"))
                 .build();
-        DppRevisionResponseDTO created = dppRevisionService.createDppRevisionForExistingDpp(testDpp.getDppId(), req);
+        DppRevisionResponseDTO created = dppRevisionService.reviseExistingDpp(testDpp.getDppId(), req);
         
         // Get current revision
         DppRevisionResponseDTO current = dppRevisionService.getCurrentDppRevision(testDpp.getDppId());

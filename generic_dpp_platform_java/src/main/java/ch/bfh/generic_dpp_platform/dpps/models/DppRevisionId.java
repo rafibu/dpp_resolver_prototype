@@ -8,7 +8,7 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * Composite key for DPP revisions.
+ * Composite key for DPP revisions. With this Id Invariant 1 ("Revision uniqueness") is operationalized.
  */
 @Getter
 @Setter

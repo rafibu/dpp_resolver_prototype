@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -30,8 +31,8 @@ import java.util.Map;
  * <br>
  * Features:
  * - The `verifyHashIntegrity` method calculates the hash of the document content on persist/update
- *   and ensures that it matches the stored hash. If they differ, an exception is thrown to maintain
- *   data integrity.
+ * and ensures that it matches the stored hash. If they differ, an exception is thrown to maintain
+ * data integrity.
  * - Provides access to the DPP version via the `getVersion` method.
  * <br>
  * Constraints:
@@ -42,6 +43,7 @@ import java.util.Map;
 @Getter
 @Setter
 @Entity
+@Immutable
 @Table(name = "dpp_revision")
 public class DppRevision {
 
@@ -73,15 +75,18 @@ public class DppRevision {
     @Column(name = "hashed_document", nullable = false)
     private byte[] hashedDocument;
 
+    /**
+     * We only use the createdAt field for auditing and logging purposes. It is not part of the DPP revision model as described in the paper.
+     */
     @ColumnDefault("now()")
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     /**
+     * This method re-verifies Invariant 4 (Payload Integrity).
      * Verifies the integrity of the DPP document by calculating its hash and comparing it to the stored value.
      */
     @PrePersist
-    @PreUpdate
     private void verifyHashIntegrity() {
         if (dppDocument == null) {
             return;
@@ -97,6 +102,18 @@ public class DppRevision {
         } else {
             hashedDocument = computedHash;
         }
+    }
+
+    /**
+     * Rejects updates to existing revisions.
+     * <p>
+     * DPP revisions are append-only artefacts in the formal model. A correction must be represented as a new
+     * revision with the next consecutive version number, never as a mutation of an already-persisted row.
+     * </p>
+     */
+    @PreUpdate
+    private void rejectUpdate() {
+        throw new IllegalStateException("DPP revisions are immutable and must not be updated");
     }
 
     public Integer getVersion() {

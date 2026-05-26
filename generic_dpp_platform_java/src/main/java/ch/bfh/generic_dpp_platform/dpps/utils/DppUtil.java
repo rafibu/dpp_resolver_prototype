@@ -28,6 +28,7 @@ public class DppUtil {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
+     * This method operationalizes Invariant 5 "Schema conformance" <br>
      * Validates a DPP payload against a provided JSON schema.
      * The validation follows the JSON Schema 2020-12 specification.
      * It also performs a preliminary check for DPP references within the payload.
