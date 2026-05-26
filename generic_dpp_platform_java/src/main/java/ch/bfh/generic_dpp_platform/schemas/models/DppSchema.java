@@ -10,6 +10,10 @@ import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 
 /**
+ * <p>
+ * This class represents a DPP schema which is cached in the database.
+ * The platform itself cannot create new schemas but can retrieve and use them.
+ * </p>
  *
  * @author rbu on 20.04.2026
  */
@@ -33,7 +37,4 @@ public class DppSchema {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "schema_document", nullable = false, columnDefinition = "jsonb")
     private JsonNode schemaDocument;
-
-    @Column(name = "published_at", nullable = false)
-    private Instant publishedAt;
 }

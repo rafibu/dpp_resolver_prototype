@@ -1,7 +1,7 @@
 package ch.bfh.generic_dpp_platform.dpps.controllers;
 
 import ch.bfh.generic_dpp_platform.ControllerTest;
-import ch.bfh.generic_dpp_platform.common.dtos.ApiError;
+import ch.bfh.generic_dpp_platform.admin.dtos.ApiError;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
 import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
@@ -12,7 +12,6 @@ import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
-import ch.bfh.generic_dpp_platform.admin.dtos.PlatformConfigDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

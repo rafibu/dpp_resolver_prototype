@@ -51,6 +51,27 @@ class DppRevisionResponseDTO(BaseModel):
     created_at: datetime
 
 
+class DppRevisionSummary(BaseModel):
+    version: int
+    schema_ref: str
+    hash: str
+    timestamp: str
+    payload: dict
+
+
+class DppDetailDTO(BaseModel):
+    dpp_id: str
+    subject_type: str
+    revisions: list[DppRevisionSummary]
+
+
+class DppSummaryDTO(BaseModel):
+    dpp_id: str
+    subject_type: str
+    current_version: int
+    last_updated: str
+
+
 class ApiError(BaseModel):
     error: str
     message: str | None = None

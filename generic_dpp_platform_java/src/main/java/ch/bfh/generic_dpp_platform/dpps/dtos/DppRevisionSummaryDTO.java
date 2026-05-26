@@ -7,22 +7,19 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Date;
-
 /**
- *
- * @author rbu on 02.05.2026
+ * A single revision summary inside DppDetailDTO.
+ * schema_ref format: "subjectType/major.minor"
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public class DppRevisionResponseDTO {
-    private String dppId;
+public class DppRevisionSummaryDTO {
     private Integer version;
-    private DppRevisionSchemaDTO schemaVersion;
-    private Object dppPayload;
-    private String payloadHash;
-    private Date createdAt;
+    private String schemaRef;
+    private String hash;
+    private String timestamp;
+    private Object payload;
 }

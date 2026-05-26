@@ -9,19 +9,19 @@ This is a generic implementation of a DPP Platform in Java using Spring Boot.
 ## Configuration
 The platform is configured via environment variables. The following variables are required:
 
-| Environment Variable | Description | Example |
-|----------------------|-------------|---------|
-| `PLATFORM_NAME` | Name of the platform | `Platform A` |
-| `BASE_URL` | Public base URL of this platform | `http://localhost:8081` |
-| `ISSUER_ID` | Identifier used for DPP IDs issued by this platform | `issuerA` |
-| `RESOLVER_BASE_URL` | Base URL of the DPP Resolver | `http://localhost:8080` |
+| Environment Variable | Description                                         | Example                 |
+|----------------------|-----------------------------------------------------|-------------------------|
+| `PLATFORM_NAME`      | Name of the platform                                | `Platform A`            |
+| `BASE_URL`           | Public base URL of this platform                    | `http://localhost:8081` |
+| `ISSUER_ID`          | Identifier used for DPP IDs issued by this platform | `issuerA`               |
+| `RESOLVER_BASE_URL`  | Base URL of the DPP Resolver                        | `http://localhost:8080` |
 
 ### Database Configuration
-| Environment Variable | Description | Default |
-|----------------------|-------------|---------|
-| `SPRING_DATASOURCE_URL` | JDBC URL for the database | `jdbc:postgresql://localhost:5432/dpp_generic_java` |
-| `SPRING_DATASOURCE_USERNAME` | Database username | `postgres` |
-| `SPRING_DATASOURCE_PASSWORD` | Database password | `postgres` |
+| Environment Variable         | Description               | Default                                             |
+|------------------------------|---------------------------|-----------------------------------------------------|
+| `SPRING_DATASOURCE_URL`      | JDBC URL for the database | `jdbc:postgresql://localhost:5432/dpp_generic_java` |
+| `SPRING_DATASOURCE_USERNAME` | Database username         | `postgres`                                          |
+| `SPRING_DATASOURCE_PASSWORD` | Database password         | `postgres`                                          |
 
 ## Running with Docker
 You can run the platform using Docker and providing the environment variables:

@@ -1,6 +1,6 @@
 package ch.bfh.generic_dpp_platform.admin.controllers;
 
-import ch.bfh.generic_dpp_platform.common.dtos.ApiError;
+import ch.bfh.generic_dpp_platform.admin.dtos.ApiError;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppAlreadyExistsException;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppCycleDetectedException;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppReferenceResolutionException;

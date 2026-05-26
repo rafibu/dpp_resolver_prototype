@@ -4,6 +4,7 @@ import ch.bfh.generic_dpp_platform.dpps.models.DppRevision;
 import ch.bfh.generic_dpp_platform.dpps.models.DppRevisionId;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -12,11 +13,7 @@ import java.util.Optional;
  */
 public interface DppRevisionRepository extends JpaRepository<DppRevision, DppRevisionId> {
 
-    /**
-     * Finds the latest revision for a given DPP ID, ordered by version descending.
-     *
-     * @param dppId the DPP identifier
-     * @return an Optional containing the latest revision, if any
-     */
     Optional<DppRevision> findFirstByIdDppIdOrderByIdDppVersionDesc(String dppId);
+
+    List<DppRevision> findAllByIdDppIdOrderByIdDppVersionAsc(String dppId);
 }

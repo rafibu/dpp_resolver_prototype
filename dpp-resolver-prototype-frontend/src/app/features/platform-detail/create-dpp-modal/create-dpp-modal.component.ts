@@ -128,10 +128,13 @@ export class CreateDppModalComponent implements OnInit {
       if (!schema) return;
 
       this.platformService.issueDpp(this.platformUrl(), {
-        dpp_id: this.dppId(),
-        subject_type: this.selectedSubjectType(),
-        schema_ref: `${schema.subject_type}/${schema.major}.${schema.minor}`,
-        payload
+        dpp_id: this.dppId() || undefined,
+        schema_version: {
+          subject_type: schema.subject_type,
+          major_version: schema.major,
+          minor_version: schema.minor
+        },
+        dpp_payload: payload
       }).subscribe({
         next: () => {
           this.toastService.success(`DPP ${this.dppId()} issued successfully`);

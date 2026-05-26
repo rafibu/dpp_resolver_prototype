@@ -16,14 +16,62 @@ from .exceptions import (
 )
 from .models import (
     DependencyType,
+    DppDetailDTO,
     DppRevisionRequestDTO,
     DppRevisionResponseDTO,
     DppRevisionSchemaDTO,
+    DppRevisionSummary,
+    DppSummaryDTO,
 )
 from .reference_extractor import extract_references
 from .utils import hash_document, hash_to_hex, validate_dpp_document
 
 logger = structlog.get_logger()
+
+
+async def list_all_dpps(db: AsyncIOMotorDatabase) -> list[DppSummaryDTO]:
+    summaries = []
+    async for dpp in db.logical_dpps.find({}, {"_id": 0}):
+        latest = await db.dpp_revisions.find_one(
+            {"dpp_id": dpp["dpp_id"]}, {"_id": 0}, sort=[("dpp_version", -1)]
+        )
+        summaries.append(DppSummaryDTO(
+            dpp_id=dpp["dpp_id"],
+            subject_type=dpp["subject_type"],
+            current_version=dpp.get("current_version", 0),
+            last_updated=str(latest["created_at"]) if latest else str(dpp.get("created_at", "")),
+        ))
+    return summaries
+
+
+async def get_dpp_detail(db: AsyncIOMotorDatabase, dpp_id: str) -> DppDetailDTO:
+    dpp_doc = await db.logical_dpps.find_one({"dpp_id": dpp_id}, {"_id": 0})
+    if not dpp_doc:
+        raise NotFoundException(f"DPP not found: {dpp_id}")
+
+    revision_docs = await db.dpp_revisions.find(
+        {"dpp_id": dpp_id}, {"_id": 0}, sort=[("dpp_version", 1)]
+    ).to_list(None)
+
+    revisions = [
+        DppRevisionSummary(
+            version=r["dpp_version"],
+            schema_ref="{}/{}.{}".format(
+                r["schema"]["subject_type"],
+                r["schema"]["major_version"],
+                r["schema"]["minor_version"],
+            ),
+            hash=r["hashed_document"],
+            timestamp=str(r["created_at"]),
+            payload=r["dpp_document"],
+        )
+        for r in revision_docs
+    ]
+    return DppDetailDTO(
+        dpp_id=dpp_id,
+        subject_type=dpp_doc["subject_type"],
+        revisions=revisions,
+    )
 
 
 async def get_current_dpp_revision(

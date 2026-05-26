@@ -24,6 +24,7 @@ async def shutdown(client: DockerClient, state: FactoryState) -> None:
         try:
             container = client._client.containers.get(record.container_id)
             client.stop_container(container)
+            client.remove_container(container)
         except docker.errors.NotFound:
             pass
         except Exception as exc:
@@ -39,6 +40,7 @@ async def shutdown(client: DockerClient, state: FactoryState) -> None:
         try:
             container = client._client.containers.get(record.db_container_id)
             client.stop_container(container)
+            client.remove_container(container, remove_volumes=True)
         except docker.errors.NotFound:
             pass
         except Exception as exc:
@@ -54,6 +56,7 @@ async def shutdown(client: DockerClient, state: FactoryState) -> None:
         try:
             container = client._client.containers.get(state.resolver.container_id)
             client.stop_container(container)
+            client.remove_container(container)
         except docker.errors.NotFound:
             pass
         except Exception as exc:
@@ -65,6 +68,7 @@ async def shutdown(client: DockerClient, state: FactoryState) -> None:
             try:
                 container = client._client.containers.get(state.resolver.db_container_id)
                 client.stop_container(container)
+                client.remove_container(container, remove_volumes=True)
             except docker.errors.NotFound:
                 pass
             except Exception as exc:

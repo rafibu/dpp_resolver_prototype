@@ -59,14 +59,18 @@ async def spawn_platform(
         )
         await _wait_db_ready(db_container, spec.stack, timeout=60)
 
+        external_url = f"http://localhost:{spec.host_port}"
         platform_container = client.run_container(
             image=_PLATFORM_IMAGES[spec.stack],
             name=container_name,
             env={
                 "PLATFORM_ID": spec.platform_id,
+                "PLATFORM_NAME": spec.platform_id,
                 "ISSUER_ID": spec.issuer_id,
                 "SUBJECT_TYPES": ",".join(spec.subject_types),
                 "RESOLVER_URL": resolver_url,
+                "RESOLVER_BASE_URL": resolver_url,
+                "BASE_URL": external_url,
                 "DATABASE_URL": _database_url(spec.stack, db_name),
                 "LOG_LEVEL": "INFO",
             },
@@ -76,7 +80,6 @@ async def spawn_platform(
             labels=platform_labels,
         )
 
-        external_url = f"http://localhost:{spec.host_port}"
         internal_url = f"http://{container_name}:{PLATFORM_INTERNAL_PORT}"
         client.wait_healthy(platform_container, f"{internal_url}/health", timeout=30)
 

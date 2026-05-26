@@ -3,9 +3,12 @@ package ch.bfh.generic_dpp_platform.dpps.services;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
+import ch.bfh.generic_dpp_platform.dpps.dtos.DppDetailDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
+import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSummaryDTO;
+import ch.bfh.generic_dpp_platform.dpps.dtos.DppSummaryDTO;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppAlreadyExistsException;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppReferenceResolutionException;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppRevisionConflictException;
@@ -44,8 +47,35 @@ public class DppRevisionService {
     private final DppReferenceExtractor referenceExtractor;
     private final DppRevisionCacheService cacheService;
     private final ResolverConnector resolverConnector;
-    private final DppCycleDetectionService cycleDetectionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Transactional(readOnly = true)
+    public List<DppSummaryDTO> listAllDpps() {
+        return dppRepository.findAll().stream().map(dpp -> {
+            Optional<DppRevision> latest = dppRevisionRepository.findFirstByIdDppIdOrderByIdDppVersionDesc(dpp.getDppId());
+            return DppSummaryDTO.builder()
+                    .dppId(dpp.getDppId())
+                    .subjectType(dpp.getSubjectType().getName())
+                    .currentVersion(latest.map(DppRevision::getVersion).orElse(0))
+                    .lastUpdated(latest.map(r -> r.getCreatedAt().toString()).orElse(dpp.getCreatedAt().toString()))
+                    .build();
+        }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public DppDetailDTO getDppDetail(String dppId) {
+        LogicalDpp dpp = dppRepository.findById(dppId)
+                .orElseThrow(() -> new NoSuchElementException("DPP not found with ID: " + dppId));
+        List<DppRevisionSummaryDTO> revisions = dppRevisionRepository
+                .findAllByIdDppIdOrderByIdDppVersionAsc(dppId).stream()
+                .map(DppRevisionService::toRevisionSummary)
+                .toList();
+        return DppDetailDTO.builder()
+                .dppId(dppId)
+                .subjectType(dpp.getSubjectType().getName())
+                .revisions(revisions)
+                .build();
+    }
 
     @Transactional(readOnly = true)
     public DppRevisionResponseDTO getCurrentDppRevision(String dppId) {
@@ -129,7 +159,8 @@ public class DppRevisionService {
         }
 
         // 3. Bounded hard-cycle detection
-        cycleDetectionService.detectCycles(logicalDpp.getSubjectType().getName(), logicalDpp.getDppId(), nextRevisionNumber, validDppDocument);
+        // Not needed anymore since Invariant 6 checks for cycles on schema level
+        // cycleDetectionService.detectCycles(logicalDpp.getSubjectType().getName(), logicalDpp.getDppId(), nextRevisionNumber, validDppDocument);
 
         DppRevision newRevision = new DppRevision();
         newRevision.setId(new DppRevisionId(nextRevisionNumber, logicalDpp.getDppId()));
@@ -234,6 +265,21 @@ public class DppRevisionService {
         return version;
     }
 
+
+    private static DppRevisionSummaryDTO toRevisionSummary(DppRevision dppRevision) {
+        String schemaRef = "%s/%d.%d".formatted(
+                dppRevision.getDppSchema().getSubjectType().getName(),
+                dppRevision.getDppSchema().getId().getMajorVersion(),
+                dppRevision.getDppSchema().getId().getMinorVersion()
+        );
+        return DppRevisionSummaryDTO.builder()
+                .version(dppRevision.getVersion())
+                .schemaRef(schemaRef)
+                .hash(DppUtil.hashToHex(dppRevision.getHashedDocument()))
+                .timestamp(dppRevision.getCreatedAt().toString())
+                .payload(dppRevision.getDppDocument())
+                .build();
+    }
 
     private static DppRevisionResponseDTO toDTO(DppRevision dppRevision) {
         return DppRevisionResponseDTO.builder()

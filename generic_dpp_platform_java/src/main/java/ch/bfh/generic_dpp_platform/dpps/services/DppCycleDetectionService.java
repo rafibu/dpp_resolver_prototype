@@ -22,11 +22,15 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
+ * First implementation of Cycle Detection on Instance Level.<br>
+ * This is not necessary to check anymore since Invariant 6 checks for cycles on schema level.<br>
+ *
  * Service for bounded hard-dependency cycle detection.
  * Traverses at most 3 dependency rounds to detect cycles.
  */
 @Slf4j
 @Service
+@Deprecated
 @RequiredArgsConstructor
 public class DppCycleDetectionService {
 
@@ -79,10 +83,6 @@ public class DppCycleDetectionService {
         }
 
         Set<String> visited = new HashSet<>();
-        // Note: Do NOT add candidateKey to visited yet if we want to detect re-entry
-        // BUT we actually check nextKey == candidateKey before adding to queue now.
-        // So visited can contain candidateKey to avoid redundant work if someone else points to it,
-        // but we must check re-entry specifically.
         visited.add(candidateKey);
 
         int currentRound = 1;
@@ -93,7 +93,7 @@ public class DppCycleDetectionService {
             List<String> path = queue.poll();
             elementsInCurrentRound--;
 
-            String currentKey = path.get(path.size() - 1);
+            String currentKey = path.getLast();
 
             if (!visited.contains(currentKey)) {
                 visited.add(currentKey);

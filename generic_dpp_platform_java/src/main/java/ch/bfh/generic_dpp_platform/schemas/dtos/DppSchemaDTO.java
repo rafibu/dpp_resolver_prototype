@@ -8,6 +8,9 @@ import lombok.NoArgsConstructor;
 import java.time.Instant;
 
 /**
+ * <p>
+ * Schema as it is fetched from the resolver.
+ * </p>
  *
  * @author rbu on 21.04.2026
  */
@@ -20,5 +23,4 @@ public class DppSchemaDTO {
     Integer majorVersion;
     Integer minorVersion;
     Object schemaDocument;
-    Instant publishedAt;
 }

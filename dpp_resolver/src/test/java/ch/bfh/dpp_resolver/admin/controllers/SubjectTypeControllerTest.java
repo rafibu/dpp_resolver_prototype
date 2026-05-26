@@ -79,12 +79,18 @@ class SubjectTypeControllerTest extends ControllerTest {
     }
 
     @Test
-    void postSubjectType_shouldReturnBadRequest_whenAlreadyExists() throws Exception {
+    void postSubjectType_isIdempotent_whenAlreadyExists() throws Exception {
         String url = "/admin/subject-types";
         SubjectTypeDTO dto = new SubjectTypeDTO("Duplicate", "First");
         postResponseAsObject(url, gson.toJson(dto), SubjectTypeDTO.class);
 
+        // Second call with same name should succeed (idempotent), not error
         SubjectTypeDTO duplicateDto = new SubjectTypeDTO("Duplicate", "Second");
-        postErrorStatusCode(url, gson.toJson(duplicateDto), HttpStatus.BAD_REQUEST);
+        postResponseAsObject(url, gson.toJson(duplicateDto), SubjectTypeDTO.class);
+
+        // Verify only one entry exists
+        SubjectTypeDTO[] result = getResponseAsObject(url, SubjectTypeDTO[].class);
+        long count = java.util.Arrays.stream(result).filter(t -> "Duplicate".equals(t.getName())).count();
+        assertEquals(1, count);
     }
 }

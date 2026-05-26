@@ -3,14 +3,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from . import service as dpp_service
-from .exceptions import (
-    NotFoundException,
+from .exceptions import NotFoundException
+from .models import (
+    DppDetailDTO,
+    DppRevisionRequestDTO,
+    DppRevisionResponseDTO,
+    DppSummaryDTO,
 )
-from .models import DppRevisionRequestDTO, DppRevisionResponseDTO
 from ..database import get_database
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+
+@router.get("", response_model=list[DppSummaryDTO])
+async def list_all_dpps(
+        db: AsyncIOMotorDatabase = Depends(get_database),
+) -> list[DppSummaryDTO]:
+    logger.info("list_all_dpps")
+    return await dpp_service.list_all_dpps(db)
 
 
 @router.post("", response_model=DppRevisionResponseDTO, status_code=status.HTTP_201_CREATED)
@@ -22,13 +33,16 @@ async def create_new_dpp(
     return await dpp_service.create_new_dpp(db, request)
 
 
-@router.get("/{dpp_id}", response_model=DppRevisionResponseDTO)
-async def get_current_revision(
+@router.get("/{dpp_id}", response_model=DppDetailDTO)
+async def get_dpp_detail(
         dpp_id: str,
         db: AsyncIOMotorDatabase = Depends(get_database),
-) -> DppRevisionResponseDTO:
-    logger.info("get_current_revision", dpp_id=dpp_id)
-    return await dpp_service.get_current_dpp_revision(db, dpp_id)
+) -> DppDetailDTO:
+    logger.info("get_dpp_detail", dpp_id=dpp_id)
+    try:
+        return await dpp_service.get_dpp_detail(db, dpp_id)
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/{dpp_id}", response_model=DppRevisionResponseDTO, status_code=status.HTTP_201_CREATED)

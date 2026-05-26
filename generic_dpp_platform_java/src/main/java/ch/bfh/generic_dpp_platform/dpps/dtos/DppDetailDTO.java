@@ -7,22 +7,18 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Date;
+import java.util.List;
 
 /**
- *
- * @author rbu on 02.05.2026
+ * Full DPP detail with all revisions as returned by GET /dpps/:id.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-public class DppRevisionResponseDTO {
+public class DppDetailDTO {
     private String dppId;
-    private Integer version;
-    private DppRevisionSchemaDTO schemaVersion;
-    private Object dppPayload;
-    private String payloadHash;
-    private Date createdAt;
+    private String subjectType;
+    private List<DppRevisionSummaryDTO> revisions;
 }

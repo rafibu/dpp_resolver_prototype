@@ -25,7 +25,7 @@ public class SubjectTypeService {
     @Transactional
     public void save(SubjectTypeDTO dto) {
         if (subjectTypeRepository.existsByName(dto.getName())) {
-            throw new IllegalArgumentException("SubjectType already exists");
+            return;
         }
         subjectTypeRepository.save(mapFromDTO(dto));
     }

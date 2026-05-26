@@ -22,9 +22,7 @@ node_modules/
 .env
 .env.local
 
-### Local Files ###
+# AI Files
 
-#prototype_user_stories.md
-#tech_stack.md
-#CLAUDE.md
-#IMPLEMENTATION_LOG.md
+.claude
+CLAUDE.md

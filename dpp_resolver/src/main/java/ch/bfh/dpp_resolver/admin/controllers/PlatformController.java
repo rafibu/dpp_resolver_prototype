@@ -35,7 +35,7 @@ public class PlatformController {
             return ResponseEntity.ok(platformMappingService.findAllBySubjectType(subjectType).toArray(PlatformMappingDTO[]::new));
         } catch (NoSuchElementException e) {
             log.error("SubjectType {} not found", subjectType);
-            throw new IllegalArgumentException(e);
+            return ResponseEntity.notFound().build();
         }
     }
 

@@ -27,16 +27,20 @@ async def test_current_revision_returns_highest_version(
     r3 = await http_client.post(f"/dpps/{_DPP_ID}", json=base)
     assert r3.status_code == 201
 
+    # GET /dpps/:id now returns DppDetailDTO with all revisions
     current = await http_client.get(f"/dpps/{_DPP_ID}")
     assert current.status_code == 200
-    assert current.json()["version"] == 3
+    revisions = current.json()["revisions"]
+    assert len(revisions) == 3
+    assert revisions[-1]["version"] == 3
 
     r4 = await http_client.post(f"/dpps/{_DPP_ID}", json=base)
     assert r4.status_code == 201
 
     current_after = await http_client.get(f"/dpps/{_DPP_ID}")
-    assert current_after.json()["version"] == 4
+    assert current_after.json()["revisions"][-1]["version"] == 4
 
+    # GET /dpps/:id/:version still returns single DppRevisionResponseDTO
     v2 = await http_client.get(f"/dpps/{_DPP_ID}/2")
     assert v2.status_code == 200
     assert v2.json()["version"] == 2

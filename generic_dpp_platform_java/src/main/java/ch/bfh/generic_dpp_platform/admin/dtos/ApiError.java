@@ -1,4 +1,4 @@
-package ch.bfh.generic_dpp_platform.common.dtos;
+package ch.bfh.generic_dpp_platform.admin.dtos;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;

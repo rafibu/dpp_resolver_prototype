@@ -8,7 +8,7 @@
     <div class="modal-body">
       <div class="form-group">
         <label>Stack</label>
-        <select [(ngModel)]="stack" [disabled]="isSpawning()">
+        <select [ngModel]="stack()" (ngModelChange)="stack.set($event)" [disabled]="isSpawning()">
           <option value="spring-postgres">Java (Spring + Postgres)</option>
           <option value="fastapi-mongo">Python (FastAPI + MongoDB)</option>
         </select>
@@ -16,8 +16,12 @@
 
       <div class="form-group">
         <label>Issuer ID</label>
-        <input type="text" [(ngModel)]="issuerId" placeholder="e.g. issuerD" [disabled]="isSpawning()">
+        <input type="text" [ngModel]="issuerId()" (ngModelChange)="issuerId.set($event)"
+               placeholder="e.g. issuerD" [disabled]="isSpawning()">
         <small class="hint">Lowercase alphanumeric and dashes only.</small>
+        @if (issuerId() && !isIssuerIdValid()) {
+          <small class="error">Lowercase letters, digits and dashes only.</small>
+        }
       </div>
 
       <div class="form-group">

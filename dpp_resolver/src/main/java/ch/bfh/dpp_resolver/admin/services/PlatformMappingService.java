@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,9 +36,9 @@ public class PlatformMappingService {
 
     @Transactional
     public PlatformMappingDTO save(PlatformMappingDTO platformMappingDTO) {
-        List<SubjectType> subjectTypes = platformMappingDTO.getSubjectTypes().stream()
+        List<SubjectType> subjectTypes = new ArrayList<>(platformMappingDTO.getSubjectTypes().stream()
                 .map(st -> subjectTypeRepository.findByName(st).orElseThrow())
-                .toList();
+                .toList());
 
         Platform foundOrNew = platformRepository.findByAbbreviation(platformMappingDTO.getIssuerId()).orElse(new Platform());
         mapFromDTO(platformMappingDTO, foundOrNew, subjectTypes);

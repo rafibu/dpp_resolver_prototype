@@ -6,7 +6,7 @@ import lombok.*;
 
 /**
  * Composite identifier of a DPP schema artifact
- *
+ * <br>
  * <p>A schema is uniquely identified by the subject type it defines and its
  * semantic version within that subject type.</p>
  *

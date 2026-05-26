@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 from ..core.state import PlatformStatus
@@ -31,3 +31,20 @@ class SeedSchemasRequest(BaseModel):
 class SeedSchemasSummary(BaseModel):
     loaded: List[str]
     failed: List[str]
+
+class LogLine(BaseModel):
+    timestamp: str
+    level: str
+    message: str
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+class ScenarioStep(BaseModel):
+    name: str
+    status: str
+    error: Optional[str] = None
+
+class ScenarioStatus(BaseModel):
+    scenario_id: str
+    status: str
+    steps: List[ScenarioStep]
+    report_md: Optional[str] = None

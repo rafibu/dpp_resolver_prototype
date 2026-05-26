@@ -22,6 +22,6 @@ export class PlatformService {
   }
 
   reviseDpp(platformUrl: string, dppId: string, request: ReviseRequest): Observable<DppDetail> {
-    return this.http.post<DppDetail>(`${platformUrl}/dpps/${dppId}/revisions`, request);
+    return this.http.post<DppDetail>(`${platformUrl}/dpps/${dppId}`, request);
   }
 }

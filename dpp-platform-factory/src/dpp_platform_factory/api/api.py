@@ -1,27 +1,30 @@
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api_models import (
     FederationOverview,
+    LogLine,
     PlatformInfo,
     PlatformSpawnRequest,
     ResolverInfo,
+    ScenarioStatus,
     SeedSchemasRequest,
     SeedSchemasSummary,
 )
-from ..utils.bootstrap import bootstrap
-from ..utils.config import load_config
-from ..infrastructure.docker_client import DockerClient
 from ..core.platform_service import PlatformService
 from ..core.schema_seed_service import SchemaSeedService
-from ..utils.shutdown import shutdown
 from ..core.state import FactoryState, PlatformRecord
-from fastapi.middleware.cors import CORSMiddleware
+from ..infrastructure.docker_client import DockerClient
+from ..utils.bootstrap import bootstrap
+from ..utils.config import load_config
+from ..utils.shutdown import shutdown
 
 # Global state / singleton-ish
 state: FactoryState = FactoryState()
@@ -243,3 +246,66 @@ async def seed_schemas(
         raise HTTPException(status_code=503 if "Resolver" in str(e) else 500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/platforms/{platform_id}/logs", response_model=List[LogLine])
+async def get_platform_logs(
+    platform_id: str,
+    lines: int = 200,
+    service: PlatformService = Depends(get_platform_service),
+    docker: DockerClient = Depends(get_docker_client),
+):
+    record = await service.get_platform(platform_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Platform {platform_id} not found")
+    try:
+        container = docker._client.containers.get(record.container_id)
+        raw_logs: bytes = container.logs(tail=lines, timestamps=False)
+        result: List[LogLine] = []
+        for raw_line in raw_logs.decode("utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+                ts = str(parsed.get("timestamp", parsed.get("time", parsed.get("ts", ""))))
+                level = str(parsed.get("level", parsed.get("severity", "INFO"))).upper()
+                msg = str(parsed.get("message", parsed.get("event", parsed.get("msg", line))))
+                extra = {k: v for k, v in parsed.items() if k not in ("timestamp", "time", "ts", "level", "severity", "message", "event", "msg")}
+                result.append(LogLine(timestamp=ts, level=level, message=msg, extra=extra))
+            except (json.JSONDecodeError, ValueError):
+                result.append(LogLine(timestamp="", level="INFO", message=line))
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+_scenario_states: Dict[str, ScenarioStatus] = {}
+
+
+@app.post("/scenarios/{scenario_id}", response_model=ScenarioStatus)
+async def run_scenario(scenario_id: str):
+    if scenario_id not in ("s1", "s2"):
+        raise HTTPException(status_code=404, detail=f"Unknown scenario: {scenario_id}")
+    status = ScenarioStatus(
+        scenario_id=scenario_id,
+        status="pending",
+        steps=[],
+        report_md=None,
+    )
+    _scenario_states[scenario_id] = status
+    return status
+
+
+@app.get("/scenarios/{scenario_id}/status", response_model=ScenarioStatus)
+async def get_scenario_status(scenario_id: str):
+    if scenario_id not in ("s1", "s2"):
+        raise HTTPException(status_code=404, detail=f"Unknown scenario: {scenario_id}")
+    if scenario_id not in _scenario_states:
+        return ScenarioStatus(
+            scenario_id=scenario_id,
+            status="pending",
+            steps=[],
+            report_md=None,
+        )
+    return _scenario_states[scenario_id]

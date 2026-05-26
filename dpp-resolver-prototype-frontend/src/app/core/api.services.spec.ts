@@ -59,9 +59,9 @@ describe('API Services', () => {
     it('should get schema', () => {
       const service = TestBed.inject(ResolverService);
       service.getSchema('http://resolver', 'type1', 1, 0).subscribe();
-      const req = httpMock.expectOne(`http://resolver/schemas/type1/1.0`);
+      const req = httpMock.expectOne(`http://resolver/schemas/type1/1/0`);
       expect(req.request.method).toBe('GET');
-      req.flush({});
+      req.flush({ schemaDocument: {} });
     });
   });
 });

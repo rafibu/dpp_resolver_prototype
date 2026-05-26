@@ -113,9 +113,7 @@ export class DppEditorComponent implements OnInit {
       if (!resUrl) return;
 
       // Extract type and version from schema_ref (e.g. pv_module/1.0)
-      const parts = rev.schema_ref.split('/');
-      const type = parts[0];
-      const version = parts[1];
+      const [type, version] = rev.schema_ref.split('/');
       const [major, minor] = version.split('.');
 
       this.resolverService.getSchema(resUrl, type, +major, +minor).subscribe(schema => {
@@ -136,11 +134,13 @@ export class DppEditorComponent implements OnInit {
 
     try {
       const payload = JSON.parse(this.code());
+      const [schemaType, schemaVer] = rev.schema_ref.split('/');
+      const [major, minor] = schemaVer.split('.').map(Number);
       this.federationService.getPlatformById(pId).subscribe(p => {
         if (!p) return;
         this.platformService.reviseDpp(p.external_url, dId, {
-          schema_ref: rev.schema_ref,
-          payload
+          schema_version: { subject_type: schemaType, major_version: major, minor_version: minor },
+          dpp_payload: payload
         }).subscribe({
           next: () => {
             this.toastService.success('Revision submitted successfully');

@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS dpp_schema
     minor_version     INTEGER                     NOT NULL,
     subject_type_name VARCHAR(255)                NOT NULL,
     schema_document   JSONB                       NOT NULL,
-    published_at      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-    CONSTRAINT pk_dpp_schema PRIMARY KEY (major_version, minor_version, subject_type_name),
+    CONSTRAINT PK_DPP_SCHEMA PRIMARY KEY (major_version, minor_version, subject_type_name),
     CONSTRAINT FK_DPP_SCHEMA_ON_SUBJECT_TYPE FOREIGN KEY (subject_type_name) REFERENCES subject_type (name)
 );
 
@@ -33,10 +32,11 @@ CREATE TABLE IF NOT EXISTS dpp_revision
     dpp_document         JSONB                       NOT NULL,
     hashed_document      BYTEA                       NOT NULL,
     created_at           TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-    CONSTRAINT pk_dpp_revision PRIMARY KEY (dpp_version, dpp_id),
+    CONSTRAINT PK_DPP_REVISION PRIMARY KEY (dpp_version, dpp_id),
     CONSTRAINT FK_DPP_REVISION_ON_LOGICAL_DPP FOREIGN KEY (dpp_id) REFERENCES logical_dpp (dpp_id),
     CONSTRAINT FK_DPP_REVISION_ON_DPP_SCHEMA FOREIGN KEY (schema_major_version, schema_minor_version, subject_type_name) REFERENCES dpp_schema (major_version, minor_version, subject_type_name),
     CONSTRAINT FK_DPP_REVISION_ON_SUBJECT_TYPE FOREIGN KEY (subject_type_name) REFERENCES subject_type (name),
+    -- Check constraints, the version must be positive and unique for a given logical DPP (Invariant 1)
     CONSTRAINT CHK_VERSION_POSITIVE CHECK (dpp_version > 0),
     CONSTRAINT DPP_ID_VERSION_UNIQUE UNIQUE (dpp_id, dpp_version)
 );

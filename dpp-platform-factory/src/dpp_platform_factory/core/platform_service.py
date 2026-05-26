@@ -194,7 +194,7 @@ class PlatformService:
         if not record:
             raise KeyError(f"Platform {platform_id} not found")
         
-        url = f"http://{record.container_id}:8080/admin/cache"
+        url = f"{record.internal_url}/admin/cache"
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)
             response.raise_for_status()

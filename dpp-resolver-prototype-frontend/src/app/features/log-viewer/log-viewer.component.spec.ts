@@ -1,8 +1,10 @@
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { LogViewerComponent } from './log-viewer.component';
 import { FactoryService } from '../../core/factory.service';
+import { PollingService } from '../../core/polling.service';
 import { of, BehaviorSubject } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
+import { signal } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('LogViewerComponent', () => {
@@ -19,10 +21,20 @@ describe('LogViewerComponent', () => {
       ]))
     };
 
+    const pollingServiceSpy = {
+      register: vi.fn((cb: () => void) => { cb(); return () => {}; }),
+      reportSuccess: vi.fn(),
+      reportError: vi.fn(),
+      isTabActive: signal(true),
+      lastSuccess: signal<Date | null>(null),
+      hasError: signal(false)
+    };
+
     await TestBed.configureTestingModule({
       imports: [LogViewerComponent],
       providers: [
         { provide: FactoryService, useValue: factoryServiceSpy },
+        { provide: PollingService, useValue: pollingServiceSpy },
         {
           provide: ActivatedRoute,
           useValue: {

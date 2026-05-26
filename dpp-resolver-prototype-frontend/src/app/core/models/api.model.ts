@@ -4,6 +4,51 @@ export interface SpawnSpec {
   subject_types: string[];
 }
 
+export interface SchemaVersion {
+  subject_type: string;
+  major_version: number;
+  minor_version: number;
+}
+
+export interface IssueRequest {
+  dpp_id?: string;
+  schema_version: SchemaVersion;
+  dpp_payload: any;
+}
+
+export interface ReviseRequest {
+  schema_version: SchemaVersion;
+  dpp_payload: any;
+}
+
+export interface DppRevision {
+  version: number;
+  schema_ref: string;
+  hash: string;
+  timestamp: string;
+  payload: any;
+}
+
+export interface DppDetail {
+  dpp_id: string;
+  subject_type: string;
+  revisions: DppRevision[];
+}
+
+export interface DppSummary {
+  dpp_id: string;
+  subject_type: string;
+  current_version: number;
+  last_updated: string;
+}
+
+export interface SchemaInfo {
+  subject_type: string;
+  major: number;
+  minor: number;
+  schema: any;
+}
+
 export interface LogLine {
   timestamp: string;
   level: string;
@@ -27,44 +72,4 @@ export interface ScenarioStep {
 export interface ScenarioResult {
   scenario_id: string;
   report_md: string;
-}
-
-export interface DppSummary {
-  dpp_id: string;
-  current_version: number;
-  subject_type: string;
-  last_updated: string;
-}
-
-export interface DppRevision {
-  version: number;
-  schema_ref: string;
-  hash: string;
-  timestamp: string;
-  payload: any;
-}
-
-export interface DppDetail {
-  dpp_id: string;
-  subject_type: string;
-  revisions: DppRevision[];
-}
-
-export interface IssueRequest {
-  dpp_id: string;
-  subject_type: string;
-  schema_ref: string;
-  payload: any;
-}
-
-export interface ReviseRequest {
-  schema_ref: string;
-  payload: any;
-}
-
-export interface SchemaInfo {
-  subject_type: string;
-  major: number;
-  minor: number;
-  schema: any;
 }

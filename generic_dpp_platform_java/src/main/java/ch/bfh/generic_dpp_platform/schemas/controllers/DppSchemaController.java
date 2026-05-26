@@ -33,7 +33,7 @@ public class DppSchemaController {
         return ResponseEntity.ok(dppSchemaService.getExactSchema(subjectType, major, minor));
     }
 
-    @PostMapping("/{subjectType}/sync")
+    @PostMapping("/{subjectType}/cacheSchema")
     public ResponseEntity<Void> syncSchemaManually(@PathVariable String subjectType){
         log.info("Syncing schema for subject type: {}", subjectType);
         resolverConnector.syncSchema(subjectType);

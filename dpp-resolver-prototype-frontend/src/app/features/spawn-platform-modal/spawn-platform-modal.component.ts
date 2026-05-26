@@ -55,10 +55,12 @@ export class SpawnPlatformModalComponent implements OnInit {
     );
   }
 
+  public isIssuerIdValid(): boolean {
+    return /^[a-z0-9-]+$/.test(this.issuerId());
+  }
+
   public isValid(): boolean {
-    const issuerValid = /^[a-z0-9-]+$/.test(this.issuerId());
-    const typesValid = this.selectedSubjectTypes().length > 0;
-    return issuerValid && typesValid;
+    return this.isIssuerIdValid() && this.selectedSubjectTypes().length > 0;
   }
 
   public onSubmit(): void {
