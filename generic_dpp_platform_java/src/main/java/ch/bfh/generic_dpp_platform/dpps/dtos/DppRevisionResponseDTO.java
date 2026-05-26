@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 
 /**
+ * DTO for DPP revision response if successful.
  *
  * @author rbu on 02.05.2026
  */

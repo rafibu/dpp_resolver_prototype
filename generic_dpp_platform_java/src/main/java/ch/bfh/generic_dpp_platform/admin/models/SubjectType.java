@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
+ * All Subject Types which are supported by the platform must be stored in this table.
+ * Their name is used as the identifier and must match the name in the resolver exactly.
  *
  * @author rbu on 21.04.2026
  */

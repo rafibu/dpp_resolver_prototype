@@ -3,11 +3,7 @@ package ch.bfh.generic_dpp_platform.dpps.services;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppCycleDetectedException;
-import ch.bfh.generic_dpp_platform.dpps.models.DppReference;
-import ch.bfh.generic_dpp_platform.dpps.models.DppRevision;
-import ch.bfh.generic_dpp_platform.dpps.models.DppRevisionId;
-import ch.bfh.generic_dpp_platform.dpps.models.ReferencedDppRevision;
-import ch.bfh.generic_dpp_platform.dpps.models.ReferencedDppRevisionId;
+import ch.bfh.generic_dpp_platform.dpps.models.*;
 import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
 import ch.bfh.generic_dpp_platform.dpps.utils.DppReferenceExtractor;
 import ch.bfh.generic_dpp_platform.dpps.utils.DppUtil;
@@ -19,18 +15,21 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * First implementation of Cycle Detection on Instance Level.<br>
- * This is not necessary to check anymore since Invariant 6 checks for cycles on schema level.<br>
- *
+ * As can be seen in this implementation, the cycle detection is quite expensive. Therefore, we suggest using our current approach of doing the cycle detection on schema level.
+ * <br>
  * Service for bounded hard-dependency cycle detection.
  * Traverses at most 3 dependency rounds to detect cycles.
+ * <br>
+ *
+ * @author rbu on 21.04.2026
+ * @deprecated This service is no longer used as Invariant 6 ensures cycle detection on schema level.
  */
+@Deprecated
 @Slf4j
 @Service
-@Deprecated
 @RequiredArgsConstructor
 public class DppCycleDetectionService {
 
@@ -49,12 +48,13 @@ public class DppCycleDetectionService {
      * to avoid traversing the entire federated DPP network.
      * Cycles deeper than 3 dependency rounds are not guaranteed to be detected.
      *
-     * @param subjectType   The subject type of the candidate.
-     * @param dppId         The DPP ID of the candidate.
-     * @param version       The version of the candidate.
+     * @param subjectType    The subject type of the candidate.
+     * @param dppId          The DPP ID of the candidate.
+     * @param version        The version of the candidate.
      * @param initialPayload The payload of the candidate revision.
      * @throws DppCycleDetectedException if a cycle is detected within 3 rounds.
      */
+    @SuppressWarnings("unused")
     public void detectCycles(String subjectType, String dppId, int version, Map<String, Object> initialPayload) {
         log.info("Starting bounded cycle detection for {}/{} version {} (max rounds: {})", subjectType, dppId, version, MAX_ROUNDS);
 

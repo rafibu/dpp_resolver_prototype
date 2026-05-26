@@ -12,9 +12,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.NoSuchElementException;
 
 /**
+ * <p>
+ * Controller for DPPs. This controller contains all read operations used by other platforms (to operationalize resolve()),
+ * as well as the two write operations issue() and revise() as described in the operation system.
+ * </p>
  *
  * @author rbu on 02.05.2026
  */
@@ -35,11 +38,7 @@ public class DppController {
     @GetMapping("/{dpp_id}")
     public ResponseEntity<DppDetailDTO> getDppDetail(@PathVariable String dpp_id) {
         log.info("Retrieving DPP detail for dpp_id: {}", dpp_id);
-        try {
-            return ResponseEntity.ok(dppRevisionService.getDppDetail(dpp_id));
-        } catch (NoSuchElementException e) {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(dppRevisionService.getDppDetail(dpp_id));
     }
 
     @GetMapping("/{dpp_id}/{revision_version}")

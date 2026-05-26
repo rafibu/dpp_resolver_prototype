@@ -1,10 +1,8 @@
 package ch.bfh.generic_dpp_platform.dpps;
 
 import ch.bfh.generic_dpp_platform.ControllerTest;
-import ch.bfh.generic_dpp_platform.admin.dtos.PlatformConfigDTO;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
-import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
@@ -17,10 +15,10 @@ import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
 import java.util.Map;
@@ -32,6 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+@Disabled("The cycle detection service is disabled on platform level since we describe schema graph acyclicity (Invariant 6)")
 public class DppCycleDetectionIntegrationTest extends ControllerTest {
 
     @MockitoBean
@@ -49,10 +48,6 @@ public class DppCycleDetectionIntegrationTest extends ControllerTest {
     @Autowired
     private DppSchemaRepository dppSchemaRepository;
 
-    @Autowired
-    private PlatformConfigService platformConfigService;
-
-    private static final String ISSUER_ID = "issuerA";
     private static final String SUBJECT_TYPE = "battery";
 
     @BeforeEach
@@ -121,7 +116,7 @@ public class DppCycleDetectionIntegrationTest extends ControllerTest {
         request.setSchemaVersion(new DppRevisionSchemaDTO("battery", 1, 0));
         request.setDppPayload(Map.of("name", "My Battery", "$ref", "battery/issuerB-001", "version", 1));
 
-        mvc.perform(post("/dpps")
+        mvc.perform(post("/dpps/issue")
                 .contentType("application/json")
                 .content(toJson(request)))
                 .andDo(print())
@@ -155,7 +150,7 @@ public class DppCycleDetectionIntegrationTest extends ControllerTest {
         request.setSchemaVersion(new DppRevisionSchemaDTO("battery", 1, 0));
         request.setDppPayload(Map.of("$ref", "battery/issuerB-001", "version", 1));
 
-        mvc.perform(post("/dpps")
+        mvc.perform(post("/dpps/issue")
                 .contentType("application/json")
                 .content(toJson(request)))
                 .andDo(print())
@@ -180,7 +175,7 @@ public class DppCycleDetectionIntegrationTest extends ControllerTest {
         request.setSchemaVersion(new DppRevisionSchemaDTO("battery", 1, 0));
         request.setDppPayload(Map.of("$ref", "battery/issuerB-001")); // SOFT reference
 
-        mvc.perform(post("/dpps")
+        mvc.perform(post("/dpps/issue")
                 .contentType("application/json")
                 .content(toJson(request)))
                 .andExpect(status().isCreated());
@@ -231,7 +226,7 @@ public class DppCycleDetectionIntegrationTest extends ControllerTest {
         request.setSchemaVersion(new DppRevisionSchemaDTO("battery", 1, 0));
         request.setDppPayload(Map.of("$ref", "battery/issuerB-001", "version", 1));
 
-        mvc.perform(post("/dpps")
+        mvc.perform(post("/dpps/issue")
                 .contentType("application/json")
                 .content(toJson(request)))
                 .andExpect(status().isCreated());

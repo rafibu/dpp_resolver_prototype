@@ -7,6 +7,9 @@ import lombok.*;
 import java.io.Serial;
 import java.io.Serializable;
 
+/**
+ * Composite key for DPP revisions.
+ */
 @Getter
 @Setter
 @EqualsAndHashCode

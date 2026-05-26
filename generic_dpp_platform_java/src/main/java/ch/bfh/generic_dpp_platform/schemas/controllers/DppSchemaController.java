@@ -34,9 +34,9 @@ public class DppSchemaController {
     }
 
     @PostMapping("/{subjectType}/cacheSchema")
-    public ResponseEntity<Void> syncSchemaManually(@PathVariable String subjectType){
-        log.info("Syncing schema for subject type: {}", subjectType);
-        resolverConnector.syncSchema(subjectType);
+    public ResponseEntity<Void> cacheSchemaManually(@PathVariable String subjectType){
+        log.info("Caching new schemas for subject type: {}", subjectType);
+        resolverConnector.cacheSchema(subjectType);
         return ResponseEntity.ok().build();
     }
 

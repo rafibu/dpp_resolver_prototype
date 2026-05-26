@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 
 /**
  * Summary of a logical DPP as returned by GET /dpps.
+ *
+ * @author rbu on 21.04.2026
  */
 @Data
 @Builder

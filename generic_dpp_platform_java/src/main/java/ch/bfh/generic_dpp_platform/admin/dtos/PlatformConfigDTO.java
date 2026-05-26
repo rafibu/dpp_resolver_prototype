@@ -3,6 +3,7 @@ package ch.bfh.generic_dpp_platform.admin.dtos;
 import lombok.Data;
 
 /**
+ * DTO for platform configuration, used for initialization in the factory
  *
  * @author rbu on 21.04.2026
  */

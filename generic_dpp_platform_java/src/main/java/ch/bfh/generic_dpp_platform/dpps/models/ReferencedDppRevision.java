@@ -9,7 +9,10 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * Cache entity for external DPP revisions fetched from other platforms.
+ * Cache entity for external DPP revisions fetched from other platforms to simplify the DPP references resolution process.
+ * While they have the same data as {@link DppRevision}, they are stored in a different table.
+ * These revisions are used for caching and do not affect the main DPP revisions. They can be removed without impacting the DPP functionality.
+ * In the current implementation these revisions are removed after 7 days.
  */
 @Getter
 @Setter

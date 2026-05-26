@@ -9,7 +9,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- *
+ * <p>
+ * Helper Endpoint to register new Subject Types.
+ * This is not part of the operation system, as it could also be done on initialization, or with direct DB inputs.
+ * </p>
  * @author rbu on 21.04.2026
  */
 @Slf4j

@@ -6,7 +6,6 @@ import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppReferenceResolutionException;
 import ch.bfh.generic_dpp_platform.schemas.dtos.DppSchemaDTO;
-import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
 import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,7 +24,6 @@ import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -75,10 +73,14 @@ class ResolverConnectorTest {
     }
 
     @Test
-    void syncSchema_Success() throws Exception {
+    void cacheSchema_Success() throws Exception {
         String typeName = "TestType";
         DppSchemaDTO s1 = DppSchemaDTO.builder()
-                .majorVersion(1).minorVersion(0).publishedAt(Instant.now()).schemaDocument(Map.of("type", "object"))
+                .subjectType(typeName)
+                .majorVersion(1)
+                .minorVersion(0)
+                .publishedAt(Instant.now())
+                .schemaDocument(Map.of("type", "object"))
                 .build();
         DppSchemaDTO[] remoteSchemas = {s1};
 
@@ -86,9 +88,9 @@ class ResolverConnectorTest {
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(mapper.writeValueAsString(remoteSchemas), MediaType.APPLICATION_JSON));
 
-        resolverConnector.syncSchema(typeName);
+        resolverConnector.cacheSchema(typeName);
 
-        assertTrue(dppSchemaRepository.existsById(new DppSchemaId(0, 1, typeName)));
+        assertTrue(dppSchemaRepository.existsById(new DppSchemaId(1, 0, typeName)));
         mockServer.verify();
     }
 
@@ -124,14 +126,13 @@ class ResolverConnectorTest {
                         .header(HttpHeaders.LOCATION, targetUrl));
 
         // 2. Fetch from resolved URL
-        DppRevisionResponseDTO mockResponse = new DppRevisionResponseDTO();
-        mockResponse.setDppId(dppId);
-        mockResponse.setVersion(version);
-        mockResponse.setDppPayload(Map.of("key", "value"));
+        // Use camelCase JSON: the RestTemplate uses tools.jackson (Jackson 3.x) which does not
+        // recognize the legacy com.fasterxml @JsonNaming annotation, so default naming applies.
+        String responseJson = "{\"dppId\":\"" + dppId + "\",\"version\":" + version + ",\"dppPayload\":{\"key\":\"value\"}}";
 
         mockServer.expect(requestTo(targetUrl))
                 .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess(mapper.writeValueAsString(mockResponse), MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(responseJson, MediaType.APPLICATION_JSON));
 
         DppRevisionResponseDTO result = resolverConnector.resolveDppRevision(subjectType, dppId, version);
 

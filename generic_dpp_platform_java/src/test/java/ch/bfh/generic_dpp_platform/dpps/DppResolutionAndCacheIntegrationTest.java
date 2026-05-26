@@ -1,21 +1,14 @@
 package ch.bfh.generic_dpp_platform.dpps;
 
 import ch.bfh.generic_dpp_platform.ControllerTest;
-import ch.bfh.generic_dpp_platform.TestDatabaseCleaner;
 import ch.bfh.generic_dpp_platform.admin.dtos.SubjectTypeDTO;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
-import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
-import ch.bfh.generic_dpp_platform.dpps.exceptions.DppReferenceResolutionException;
 import ch.bfh.generic_dpp_platform.dpps.models.ReferencedDppRevision;
 import ch.bfh.generic_dpp_platform.dpps.models.ReferencedDppRevisionId;
-import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
-import ch.bfh.generic_dpp_platform.dpps.repositories.LogicalDppRepository;
 import ch.bfh.generic_dpp_platform.dpps.repositories.ReferencedDppRevisionRepository;
-import ch.bfh.generic_dpp_platform.schemas.connectors.ResolverConnector;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
 import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
@@ -24,23 +17,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
-import java.net.URI;
 import java.time.Instant;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -113,7 +100,7 @@ public class DppResolutionAndCacheIntegrationTest extends ControllerTest {
         request.setSchemaVersion(new DppRevisionSchemaDTO(SUBJECT_TYPE, 1, 0));
         request.setDppPayload(Map.of("$ref", "battery/issuerB-001", "version", 1));
 
-        mvc.perform(post("/dpps")
+        mvc.perform(post("/dpps/issue")
                 .contentType("application/json")
                 .content(toJson(request)))
                 .andExpect(status().isFailedDependency());
@@ -144,7 +131,7 @@ public class DppResolutionAndCacheIntegrationTest extends ControllerTest {
         request.setSchemaVersion(new DppRevisionSchemaDTO(SUBJECT_TYPE, 1, 0));
         request.setDppPayload(Map.of("$ref", "battery/issuerB-001", "version", 1));
 
-        mvc.perform(post("/dpps")
+        mvc.perform(post("/dpps/issue")
                 .contentType("application/json")
                 .content(toJson(request)))
                 .andExpect(status().isCreated());

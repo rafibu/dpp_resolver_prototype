@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS dpp_schema
     minor_version     INTEGER                     NOT NULL,
     subject_type_name VARCHAR(255)                NOT NULL,
     schema_document   JSONB                       NOT NULL,
+    published_at      TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT PK_DPP_SCHEMA PRIMARY KEY (major_version, minor_version, subject_type_name),
     CONSTRAINT FK_DPP_SCHEMA_ON_SUBJECT_TYPE FOREIGN KEY (subject_type_name) REFERENCES subject_type (name)
 );

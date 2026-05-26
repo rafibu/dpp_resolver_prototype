@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 /**
  * Service for accessing platform configuration.
  * Configuration is now backed by environment variables through PlatformProperties.
+ *
+ * @author rbu on 21.04.2026
  */
 @Service
 @RequiredArgsConstructor

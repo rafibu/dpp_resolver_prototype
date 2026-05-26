@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
+ * DTO of Revision identifier.
  *
  * @author rbu on 02.05.2026
  */

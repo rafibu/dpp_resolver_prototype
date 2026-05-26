@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
+ * DTO for creating a new revision of a DPP.
  *
  * @author rbu on 02.05.2026
  */

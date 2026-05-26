@@ -3,12 +3,7 @@ package ch.bfh.generic_dpp_platform.dpps.services;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppDetailDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSummaryDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppSummaryDTO;
+import ch.bfh.generic_dpp_platform.dpps.dtos.*;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppAlreadyExistsException;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppReferenceResolutionException;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppRevisionConflictException;
@@ -18,9 +13,9 @@ import ch.bfh.generic_dpp_platform.dpps.repositories.LogicalDppRepository;
 import ch.bfh.generic_dpp_platform.dpps.utils.DppReferenceExtractor;
 import ch.bfh.generic_dpp_platform.dpps.utils.DppUtil;
 import ch.bfh.generic_dpp_platform.schemas.connectors.ResolverConnector;
-import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
+import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,7 +52,7 @@ public class DppRevisionService {
                     .dppId(dpp.getDppId())
                     .subjectType(dpp.getSubjectType().getName())
                     .currentVersion(latest.map(DppRevision::getVersion).orElse(0))
-                    .lastUpdated(latest.map(r -> r.getCreatedAt().toString()).orElse(dpp.getCreatedAt().toString()))
+                    .lastUpdated(latest.map(r -> r.getCreatedAt().toString()).orElse(null))
                     .build();
         }).toList();
     }
@@ -111,8 +106,6 @@ public class DppRevisionService {
                 .orElseThrow(() -> new IllegalArgumentException("Subject type not found: " + requestDTO.getSchemaVersion().getSubjectType()));
         dpp.setSubjectType(subjectType);
 
-        dpp.setCreatedAt(Instant.now());
-
         String dppId = requestDTO.getDppId();
         String issuerId = getIssuerId();
 
@@ -151,15 +144,14 @@ public class DppRevisionService {
         // 1. Extract references
         List<DppReference> references = referenceExtractor.extractReferences(objectMapper.valueToTree(validDppDocument));
 
-        // 2. Resolve/Fetch/Cache hard references
+        // 2. Resolve/Fetch/Cache hard references (Invariant 7, Hard resolvability)
         for (DppReference ref : references) {
             if (ref.type() == DppReference.DependencyType.HARD) {
                 resolveAndCacheHardReference(ref);
             }
         }
 
-        // 3. Bounded hard-cycle detection
-        // Not needed anymore since Invariant 6 checks for cycles on schema level
+        // 3. The hard-cycle detection is done on the federated resolver level when creating the schemas. Therefore, this cycle detection is not needed here. But we left it in to show an alternative approach.
         // cycleDetectionService.detectCycles(logicalDpp.getSubjectType().getName(), logicalDpp.getDppId(), nextRevisionNumber, validDppDocument);
 
         DppRevision newRevision = new DppRevision();
@@ -276,7 +268,6 @@ public class DppRevisionService {
                 .version(dppRevision.getVersion())
                 .schemaRef(schemaRef)
                 .hash(DppUtil.hashToHex(dppRevision.getHashedDocument()))
-                .timestamp(dppRevision.getCreatedAt().toString())
                 .payload(dppRevision.getDppDocument())
                 .build();
     }

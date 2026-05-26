@@ -14,6 +14,30 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
 
+/**
+ * Represents a revision of a Digital Product Passport (DPP). Each revision is identified
+ * by an embedded ID that includes the DPP ID and version. This class is tied to a specific
+ * LogicalDpp entity and its schema, while encapsulating metadata and the actual DPP content.
+ * It ensures the integrity of stored DPP document content by verifying hashed values before
+ * persisting or updating.
+ * <br>
+ * The DppRevision entity includes:
+ * - A composite identifier for the DPP revision (ID and version).
+ * - An association with the corresponding LogicalDpp entity.
+ * - A reference to the associated schema, identified by version and subject type name.
+ * - A JSON-like DPP document payload and its hashed representation for integrity.
+ * - A timestamp for when the revision was created.
+ * <br>
+ * Features:
+ * - The `verifyHashIntegrity` method calculates the hash of the document content on persist/update
+ *   and ensures that it matches the stored hash. If they differ, an exception is thrown to maintain
+ *   data integrity.
+ * - Provides access to the DPP version via the `getVersion` method.
+ * <br>
+ * Constraints:
+ * - The content document (`dppDocument`) is stored as JSON while its integrity is enforced through hashing.
+ * - Associations with other entities, including schemas and logical DPPs, enforce referential integrity.
+ */
 @Slf4j
 @Getter
 @Setter
@@ -53,6 +77,9 @@ public class DppRevision {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /**
+     * Verifies the integrity of the DPP document by calculating its hash and comparing it to the stored value.
+     */
     @PrePersist
     @PreUpdate
     private void verifyHashIntegrity() {

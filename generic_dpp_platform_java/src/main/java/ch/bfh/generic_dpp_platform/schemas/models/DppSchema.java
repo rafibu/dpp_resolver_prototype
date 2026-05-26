@@ -37,4 +37,7 @@ public class DppSchema {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "schema_document", nullable = false, columnDefinition = "jsonb")
     private JsonNode schemaDocument;
+
+    @Column(name = "published_at")
+    private Instant publishedAt;
 }

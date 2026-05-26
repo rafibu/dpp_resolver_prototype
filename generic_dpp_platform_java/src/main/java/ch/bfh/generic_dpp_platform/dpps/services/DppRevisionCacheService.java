@@ -51,7 +51,7 @@ public class DppRevisionCacheService {
             return Optional.empty();
         }
 
-        // Verify hash integrity
+        // Verify hash integrity (Invariant 4)
         byte[] computedHash = DppUtil.hashDocument(revision.getDppDocument());
         if (!Arrays.equals(revision.getHashedDocument(), computedHash)) {
             log.error("Cache integrity violation for {} version {}: expected {}, computed {}. Evicting.",
@@ -76,7 +76,7 @@ public class DppRevisionCacheService {
 
     /**
      * Scheduled job to clean up expired cache entries.
-     * Runs every day.
+     * Runs daily at midnight.
      */
     @Scheduled(cron = "0 0 0 * * *")
     @Transactional

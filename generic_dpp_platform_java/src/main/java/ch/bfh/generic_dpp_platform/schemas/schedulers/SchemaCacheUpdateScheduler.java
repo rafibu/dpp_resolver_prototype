@@ -3,12 +3,10 @@ package ch.bfh.generic_dpp_platform.schemas.schedulers;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.schemas.connectors.ResolverConnector;
-import ch.bfh.generic_dpp_platform.schemas.services.DppSchemaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 
 /**
  *
@@ -33,7 +31,7 @@ public class SchemaCacheUpdateScheduler {
         log.info("Updating schema cache for {} subject types", subjectTypes.length);
         for (String subjectType : subjectTypes) {
             log.info("Syncing schema for subject type: {}", subjectType);
-            resolverConnector.syncSchema(subjectType);
+            resolverConnector.cacheSchema(subjectType);
         }
         log.info("Schema cache update finished");
     }

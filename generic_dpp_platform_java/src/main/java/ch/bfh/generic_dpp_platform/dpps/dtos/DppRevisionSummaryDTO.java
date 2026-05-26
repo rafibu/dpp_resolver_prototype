@@ -8,8 +8,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * A single revision summary inside DppDetailDTO.
- * schema_ref format: "subjectType/major.minor"
+ * Summary of a DPP revision used in the response of GET /dpps/{dppId}/revisions.
+ *
+ * @author rbu on 02.05.2026
  */
 @Data
 @Builder
@@ -20,6 +21,5 @@ public class DppRevisionSummaryDTO {
     private Integer version;
     private String schemaRef;
     private String hash;
-    private String timestamp;
     private Object payload;
 }

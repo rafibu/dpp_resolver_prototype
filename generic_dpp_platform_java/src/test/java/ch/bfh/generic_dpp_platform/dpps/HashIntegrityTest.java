@@ -60,7 +60,6 @@ public class HashIntegrityTest {
         testDpp = new LogicalDpp();
         testDpp.setDppId("issuerA-123");
         testDpp.setSubjectType(st);
-        testDpp.setCreatedAt(Instant.now());
         logicalDppRepository.save(testDpp);
 
         DppSchemaId schemaId = DppSchemaId.builder()
@@ -108,9 +107,7 @@ public class HashIntegrityTest {
         // Setting an obviously wrong hash
         revision.setHashedDocument(new byte[]{1, 2, 3});
 
-        Exception ex = assertThrows(Exception.class, () -> {
-            dppRevisionRepository.saveAndFlush(revision);
-        });
+        Exception ex = assertThrows(Exception.class, () -> dppRevisionRepository.saveAndFlush(revision));
         assertTrue(ex.getMessage().contains("integrity violation"), "Exception message should contain 'integrity violation'");
     }
 
@@ -151,9 +148,7 @@ public class HashIntegrityTest {
         // hashedDocument is still the hash of {"data": "value"}
 
         DppRevision finalRevision = revision;
-        Exception ex = assertThrows(Exception.class, () -> {
-            dppRevisionRepository.saveAndFlush(finalRevision);
-        });
+        Exception ex = assertThrows(Exception.class, () -> dppRevisionRepository.saveAndFlush(finalRevision));
         assertTrue(ex.getMessage().contains("integrity violation"), "Exception message should contain 'integrity violation'");
     }
 

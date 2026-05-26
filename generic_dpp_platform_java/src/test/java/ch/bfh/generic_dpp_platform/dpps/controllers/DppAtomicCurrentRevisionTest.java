@@ -3,7 +3,6 @@ package ch.bfh.generic_dpp_platform.dpps.controllers;
 import ch.bfh.generic_dpp_platform.ControllerTest;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
-import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppDetailDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
@@ -40,9 +39,6 @@ public class DppAtomicCurrentRevisionTest extends ControllerTest {
 
     @Autowired
     private DppSchemaRepository dppSchemaRepository;
-
-    @Autowired
-    private PlatformConfigService platformConfigService;
 
     private static final String ISSUER_ID = "issuerB";
     private static final String SUBJECT_TYPE = "Component";
@@ -83,18 +79,18 @@ public class DppAtomicCurrentRevisionTest extends ControllerTest {
     public void testCurrentRevisionReturnsHighestVersion() throws Exception {
         String dppId = ISSUER_ID + "-atomic-1";
 
-        postResponseAsObject("/dpps", createGson(false).toJson(createRequest(dppId, 1, Map.of("v", 1))), DppRevisionResponseDTO.class);
-        postResponseAsObject("/dpps/" + dppId, createGson(false).toJson(createRequest(dppId, 2, Map.of("v", 2))), DppRevisionResponseDTO.class);
-        postResponseAsObject("/dpps/" + dppId, createGson(false).toJson(createRequest(dppId, 3, Map.of("v", 3))), DppRevisionResponseDTO.class);
+        postResponseAsObject("/dpps/issue", createGson(false).toJson(createRequest(dppId, 1, Map.of("v", 1))), DppRevisionResponseDTO.class);
+        postResponseAsObject("/dpps/" + dppId + "/revise", createGson(false).toJson(createRequest(dppId, 2, Map.of("v", 2))), DppRevisionResponseDTO.class);
+        postResponseAsObject("/dpps/" + dppId + "/revise", createGson(false).toJson(createRequest(dppId, 3, Map.of("v", 3))), DppRevisionResponseDTO.class);
 
         // GET /dpps/:id now returns DppDetailDTO with all revisions
         DppDetailDTO current = getResponseAsObject("/dpps/" + dppId, DppDetailDTO.class);
         assertEquals(3, current.getRevisions().size());
-        assertEquals(3, current.getRevisions().get(current.getRevisions().size() - 1).getVersion());
+        assertEquals(3, current.getRevisions().getLast().getVersion());
 
-        postResponseAsObject("/dpps/" + dppId, createGson(false).toJson(createRequest(dppId, 4, Map.of("v", 4))), DppRevisionResponseDTO.class);
+        postResponseAsObject("/dpps/" + dppId + "/revise", createGson(false).toJson(createRequest(dppId, 4, Map.of("v", 4))), DppRevisionResponseDTO.class);
         current = getResponseAsObject("/dpps/" + dppId, DppDetailDTO.class);
-        assertEquals(4, current.getRevisions().get(current.getRevisions().size() - 1).getVersion());
+        assertEquals(4, current.getRevisions().getLast().getVersion());
 
         // GET /dpps/:id/:version still returns single revision
         DppRevisionResponseDTO v2 = getResponseAsObject("/dpps/" + dppId + "/2", DppRevisionResponseDTO.class);

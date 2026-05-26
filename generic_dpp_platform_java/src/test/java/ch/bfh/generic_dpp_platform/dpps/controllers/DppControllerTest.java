@@ -4,7 +4,6 @@ import ch.bfh.generic_dpp_platform.ControllerTest;
 import ch.bfh.generic_dpp_platform.admin.dtos.SubjectTypeDTO;
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
-import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
@@ -30,9 +29,6 @@ public class DppControllerTest extends ControllerTest {
 
     @Autowired
     private DppSchemaRepository dppSchemaRepository;
-
-    @Autowired
-    private PlatformConfigService platformConfigService;
 
     private static final String ISSUER_ID = "issuerA";
     private static final String SUBJECT_TYPE = "Battery";
@@ -70,7 +66,7 @@ public class DppControllerTest extends ControllerTest {
         DppRevisionRequestDTO request = createRequest(explicitId);
 
         String json = createGson(false).toJson(request);
-        DppRevisionResponseDTO response = sendRequestAndExpectObject(post("/dpps").content(json).contentType("application/json"), DppRevisionResponseDTO.class, HttpStatus.CREATED);
+        DppRevisionResponseDTO response = sendRequestAndExpectObject(post("/dpps/issue").content(json).contentType("application/json"), DppRevisionResponseDTO.class, HttpStatus.CREATED);
 
         assertNotNull(response);
         assertEquals(explicitId, response.getDppId());
@@ -83,10 +79,10 @@ public class DppControllerTest extends ControllerTest {
         DppRevisionRequestDTO request = createRequest(explicitId);
 
         // First issuance
-        postResponseAsObject("/dpps", createGson(false).toJson(request), DppRevisionResponseDTO.class);
+        postResponseAsObject("/dpps/issue", createGson(false).toJson(request), DppRevisionResponseDTO.class);
 
         // Second issuance with same ID
-        postErrorStatusCode("/dpps", createGson(false).toJson(request), HttpStatus.CONFLICT);
+        postErrorStatusCode("/dpps/issue", createGson(false).toJson(request), HttpStatus.CONFLICT);
     }
 
     @Test
@@ -94,14 +90,14 @@ public class DppControllerTest extends ControllerTest {
         String invalidId = "wrongIssuer-123";
         DppRevisionRequestDTO request = createRequest(invalidId);
 
-        postErrorStatusCode("/dpps", createGson(false).toJson(request), HttpStatus.BAD_REQUEST);
+        postErrorStatusCode("/dpps/issue", createGson(false).toJson(request), HttpStatus.BAD_REQUEST);
     }
 
     @Test
     public void testCreateDppWithoutExplicitId_GeneratesId() throws Exception {
         DppRevisionRequestDTO request = createRequest(null);
 
-        DppRevisionResponseDTO response = postResponseAsObject("/dpps", createGson(false).toJson(request), DppRevisionResponseDTO.class);
+        DppRevisionResponseDTO response = postResponseAsObject("/dpps/issue", createGson(false).toJson(request), DppRevisionResponseDTO.class);
 
         assertNotNull(response);
         assertTrue(response.getDppId().startsWith(ISSUER_ID));

@@ -2,6 +2,8 @@ package ch.bfh.generic_dpp_platform.dpps.controllers;
 
 import ch.bfh.generic_dpp_platform.ControllerTest;
 import ch.bfh.generic_dpp_platform.admin.dtos.ApiError;
+import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
+import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
 import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
@@ -9,9 +11,6 @@ import ch.bfh.generic_dpp_platform.dpps.repositories.LogicalDppRepository;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
 import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
-import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
-import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
-import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,8 +22,8 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 public class DppErrorHandlingIntegrationTest extends ControllerTest {
 
@@ -39,9 +38,6 @@ public class DppErrorHandlingIntegrationTest extends ControllerTest {
 
     @Autowired
     private DppSchemaRepository dppSchemaRepository;
-
-    @Autowired
-    private PlatformConfigService platformConfigService;
 
     private static final String ISSUER_ID = "issuerA";
     private static final String SUBJECT_TYPE = "Battery";
@@ -95,7 +91,7 @@ public class DppErrorHandlingIntegrationTest extends ControllerTest {
                 .build();
 
         String json = createGson(false).toJson(request);
-        ApiError error = sendRequestAndExpectObject(post("/dpps").content(json).contentType("application/json"), ApiError.class, HttpStatus.BAD_REQUEST);
+        ApiError error = sendRequestAndExpectObject(post("/dpps/issue").content(json).contentType("application/json"), ApiError.class, HttpStatus.BAD_REQUEST);
 
         assertNotNull(error);
         assertEquals("Schema Validation Failed", error.getError());
@@ -103,7 +99,7 @@ public class DppErrorHandlingIntegrationTest extends ControllerTest {
         assertTrue(error.getDetails().stream().anyMatch(d -> d.contains("serialNumber")),
                 "Expected error about serialNumber, but got: " + error.getDetails());
         assertNotNull(error.getTimestamp());
-        assertEquals("/dpps", error.getPath());
+        assertEquals("/dpps/issue", error.getPath());
     }
 
     @Test
@@ -118,7 +114,7 @@ public class DppErrorHandlingIntegrationTest extends ControllerTest {
                 .build();
 
         String json = createGson(false).toJson(request);
-        ApiError error = sendRequestAndExpectObject(post("/dpps").content(json).contentType("application/json"), ApiError.class, HttpStatus.BAD_REQUEST);
+        ApiError error = sendRequestAndExpectObject(post("/dpps/issue").content(json).contentType("application/json"), ApiError.class, HttpStatus.BAD_REQUEST);
 
         assertNotNull(error);
         assertEquals("Invalid Argument", error.getError());
@@ -149,10 +145,10 @@ public class DppErrorHandlingIntegrationTest extends ControllerTest {
 
         String json = createGson(false).toJson(request);
         // First creation
-        sendRequestAndExpectObject(post("/dpps").content(json).contentType("application/json"), Map.class, HttpStatus.CREATED);
+        sendRequestAndExpectObject(post("/dpps/issue").content(json).contentType("application/json"), Map.class, HttpStatus.CREATED);
 
         // Duplicate creation
-        ApiError error = sendRequestAndExpectObject(post("/dpps").content(json).contentType("application/json"), ApiError.class, HttpStatus.CONFLICT);
+        ApiError error = sendRequestAndExpectObject(post("/dpps/issue").content(json).contentType("application/json"), ApiError.class, HttpStatus.CONFLICT);
 
         assertNotNull(error);
         assertEquals("DPP Already Exists", error.getError());

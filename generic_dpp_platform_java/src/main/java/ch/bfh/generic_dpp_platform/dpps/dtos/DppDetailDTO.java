@@ -11,6 +11,8 @@ import java.util.List;
 
 /**
  * Full DPP detail with all revisions as returned by GET /dpps/:id.
+ *
+ * @author rbu on 21.04.2026
  */
 @Data
 @Builder

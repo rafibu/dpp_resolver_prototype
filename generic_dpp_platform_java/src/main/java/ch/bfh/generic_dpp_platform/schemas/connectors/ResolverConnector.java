@@ -6,31 +6,31 @@ import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
 import ch.bfh.generic_dpp_platform.dpps.exceptions.DppReferenceResolutionException;
-import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import ch.bfh.generic_dpp_platform.schemas.dtos.DppSchemaDTO;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
+import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.List;
 
 /**
+ * This class is responsible for interacting with the Resolver service
+ * to synchronize schema data, resolve DPP revisions, and resolve DPP revision URLs.
+ * It communicates with external services using HTTP requests.
  *
- * @author rbu on 21.04.2026
+ * @author rbu on 20.04.2026
  */
 @Slf4j
 @Component
@@ -59,10 +59,11 @@ public class ResolverConnector {
 
     /**
      * Fetches and stores the latest schema for a given subject type.
+     * The method works as is explained in the operation system (Section 5).
      * @param subjectType The subject type to synchronize.
      */
     @Transactional
-    public void syncSchema(String subjectType) {
+    public void cacheSchema(String subjectType) {
         PlatformConfigDTO platformConfig = configService.getPlatformConfig();
         String resolverBaseUrl = platformConfig.getResolverBaseUrl();
 

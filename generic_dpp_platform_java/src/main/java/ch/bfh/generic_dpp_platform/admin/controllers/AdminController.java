@@ -26,6 +26,5 @@ public class AdminController {
     public void reset() {
         // Clear all data for a clean start in scenarios
         cacheRepository.deleteAll();
-        // We might want to clear other things too, but cache is key for S1
     }
 }

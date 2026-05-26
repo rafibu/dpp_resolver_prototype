@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Structured API error response.
+ * Structured API error response, used in the {@link ch.bfh.generic_dpp_platform.admin.controllers.GlobalExceptionHandler GlobalExceptionHandler}
  */
 @Data
 @Builder

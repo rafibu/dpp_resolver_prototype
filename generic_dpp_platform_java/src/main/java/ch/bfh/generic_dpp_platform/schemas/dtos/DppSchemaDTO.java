@@ -23,4 +23,5 @@ public class DppSchemaDTO {
     Integer majorVersion;
     Integer minorVersion;
     Object schemaDocument;
+    Instant publishedAt;
 }
