@@ -40,7 +40,7 @@ async def test_failed_resolution_returns_424(
     )
 
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "schema_version": _SCHEMA_VERSION,
             "dpp_payload": payload_with_ref,
@@ -79,7 +79,7 @@ async def test_cache_hit_avoids_resolver_call(
     }
 
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "schema_version": _SCHEMA_VERSION,
             "dpp_payload": payload_with_cached_ref,
@@ -87,6 +87,6 @@ async def test_cache_hit_avoids_resolver_call(
     )
 
     assert response.status_code == 201
-    
+
     # Verify no outgoing requests were made (because of cache hit)
     assert len(httpx_mock.get_requests()) == 0

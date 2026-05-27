@@ -18,23 +18,23 @@ async def test_current_revision_returns_highest_version(
         "dpp_payload": VALID_PV_PAYLOAD,
     }
 
-    r1 = await http_client.post("/dpps", json=base)
+    r1 = await http_client.post("/dpps/issue", json=base)
     assert r1.status_code == 201
 
-    r2 = await http_client.post(f"/dpps/{_DPP_ID}", json=base)
+    r2 = await http_client.post(f"/dpps/{_DPP_ID}/revise", json=base)
     assert r2.status_code == 201
 
-    r3 = await http_client.post(f"/dpps/{_DPP_ID}", json=base)
+    r3 = await http_client.post(f"/dpps/{_DPP_ID}/revise", json=base)
     assert r3.status_code == 201
 
-    # GET /dpps/:id now returns DppDetailDTO with all revisions
+    # GET /dpps/:id returns DppDetailDTO with all revisions
     current = await http_client.get(f"/dpps/{_DPP_ID}")
     assert current.status_code == 200
     revisions = current.json()["revisions"]
     assert len(revisions) == 3
     assert revisions[-1]["version"] == 3
 
-    r4 = await http_client.post(f"/dpps/{_DPP_ID}", json=base)
+    r4 = await http_client.post(f"/dpps/{_DPP_ID}/revise", json=base)
     assert r4.status_code == 201
 
     current_after = await http_client.get(f"/dpps/{_DPP_ID}")

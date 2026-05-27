@@ -12,7 +12,7 @@ async def test_create_dpp_with_explicit_id_success(
     http_client: AsyncClient, test_db: AsyncIOMotorDatabase, pv_setup
 ):
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "dpp_id": "issuerA-123",
             "schema_version": _SCHEMA_VERSION,
@@ -34,10 +34,10 @@ async def test_create_dpp_with_duplicate_explicit_id_conflict(
         "schema_version": _SCHEMA_VERSION,
         "dpp_payload": VALID_PV_PAYLOAD,
     }
-    first = await http_client.post("/dpps", json=payload)
+    first = await http_client.post("/dpps/issue", json=payload)
     assert first.status_code == 201
 
-    second = await http_client.post("/dpps", json=payload)
+    second = await http_client.post("/dpps/issue", json=payload)
     assert second.status_code == 409
     assert second.json()["error"] == "DPP Already Exists"
 
@@ -47,7 +47,7 @@ async def test_create_dpp_with_invalid_issuer_prefix_bad_request(
     http_client: AsyncClient, test_db: AsyncIOMotorDatabase, pv_setup
 ):
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "dpp_id": "wrongIssuer-999",
             "schema_version": _SCHEMA_VERSION,
@@ -62,7 +62,7 @@ async def test_create_dpp_without_explicit_id_generates_id(
     http_client: AsyncClient, test_db: AsyncIOMotorDatabase, pv_setup
 ):
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "schema_version": _SCHEMA_VERSION,
             "dpp_payload": VALID_PV_PAYLOAD,

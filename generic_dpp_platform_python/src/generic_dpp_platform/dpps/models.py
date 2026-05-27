@@ -55,7 +55,6 @@ class DppRevisionSummary(BaseModel):
     version: int
     schema_ref: str
     hash: str
-    timestamp: str
     payload: dict
 
 

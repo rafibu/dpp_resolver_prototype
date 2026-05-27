@@ -8,7 +8,7 @@ async def test_get_platform_config_returns_seeded_values(http_client: AsyncClien
     assert response.status_code == 200
     body = response.json()
     assert body["platform_name"] == "Test Platform"
-    assert body["issuer_id"] == "test-issuer"
+    assert body["issuer_id"] == "issuerA"
     assert body["base_url"] == "http://localhost:8082"
     assert body["resolver_base_url"] == "http://resolver:8080"
 
@@ -32,4 +32,4 @@ async def test_put_platform_config_partial_update_preserves_other_fields(http_cl
     response = await http_client.get("/admin/platform-config")
     body = response.json()
     assert body["platform_name"] == "Partial Update"
-    assert body["issuer_id"] == "test-issuer"
+    assert body["issuer_id"] == "issuerA"

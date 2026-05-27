@@ -108,8 +108,8 @@ async def test_get_exact_schema_unknown_subject_type_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_sync_schema_unknown_subject_type_returns_400(
+async def test_cache_schema_unknown_subject_type_returns_400(
     http_client: AsyncClient,
 ) -> None:
-    response = await http_client.post("/schemas/no_such_type/sync")
+    response = await http_client.post("/schemas/no_such_type/cacheSchema")
     assert response.status_code == 400

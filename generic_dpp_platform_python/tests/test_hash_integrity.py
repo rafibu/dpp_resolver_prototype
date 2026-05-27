@@ -35,7 +35,7 @@ async def test_response_hash_is_hex_and_recomputable(
     http_client, test_db: AsyncIOMotorDatabase, pv_setup
 ):
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "schema_version": {"subject_type": "pv_module", "major_version": 1, "minor_version": 0},
             "dpp_payload": VALID_PV_PAYLOAD,
@@ -56,7 +56,7 @@ async def test_revision_endpoint_hash_consistency(
     http_client, test_db: AsyncIOMotorDatabase, pv_setup
 ):
     create_resp = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "dpp_id": "issuerA-hash-test",
             "schema_version": {"subject_type": "pv_module", "major_version": 1, "minor_version": 0},
@@ -67,8 +67,9 @@ async def test_revision_endpoint_hash_consistency(
     dpp_id = create_resp.json()["dpp_id"]
     original_hash = create_resp.json()["payload_hash"]
 
-    current_resp = await http_client.get(f"/dpps/{dpp_id}")
-    assert current_resp.json()["payload_hash"] == original_hash
+    # GET /dpps/:id returns DppDetailDTO with revisions; the hash is in revisions[0]["hash"]
+    detail_resp = await http_client.get(f"/dpps/{dpp_id}")
+    assert detail_resp.json()["revisions"][0]["hash"] == original_hash
 
     versioned_resp = await http_client.get(f"/dpps/{dpp_id}/1")
     assert versioned_resp.json()["payload_hash"] == original_hash

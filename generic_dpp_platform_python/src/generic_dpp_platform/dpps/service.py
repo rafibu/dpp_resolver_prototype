@@ -2,12 +2,12 @@ import uuid
 from datetime import UTC, datetime
 
 import structlog
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorClientSession, AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 
 from ..admin import service as admin_service
-from ..schemas.resolver_connector import resolve_dpp_revision
+from ..schemas.resolver_connector import cache_schema, resolve_dpp_revision
 from . import cache_service
-from . import cycle_detection as cycle_svc
 from .exceptions import (
     DppAlreadyExistsException,
     DppReferenceResolutionException,
@@ -28,19 +28,25 @@ from .utils import hash_document, hash_to_hex, validate_dpp_document
 
 logger = structlog.get_logger()
 
+DPP_ID_ISSUER_SEPARATOR = "-"
+
 
 async def list_all_dpps(db: AsyncIOMotorDatabase) -> list[DppSummaryDTO]:
     summaries = []
     async for dpp in db.logical_dpps.find({}, {"_id": 0}):
         latest = await db.dpp_revisions.find_one(
-            {"dpp_id": dpp["dpp_id"]}, {"_id": 0}, sort=[("dpp_version", -1)]
+            {"dpp_id": dpp["dpp_id"]},
+            {"_id": 0},
+            sort=[("dpp_version", -1)],
         )
-        summaries.append(DppSummaryDTO(
-            dpp_id=dpp["dpp_id"],
-            subject_type=dpp["subject_type"],
-            current_version=dpp.get("current_version", 0),
-            last_updated=str(latest["created_at"]) if latest else str(dpp.get("created_at", "")),
-        ))
+        summaries.append(
+            DppSummaryDTO(
+                dpp_id=dpp["dpp_id"],
+                subject_type=dpp["subject_type"],
+                current_version=dpp.get("current_version", 0),
+                last_updated=str(latest["created_at"]) if latest else str(dpp.get("created_at", "")),
+            )
+        )
     return summaries
 
 
@@ -50,7 +56,9 @@ async def get_dpp_detail(db: AsyncIOMotorDatabase, dpp_id: str) -> DppDetailDTO:
         raise NotFoundException(f"DPP not found: {dpp_id}")
 
     revision_docs = await db.dpp_revisions.find(
-        {"dpp_id": dpp_id}, {"_id": 0}, sort=[("dpp_version", 1)]
+        {"dpp_id": dpp_id},
+        {"_id": 0},
+        sort=[("dpp_version", 1)],
     ).to_list(None)
 
     revisions = [
@@ -62,11 +70,11 @@ async def get_dpp_detail(db: AsyncIOMotorDatabase, dpp_id: str) -> DppDetailDTO:
                 r["schema"]["minor_version"],
             ),
             hash=r["hashed_document"],
-            timestamp=str(r["created_at"]),
             payload=r["dpp_document"],
         )
         for r in revision_docs
     ]
+
     return DppDetailDTO(
         dpp_id=dpp_id,
         subject_type=dpp_doc["subject_type"],
@@ -75,27 +83,33 @@ async def get_dpp_detail(db: AsyncIOMotorDatabase, dpp_id: str) -> DppDetailDTO:
 
 
 async def get_current_dpp_revision(
-        db: AsyncIOMotorDatabase, dpp_id: str
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
 ) -> DppRevisionResponseDTO:
     return await get_dpp_revision(db, dpp_id, version=None)
 
 
 async def get_dpp_revision(
-        db: AsyncIOMotorDatabase, dpp_id: str, version: int | None
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
+        version: int | None,
 ) -> DppRevisionResponseDTO:
     if not dpp_id:
-        raise ValueError("dppId must not be empty")
+        raise ValueError("DPP id must not be empty")
 
     if not await db.logical_dpps.find_one({"dpp_id": dpp_id}):
         raise NotFoundException(f"DPP not found: {dpp_id}")
 
     if version is None:
         doc = await db.dpp_revisions.find_one(
-            {"dpp_id": dpp_id}, {"_id": 0}, sort=[("dpp_version", -1)]
+            {"dpp_id": dpp_id},
+            {"_id": 0},
+            sort=[("dpp_version", -1)],
         )
     else:
         doc = await db.dpp_revisions.find_one(
-            {"dpp_id": dpp_id, "dpp_version": version}, {"_id": 0}
+            {"dpp_id": dpp_id, "dpp_version": version},
+            {"_id": 0},
         )
 
     if doc is None:
@@ -105,120 +119,248 @@ async def get_dpp_revision(
 
 
 async def create_new_dpp(
-        db: AsyncIOMotorDatabase, request: DppRevisionRequestDTO
+        db: AsyncIOMotorDatabase,
+        request: DppRevisionRequestDTO,
 ) -> DppRevisionResponseDTO:
+    """
+    Implement the platform-side ``issue`` operation.
+
+        The issue operation creates a new Definition 1 logical DPP and its first Definition 2 revision.
+
+        Where the invariants kick in:
+
+        - I1: before insertion, the service rejects an already existing logical DPP ID; the revision
+          itself is stored under the unique ``(dpp_id, dpp_version)`` key.
+        - I2: the first revision must be version 1. If the client supplies a version, it must be 1.
+        - I3: the request must name an exact schema version. If the schema is missing locally, the
+          platform synchronizes schemas from the resolver and retries the lookup.
+        - I4: the payload hash is computed server-side from the validated payload before storage.
+        - I5: the payload is validated against the pinned schema before any revision is stored.
+        - I7: all hard references extracted from the validated payload must resolve before commit.
+
+        The logical DPP document and revision document are inserted in one MongoDB transaction. This
+        prevents an empty logical DPP from remaining if revision insertion fails.
+    """
     issuer_id = await _get_issuer_id(db)
 
     if not await db.subject_types.find_one({"name": request.schema_version.subject_type}):
         raise ValueError(f"Subject type not found: {request.schema_version.subject_type}")
 
-    dpp_id = request.dpp_id
-    if dpp_id is None:
-        dpp_id = f"{issuer_id}-{uuid.uuid4()}"
-    else:
-        dpp_id = dpp_id.strip()
-        if not dpp_id.startswith(issuer_id):
-            raise ValueError(f"DPP ID must start with issuer ID: {issuer_id}")
+    dpp_id = _normalize_or_generate_dpp_id(request.dpp_id, issuer_id)
 
     if await db.logical_dpps.find_one({"dpp_id": dpp_id}):
         raise DppAlreadyExistsException(f"DPP already exists: {dpp_id}")
 
-    await db.logical_dpps.insert_one(
-        {
-            "dpp_id": dpp_id,
-            "subject_type": request.schema_version.subject_type,
-            "current_version": 0,
-            "created_at": datetime.now(UTC),
-        }
+    if request.version is not None and request.version != 1:
+        raise DppRevisionConflictException(f"Version must be 1 if no revisions exist. Got: {request.version}")
+
+    subject_type = request.schema_version.subject_type
+    revision_doc = await _prepare_revision_doc(
+        db=db,
+        dpp_id=dpp_id,
+        version=1,
+        subject_type=subject_type,
+        request=request,
+        issuer_id=issuer_id,
     )
 
-    return await _create_revision(db, dpp_id, request, issuer_id)
+    now = revision_doc["created_at"]
+
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            if await db.logical_dpps.find_one({"dpp_id": dpp_id}, session=session):
+                raise DppAlreadyExistsException(f"DPP already exists: {dpp_id}")
+
+            await db.logical_dpps.insert_one(
+                {
+                    "dpp_id": dpp_id,
+                    "subject_type": subject_type,
+                    "current_version": 1,
+                    "created_at": now,
+                },
+                session=session,
+            )
+
+            await db.dpp_revisions.insert_one(revision_doc, session=session)
+
+    logger.info("dpp_revision_created", dpp_id=dpp_id, version=1)
+    return _doc_to_response(revision_doc)
 
 
 async def create_dpp_revision_for_existing(
-        db: AsyncIOMotorDatabase, dpp_id: str, request: DppRevisionRequestDTO
-) -> DppRevisionResponseDTO:
-    issuer_id = await _get_issuer_id(db)
-
-    if not await db.logical_dpps.find_one({"dpp_id": dpp_id}):
-        raise NotFoundException(f"DPP not found: {dpp_id}")
-
-    return await _create_revision(db, dpp_id, request, issuer_id)
-
-
-async def _create_revision(
         db: AsyncIOMotorDatabase,
         dpp_id: str,
         request: DppRevisionRequestDTO,
-        issuer_id: str,
 ) -> DppRevisionResponseDTO:
-    # Atomically acquire the next version number (Invariant I2)
-    new_version = await _acquire_next_version(db, dpp_id, request.version)
+    """
+    Implement the platform-side ``revise`` operation.
 
-    # Validate and fetch schema (Invariant I3)
+    The revise operation appends one new Definition 2 revision to an existing Definition 1 logical DPP.
+
+    Where the invariants kick in:
+
+    - I1: the new revision is inserted under the unique ``(dpp_id, dpp_version)`` key.
+    - I2: the next version is obtained by atomically incrementing ``current_version`` by exactly
+      one. If the client supplies a version, the update only succeeds when it equals current + 1.
+    - I3: the revision must name an exact schema version that is available after resolver
+      synchronization.
+    - I4: the payload hash is computed from the validated payload before storage.
+    - I5: the payload is validated against the pinned schema before a version number is consumed.
+    - I7: every hard reference must resolve before a version number is consumed.
+
+    Version acquisition and revision insertion are transactionally coupled. If revision insertion
+    fails, the version increment is rolled back, preserving I2 density.
+    """
+    issuer_id = await _get_issuer_id(db)
+
     logical_dpp = await db.logical_dpps.find_one({"dpp_id": dpp_id})
-    subject_type = logical_dpp["subject_type"]
-    schema_doc = await _check_and_get_schema(db, request.schema_version, subject_type)
+    if not logical_dpp:
+        raise NotFoundException(f"DPP not found: {dpp_id}")
 
-    # Validate payload against schema (Invariant I5)
+    subject_type = logical_dpp["subject_type"]
+
+    # Validate schema, payload, and hard references before taking the version number.
+    # This keeps the transaction short and prevents needless version increments for invalid requests.
+    prepared_without_version = await _prepare_revision_components(
+        db=db,
+        subject_type=subject_type,
+        request=request,
+        issuer_id=issuer_id,
+    )
+
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            if not await db.logical_dpps.find_one({"dpp_id": dpp_id}, session=session):
+                raise NotFoundException(f"DPP not found: {dpp_id}")
+
+            new_version = await _acquire_next_version(
+                db=db,
+                dpp_id=dpp_id,
+                requested_version=request.version,
+                session=session,
+            )
+
+            revision_doc = _build_revision_doc(
+                dpp_id=dpp_id,
+                version=new_version,
+                schema_version=request.schema_version,
+                validated_payload=prepared_without_version["validated_payload"],
+                payload_hash=prepared_without_version["payload_hash"],
+                created_at=prepared_without_version["created_at"],
+            )
+
+            await db.dpp_revisions.insert_one(revision_doc, session=session)
+
+    logger.info("dpp_revision_created", dpp_id=dpp_id, version=revision_doc["dpp_version"])
+    return _doc_to_response(revision_doc)
+
+
+async def _prepare_revision_doc(
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
+        version: int,
+        subject_type: str,
+        request: DppRevisionRequestDTO,
+        issuer_id: str,
+) -> dict:
+    """
+    Build a revision document after checking I3, I5, I7, and I4.
+
+    This helper is used by issue, where the version is known to be 1 before persistence.
+    """
+    components = await _prepare_revision_components(
+        db=db,
+        subject_type=subject_type,
+        request=request,
+        issuer_id=issuer_id,
+    )
+
+    return _build_revision_doc(
+        dpp_id=dpp_id,
+        version=version,
+        schema_version=request.schema_version,
+        validated_payload=components["validated_payload"],
+        payload_hash=components["payload_hash"],
+        created_at=components["created_at"],
+    )
+
+
+async def _prepare_revision_components(
+        db: AsyncIOMotorDatabase,
+        subject_type: str,
+        request: DppRevisionRequestDTO,
+        issuer_id: str,
+) -> dict:
+    """Prepare the semantic content of a revision before it receives a version.
+
+    This helper performs the non-version checks common to issue and revise:
+
+    - I3: load the exact pinned schema, synchronizing from the resolver if needed.
+    - I5: validate the payload against that schema.
+    - Definition 12: extract references from the validated payload.
+    - I7: resolve all hard references.
+    - I4: compute the hash of the validated payload.
+
+    Soft references are intentionally ignored after extraction because they are not part of I7.
+    """
+    schema_doc = await _check_and_get_schema(db, request.schema_version, subject_type)
     validated_payload = validate_dpp_document(request.dpp_payload, schema_doc)
 
-    # Resolve and cache all hard references (Invariant I7)
     refs = extract_references(validated_payload)
     for ref in refs:
         if ref.dependency_type == DependencyType.HARD:
             await _resolve_and_cache_hard_reference(db, ref, issuer_id)
 
-    # Cycle detection (Invariant I6)
-    await cycle_svc.detect_cycles(
-        db, subject_type, dpp_id, new_version, validated_payload, issuer_id
-    )
-
-    # Compute hash server-side (Invariant I4)
     payload_hash = hash_to_hex(hash_document(validated_payload))
 
-    now = datetime.now(UTC)
-    revision_doc = {
-        "dpp_id": dpp_id,
-        "dpp_version": new_version,
-        "schema": {
-            "subject_type": request.schema_version.subject_type,
-            "major_version": request.schema_version.major_version,
-            "minor_version": request.schema_version.minor_version,
-        },
-        "dpp_document": validated_payload,
-        "hashed_document": payload_hash,
-        "created_at": now,
+    return {
+        "validated_payload": validated_payload,
+        "payload_hash": payload_hash,
+        "created_at": datetime.now(UTC),
     }
-    await db.dpp_revisions.insert_one(revision_doc)
-    logger.info("dpp_revision_created", dpp_id=dpp_id, version=new_version)
-
-    return _doc_to_response(revision_doc)
 
 
 async def _acquire_next_version(
-        db: AsyncIOMotorDatabase, dpp_id: str, requested_version: int | None
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
+        requested_version: int | None,
+        session: AsyncIOMotorClientSession,
 ) -> int:
+    """Acquire the next revision version while preserving I2.
+
+    I2 requires a gap-free linear sequence. The MongoDB document for the logical DPP stores the
+    current maximum version. This helper increments it by exactly one inside the same transaction
+    that later inserts the revision.
+
+    If the client provides an explicit version, the update predicate includes
+    ``current_version == requested_version - 1``. Therefore the operation succeeds only for the
+    next consecutive version.
+    """
     if requested_version is None:
         result = await db.logical_dpps.find_one_and_update(
             {"dpp_id": dpp_id},
             {"$inc": {"current_version": 1}},
-            return_document=True,
+            return_document=ReturnDocument.AFTER,
+            session=session,
         )
+        if result is None:
+            raise NotFoundException(f"DPP not found: {dpp_id}")
         return result["current_version"]
 
-    # Explicit version: only accept if it equals current + 1
     result = await db.logical_dpps.find_one_and_update(
         {"dpp_id": dpp_id, "current_version": requested_version - 1},
         {"$inc": {"current_version": 1}},
-        return_document=True,
+        return_document=ReturnDocument.AFTER,
+        session=session,
     )
+
     if result is None:
-        current = await db.logical_dpps.find_one({"dpp_id": dpp_id})
+        current = await db.logical_dpps.find_one({"dpp_id": dpp_id}, session=session)
         expected = (current["current_version"] + 1) if current else 1
         raise DppRevisionConflictException(
-            f"Version conflict: expected {expected}, got {requested_version}"
+            f"Version conflict. Expected: {expected}, Got: {requested_version}"
         )
+
     return result["current_version"]
 
 
@@ -227,30 +369,72 @@ async def _check_and_get_schema(
         schema_version: DppRevisionSchemaDTO,
         dpp_subject_type: str,
 ) -> dict:
+    """Load the exact schema required by I3 and I5.
+
+    I3 requires the revision to explicitly name a schema artefact. I5 requires the payload to
+    validate against that schema. Operationally, this platform first checks its local schema cache.
+    If the exact version is missing, it executes the platform-side cacheSchema operation by asking
+    the resolver for schemas of the requested subject type, then retries the exact lookup.
+
+    The subject type in the schema reference must match the logical DPP subject type. This preserves
+    the interpretation that each DPP is governed by the schema family of its subject type.
+    """
     if schema_version.subject_type != dpp_subject_type:
         raise ValueError(
-            f"Schema subject type '{schema_version.subject_type}' does not match "
-            f"DPP subject type '{dpp_subject_type}'"
+            f"Schema subject type {schema_version.subject_type} does not match "
+            f"the DPP subject type {dpp_subject_type}"
         )
-    doc = await db.schemas.find_one(
-        {
-            "subject_type": schema_version.subject_type,
-            "major_version": schema_version.major_version,
-            "minor_version": schema_version.minor_version,
-        }
+
+    query = {
+        "subject_type": schema_version.subject_type,
+        "major_version": schema_version.major_version,
+        "minor_version": schema_version.minor_version,
+    }
+
+    doc = await db.schemas.find_one(query)
+    if doc is not None:
+        return doc["schema_document"]
+
+    logger.info(
+        "schema_not_in_local_cache_syncing_from_resolver",
+        subject_type=schema_version.subject_type,
+        major=schema_version.major_version,
+        minor=schema_version.minor_version,
     )
+
+    await cache_schema(db, schema_version.subject_type)
+
+    doc = await db.schemas.find_one(query)
     if doc is None:
         raise ValueError(
-            f"Schema version not found: {schema_version.subject_type} "
-            f"{schema_version.major_version}.{schema_version.minor_version}"
+            "Schema version not found after resolver synchronization: "
+            f"{schema_version.subject_type}/{schema_version.major_version}.{schema_version.minor_version}"
         )
+
     return doc["schema_document"]
 
 
 async def _resolve_and_cache_hard_reference(
-        db: AsyncIOMotorDatabase, ref, issuer_id: str
+        db: AsyncIOMotorDatabase,
+        ref,
+        issuer_id: str,
 ) -> None:
-    if ref.dpp_id.startswith(issuer_id):
+    """Resolve one hard reference as required by I7.
+
+    A hard reference names a concrete revision. The platform must verify that this target exists
+    before committing the new revision.
+
+    Resolution strategy:
+
+    1. If the target DPP ID belongs to this issuer, check the local revision collection.
+    2. Otherwise, check the external revision cache.
+    3. If absent from the cache, use resolver-based resolution (Definition 11) to fetch the target
+       revision from its current hosting platform.
+    4. Cache the fetched revision for later use.
+
+    Soft references are never passed to this helper.
+    """
+    if _is_dpp_id_owned_by_issuer(ref.dpp_id, issuer_id):
         exists = await db.dpp_revisions.find_one(
             {"dpp_id": ref.dpp_id, "dpp_version": ref.version}
         )
@@ -262,9 +446,17 @@ async def _resolve_and_cache_hard_reference(
 
     cached = await cache_service.get_cached_revision(db, ref.dpp_id, ref.version)
     if cached:
+        logger.info("using_cached_revision_for_hard_reference", ref=ref.original_ref)
         return
 
+    logger.info("resolving_external_hard_reference", ref=ref.original_ref)
+
     response = await resolve_dpp_revision(db, ref.subject_type, ref.dpp_id, ref.version)
+    if response is None:
+        raise DppReferenceResolutionException(
+            f"Resolver returned null for {ref.original_ref}"
+        )
+
     revision_to_cache = {
         "dpp_id": response.dpp_id,
         "dpp_version": response.version,
@@ -275,6 +467,7 @@ async def _resolve_and_cache_hard_reference(
         "dpp_document": response.dpp_payload,
         "hashed_document": response.payload_hash,
         "created_at": response.created_at,
+        "fetched_at": datetime.now(UTC),
     }
     await cache_service.cache_revision(db, revision_to_cache)
 
@@ -285,6 +478,51 @@ async def _get_issuer_id(db: AsyncIOMotorDatabase) -> str:
     if not issuer_id:
         raise ValueError("Issuer ID is not configured")
     return issuer_id
+
+
+def _normalize_or_generate_dpp_id(dpp_id: str | None, issuer_id: str) -> str:
+    if dpp_id is None:
+        return _generate_dpp_id(issuer_id)
+
+    normalized = dpp_id.strip()
+    _validate_dpp_id_owned_by_issuer(normalized, issuer_id)
+    return normalized
+
+
+def _generate_dpp_id(issuer_id: str) -> str:
+    return f"{issuer_id}{DPP_ID_ISSUER_SEPARATOR}{uuid.uuid4()}"
+
+
+def _is_dpp_id_owned_by_issuer(dpp_id: str, issuer_id: str) -> bool:
+    return dpp_id.startswith(f"{issuer_id}{DPP_ID_ISSUER_SEPARATOR}")
+
+
+def _validate_dpp_id_owned_by_issuer(dpp_id: str, issuer_id: str) -> None:
+    if not _is_dpp_id_owned_by_issuer(dpp_id, issuer_id):
+        expected_prefix = f"{issuer_id}{DPP_ID_ISSUER_SEPARATOR}"
+        raise ValueError(f"DPP ID must start with issuer ID followed by '-': {expected_prefix}")
+
+
+def _build_revision_doc(
+        dpp_id: str,
+        version: int,
+        schema_version: DppRevisionSchemaDTO,
+        validated_payload: dict,
+        payload_hash: str,
+        created_at: datetime,
+) -> dict:
+    return {
+        "dpp_id": dpp_id,
+        "dpp_version": version,
+        "schema": {
+            "subject_type": schema_version.subject_type,
+            "major_version": schema_version.major_version,
+            "minor_version": schema_version.minor_version,
+        },
+        "dpp_document": validated_payload,
+        "hashed_document": payload_hash,
+        "created_at": created_at,
+    }
 
 
 def _doc_to_response(doc: dict) -> DppRevisionResponseDTO:

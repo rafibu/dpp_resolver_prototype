@@ -23,13 +23,13 @@ async def test_revision_flow_success(
     dpp_id = "issuerA-rev-flow"
 
     # Create revision 1
-    r1 = await http_client.post("/dpps", json={**_base_request(dpp_id), "version": 1})
+    r1 = await http_client.post("/dpps/issue", json={**_base_request(dpp_id), "version": 1})
     assert r1.status_code == 201
     assert r1.json()["version"] == 1
 
     # Append revision 2 with explicit version
     r2 = await http_client.post(
-        f"/dpps/{dpp_id}",
+        f"/dpps/{dpp_id}/revise",
         json={**_base_request(), "version": 2},
     )
     assert r2.status_code == 201
@@ -41,20 +41,20 @@ async def test_revision_flow_success(
     assert v1.json()["version"] == 1
 
     # Append revision 3 without specifying version (auto-increment)
-    r3 = await http_client.post(f"/dpps/{dpp_id}", json=_base_request())
+    r3 = await http_client.post(f"/dpps/{dpp_id}/revise", json=_base_request())
     assert r3.status_code == 201
     assert r3.json()["version"] == 3
 
     # Skipped version (5) returns 409
     r_skip = await http_client.post(
-        f"/dpps/{dpp_id}",
+        f"/dpps/{dpp_id}/revise",
         json={**_base_request(), "version": 5},
     )
     assert r_skip.status_code == 409
 
     # Old version (2) also returns 409
     r_old = await http_client.post(
-        f"/dpps/{dpp_id}",
+        f"/dpps/{dpp_id}/revise",
         json={**_base_request(), "version": 2},
     )
     assert r_old.status_code == 409
@@ -67,12 +67,12 @@ async def test_concurrency_appends(
     dpp_id = "issuerA-concurrency"
 
     # Create initial revision
-    r = await http_client.post("/dpps", json=_base_request(dpp_id))
+    r = await http_client.post("/dpps/issue", json=_base_request(dpp_id))
     assert r.status_code == 201
 
     # 5 concurrent appends without specifying version
     async def append():
-        return await http_client.post(f"/dpps/{dpp_id}", json=_base_request())
+        return await http_client.post(f"/dpps/{dpp_id}/revise", json=_base_request())
 
     results = await asyncio.gather(*[append() for _ in range(5)])
 

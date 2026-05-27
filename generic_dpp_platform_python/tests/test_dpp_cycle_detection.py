@@ -39,14 +39,14 @@ async def test_direct_cycle_is_rejected(
     }
 
     mock_response = _make_response("issuerB-001", 1, external_payload_back_ref)
-    
+
     httpx_mock.add_response(
         url="http://resolver:8080/pv_module/issuerB-001/1",
         json=mock_response.model_dump(mode="json")
     )
 
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "dpp_id": "issuerA-001",
             "schema_version": _SCHEMA_VERSION,
@@ -77,7 +77,7 @@ async def test_transitive_cycle_is_rejected(
     )
 
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "dpp_id": "issuerA-trans",
             "schema_version": _SCHEMA_VERSION,
@@ -100,7 +100,7 @@ async def test_soft_references_do_not_trigger_cycle(
     }
 
     response = await http_client.post(
-        "/dpps",
+        "/dpps/issue",
         json={
             "dpp_id": "issuerA-soft",
             "schema_version": _SCHEMA_VERSION,
