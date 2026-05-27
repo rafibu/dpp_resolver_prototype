@@ -31,9 +31,8 @@ async def get_current_schema(
 ) -> DppSchemaDTO:
     """Return the newest locally cached schema for a subject type.
 
-    Returns the schema with the highest (major, minor) version pair. Returns null if the
-    subject type is known but has no cached schema yet. Returns 404 if the subject type
-    is not registered on this platform.
+    Returns the schema with the highest (major, minor) version pair. Returns 404 if the
+    subject type is not registered on this platform or has no cached schema yet.
     """
     logger.info("retrieving_current_schema", subject_type=subject_type)
     try:
@@ -41,7 +40,7 @@ async def get_current_schema(
         if schema is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No schema found for {subject_type}"
+                detail=f"No schema found for {subject_type}",
             )
         return schema
     except ValueError as exc:
@@ -57,8 +56,8 @@ async def get_exact_schema(
 ) -> DppSchemaDTO:
     """Return an exact locally cached schema version.
 
-    Returns null if the subject type is known but the requested version is not in the local
-    cache. Returns 404 if the subject type is not registered on this platform.
+    Returns 404 if the subject type is not registered on this platform or the requested
+    version is not in the local cache.
     """
     logger.info("retrieving_exact_schema", subject_type=subject_type, major=major, minor=minor)
     try:
@@ -66,7 +65,7 @@ async def get_exact_schema(
         if schema is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No schema found for {subject_type} with version {major}.{minor}"
+                detail=f"No schema found for {subject_type} with version {major}.{minor}",
             )
         return schema
     except ValueError as exc:

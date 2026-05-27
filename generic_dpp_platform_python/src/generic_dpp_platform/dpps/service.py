@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import structlog
 from motor.motor_asyncio import AsyncIOMotorClientSession, AsyncIOMotorDatabase
 from pymongo import ReturnDocument
+from pymongo.errors import OperationFailure
 
 from ..admin import service as admin_service
 from ..schemas.resolver_connector import cache_schema, resolve_dpp_revision
@@ -29,6 +30,7 @@ from .utils import hash_document, hash_to_hex, validate_dpp_document
 logger = structlog.get_logger()
 
 DPP_ID_ISSUER_SEPARATOR = "-"
+_TRANSACTION_RETRY_LIMIT = 5
 
 
 async def list_all_dpps(db: AsyncIOMotorDatabase) -> list[DppSummaryDTO]:
@@ -228,28 +230,36 @@ async def create_dpp_revision_for_existing(
         issuer_id=issuer_id,
     )
 
+    revision_doc: dict = {}
     async with await db.client.start_session() as session:
-        async with session.start_transaction():
-            if not await db.logical_dpps.find_one({"dpp_id": dpp_id}, session=session):
-                raise NotFoundException(f"DPP not found: {dpp_id}")
+        for attempt in range(_TRANSACTION_RETRY_LIMIT):
+            try:
+                async with session.start_transaction():
+                    if not await db.logical_dpps.find_one({"dpp_id": dpp_id}, session=session):
+                        raise NotFoundException(f"DPP not found: {dpp_id}")
 
-            new_version = await _acquire_next_version(
-                db=db,
-                dpp_id=dpp_id,
-                requested_version=request.version,
-                session=session,
-            )
+                    new_version = await _acquire_next_version(
+                        db=db,
+                        dpp_id=dpp_id,
+                        requested_version=request.version,
+                        session=session,
+                    )
 
-            revision_doc = _build_revision_doc(
-                dpp_id=dpp_id,
-                version=new_version,
-                schema_version=request.schema_version,
-                validated_payload=prepared_without_version["validated_payload"],
-                payload_hash=prepared_without_version["payload_hash"],
-                created_at=prepared_without_version["created_at"],
-            )
+                    revision_doc = _build_revision_doc(
+                        dpp_id=dpp_id,
+                        version=new_version,
+                        schema_version=request.schema_version,
+                        validated_payload=prepared_without_version["validated_payload"],
+                        payload_hash=prepared_without_version["payload_hash"],
+                        created_at=prepared_without_version["created_at"],
+                    )
 
-            await db.dpp_revisions.insert_one(revision_doc, session=session)
+                    await db.dpp_revisions.insert_one(revision_doc, session=session)
+                break  # Transaction committed successfully
+            except OperationFailure as exc:
+                labels = (exc.details or {}).get("errorLabels", [])
+                if "TransientTransactionError" not in labels or attempt == _TRANSACTION_RETRY_LIMIT - 1:
+                    raise
 
     logger.info("dpp_revision_created", dpp_id=dpp_id, version=revision_doc["dpp_version"])
     return _doc_to_response(revision_doc)
@@ -402,7 +412,14 @@ async def _check_and_get_schema(
         minor=schema_version.minor_version,
     )
 
-    await cache_schema(db, schema_version.subject_type)
+    try:
+        await cache_schema(db, schema_version.subject_type)
+    except Exception as exc:
+        logger.warning(
+            "resolver_sync_failed_falling_back_to_local_cache",
+            subject_type=schema_version.subject_type,
+            error=str(exc),
+        )
 
     doc = await db.schemas.find_one(query)
     if doc is None:

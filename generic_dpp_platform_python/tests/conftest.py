@@ -1,11 +1,14 @@
+import time
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
+import pymongo
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from testcontainers.mongodb import MongoDbContainer
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.waiting_utils import wait_for_logs
 
 PV_SCHEMA_DOC = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -34,14 +37,63 @@ VALID_PV_PAYLOAD = {
 }
 
 
+class ReplicaSetMongoDbContainer(DockerContainer):
+    """MongoDB container configured as a single-node replica set.
+
+    The standard MongoDbContainer runs as a standalone server, which rejects multi-document
+    transactions. This subclass passes --replSet to the MongoDB command and initiates the
+    replica set after the server is ready, enabling the transactions used by the DPP service.
+    """
+
+    _PORT = 27017
+
+    def __init__(self, image: str = "mongo:8") -> None:
+        super().__init__(image)
+        self.with_command("--replSet rs0 --bind_ip_all")
+        self.with_exposed_ports(self._PORT)
+
+    def get_connection_url(self) -> str:
+        host = self.get_container_host_ip()
+        port = self.get_exposed_port(self._PORT)
+        return f"mongodb://{host}:{port}/?directConnection=true"
+
+    def start(self) -> "ReplicaSetMongoDbContainer":
+        super().start()
+        wait_for_logs(self, "Waiting for connections")
+        self._initiate_replica_set()
+        return self
+
+    def _initiate_replica_set(self) -> None:
+        host = self.get_container_host_ip()
+        port = self.get_exposed_port(self._PORT)
+        client = pymongo.MongoClient(f"mongodb://{host}:{port}/?directConnection=true")
+        try:
+            client.admin.command(
+                "replSetInitiate",
+                {"_id": "rs0", "members": [{"_id": 0, "host": "localhost:27017"}]},
+            )
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                try:
+                    status = client.admin.command("replSetGetStatus")
+                    if any(m.get("stateStr") == "PRIMARY" for m in status.get("members", [])):
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            raise TimeoutError("Timed out waiting for replica set primary election")
+        finally:
+            client.close()
+
+
 @pytest.fixture(scope="session")
 def mongodb_container():
-    with MongoDbContainer("mongo:8") as container:
+    with ReplicaSetMongoDbContainer("mongo:8") as container:
         yield container
 
 
 @pytest_asyncio.fixture
-async def test_db(mongodb_container: MongoDbContainer) -> AsyncGenerator[AsyncIOMotorDatabase, None]:
+async def test_db(mongodb_container: ReplicaSetMongoDbContainer) -> AsyncGenerator[AsyncIOMotorDatabase, None]:
     client: AsyncIOMotorClient = AsyncIOMotorClient(mongodb_container.get_connection_url())
     db: AsyncIOMotorDatabase = client["test_dpp_platform"]
 

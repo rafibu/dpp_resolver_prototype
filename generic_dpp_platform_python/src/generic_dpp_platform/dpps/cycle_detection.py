@@ -36,9 +36,9 @@ async def detect_cycles(
 ) -> None:
     """Deprecated bounded BFS hard-dependency cycle detection.
 
-        This function is retained for demonstration only. It is not called from the normal issue/revise
-        path because schema-level cycle prevention is handled by the resolver through Invariant I6.
-        """
+    This function is retained for demonstration only. It is not called from the normal issue/revise
+    path because schema-level cycle prevention is handled by the resolver through Invariant I6.
+    """
     warnings.warn(
         "detect_cycles is deprecated and is retained only as an instance-level prototype. "
         "Cycle prevention is handled by the resolver at schema publication time.",

@@ -63,13 +63,12 @@ async def test_get_current_schema_unknown_subject_type_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_get_current_schema_no_schema_yet_returns_null(
+async def test_get_current_schema_no_schema_yet_returns_404(
     http_client: AsyncClient, test_db: AsyncIOMotorDatabase
 ) -> None:
     await _seed_subject_type(test_db, "inverter")
     response = await http_client.get("/schemas/inverter")
-    assert response.status_code == 200
-    assert response.json() is None
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -88,15 +87,14 @@ async def test_get_exact_schema_happy_path(
 
 
 @pytest.mark.asyncio
-async def test_get_exact_schema_unknown_version_returns_null(
+async def test_get_exact_schema_unknown_version_returns_404(
     http_client: AsyncClient, test_db: AsyncIOMotorDatabase
 ) -> None:
     await _seed_subject_type(test_db, "inverter2")
     await _seed_schema(test_db, "inverter2", 1, 0)
 
     response = await http_client.get("/schemas/inverter2/9/9")
-    assert response.status_code == 200
-    assert response.json() is None
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
