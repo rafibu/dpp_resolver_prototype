@@ -9,8 +9,17 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Extracts hard-reference targets from a JSON Schema document.
- * Follows the convention defined in docs/schema-conventions.md.
+ * Extracts hard-reference target subject types from a JSON Schema document.
+ *
+ * <p>The paper's Definition 12 defines a schema-parameterized reference extraction
+ * function for DPP payloads. For the resolver, the relevant question is which subject
+ * types a schema declares as hard-reference targets: this determines the edges added
+ * to the schema dependency graph (Definition 13) and drives the I6 acyclicity check.</p>
+ *
+ * <p>The extraction convention is the {@code x-dpp-reference} annotation: any JSON Schema
+ * property annotated with {@code "x-dpp-reference": "subjectType"} declares that payloads
+ * valid under this schema may contain hard references to the named subject type. See
+ * {@code docs/schema-conventions.md} for the full annotation specification.</p>
  */
 @Component
 public class HardReferenceExtractor {

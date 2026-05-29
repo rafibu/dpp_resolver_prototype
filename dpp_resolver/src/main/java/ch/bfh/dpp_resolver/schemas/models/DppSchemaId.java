@@ -5,12 +5,13 @@ import jakarta.persistence.Embeddable;
 import lombok.*;
 
 /**
- * Composite identifier of a DPP schema artifact
+ * Composite identifier of a schema artefact (Definition 3).
  *
- * <p>A schema is uniquely identified by the subject type it defines and its
- * semantic version within that subject type.</p>
- *
- * @author rbu on 20.04.2026
+ * <p>A schema artefact is uniquely identified by the subject type it governs and its
+ * (major, minor) version within that subject type. Two schema artefacts with the same
+ * subject type and version are the same artefact; two with the same subject type but
+ * different versions are distinct artefacts that may stand in a backward-compatibility
+ * relation (Definition 15, Definition 16).</p>
  */
 @Getter
 @Setter

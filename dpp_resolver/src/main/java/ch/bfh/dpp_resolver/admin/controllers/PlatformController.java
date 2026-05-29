@@ -11,8 +11,17 @@ import org.springframework.web.bind.annotation.*;
 import java.util.NoSuchElementException;
 
 /**
+ * HTTP controller for resolver registry management.
  *
- * @author rbu on 20.04.2026
+ * <p>Exposes the {@code registerIssuer} and {@code migrate}
+ * operations through a single upsert endpoint. When the issuer
+ * identified by {@code issuerId} is not yet in the resolver registry (Definition 10),
+ * a {@code POST /admin/platforms} request registers it ({@code registerIssuer}).
+ * When the issuer is already registered, the same request updates its platform mapping
+ * ({@code migrate}).</p>
+ *
+ * <p>Query endpoints return the current state of the registry for monitoring and
+ * federation discovery by the Factory and Frontend components.</p>
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -22,12 +31,26 @@ public class PlatformController {
 
     private final PlatformMappingService platformMappingService;
 
+    /**
+     * Returns all resolver registry entries.
+     *
+     * <p>Returns every issuer-to-platform mapping currently in the resolver registry
+     * (Definition 10). Used by the Factory and Frontend for federation discovery.</p>
+     *
+     * @return all platform mappings with HTTP 200
+     */
     @GetMapping
     public ResponseEntity<PlatformMappingDTO[]> getAllPlatformMappings() {
         log.info("GET all PlatformMappings");
         return ResponseEntity.ok(platformMappingService.findAll().toArray(PlatformMappingDTO[]::new));
     }
 
+    /**
+     * Returns all registry entries for a given subject type.
+     *
+     * @param subjectType the subject type name to filter by
+     * @return matching platform mappings, or 404 if the subject type is unknown
+     */
     @GetMapping("/{subjectType}")
     public ResponseEntity<PlatformMappingDTO[]> getPlatformMappings(@PathVariable String subjectType) {
         log.info("GET PlatformMappings for SubjectType: {}", subjectType);
@@ -39,6 +62,21 @@ public class PlatformController {
         }
     }
 
+    /**
+     * Registers a new issuer or updates an existing issuer's platform mapping.
+     *
+     * <p>When the issuer named in {@code platformMappingDTO.issuerId} is not yet in the
+     * resolver registry, this implements the {@code registerIssuer} operation:
+     * it adds a new entry mapping the issuer to its hosting platform. When the
+     * issuer is already registered, this implements the {@code migrate} operation:
+     * it updates the registry entry to point to the new hosting platform.</p>
+     *
+     * <p>The {@code resolutionUrl} field contains the URL template used by the resolver
+     * to construct redirect targets for resolution requests (Definition 11).</p>
+     *
+     * @param platformMappingDTO the issuer registration or migration request
+     * @return the saved registry entry with HTTP 201, or 400 on validation failure
+     */
     @PostMapping
     public ResponseEntity<PlatformMappingDTO> createNewPlatformMapping(@RequestBody PlatformMappingDTO platformMappingDTO) {
         log.info("POST new PlatformMapping: {}", platformMappingDTO);

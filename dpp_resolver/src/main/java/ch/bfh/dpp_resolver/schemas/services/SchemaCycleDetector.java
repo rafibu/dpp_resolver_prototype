@@ -6,7 +6,17 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 
 /**
- * Implements cycle detection for the schema-level dependency graph.
+ * Checks the acyclicity precondition for the {@code publishSchema} operation
+ * (precondition P4), enforcing Invariant I6.
+ *
+ * <p>The schema dependency graph (Definition 13) has subject types as vertices and a directed
+ * edge from subject type A to subject type B when any version of a schema for A declares a
+ * hard-reference field targeting B. Invariant I6 requires this graph to remain acyclic.</p>
+ *
+ * <p>By Proposition 1, maintaining I6 at the schema level is sufficient to guarantee that
+ * no instance-level cycle can arise in any valid federated state, regardless of which
+ * specific revisions DPP platforms reference. The check is therefore performed once at
+ * schema publication time, not at DPP issuance time.</p>
  */
 @Service
 public class SchemaCycleDetector {
@@ -39,12 +49,12 @@ public class SchemaCycleDetector {
         // An edge A -> B exists if any version of schema A declares a hard-reference to B
         Map<String, Set<String>> adjacencyMap = new HashMap<>();
         for (DependencyEdge edge : existingEdges) {
-            adjacencyMap.computeIfAbsent(edge.getFrom(), k -> new HashSet<>()).add(edge.getTo());
+            adjacencyMap.computeIfAbsent(edge.getFrom(), _ -> new HashSet<>()).add(edge.getTo());
         }
         
         // Add candidate edges
         for (String target : candidateTargets) {
-            adjacencyMap.computeIfAbsent(candidateSubjectType, k -> new HashSet<>()).add(target);
+            adjacencyMap.computeIfAbsent(candidateSubjectType, _ -> new HashSet<>()).add(target);
         }
 
         // 3. For each candidate target, run iterative DFS to see if we can reach candidateSubjectType

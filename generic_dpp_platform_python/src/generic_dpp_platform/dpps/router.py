@@ -44,7 +44,7 @@ async def get_dpp_detail(
 ) -> DppDetailDTO:
     """Return a logical DPP and all its locally stored revisions ordered by ascending version.
 
-    Implements the derived current-revision notion from Section 4.5.1 and returns the full
+    Implements the derived current-revision notion and returns the full
     ordered revision history for audit purposes.
     """
     logger.info("get_dpp_detail", dpp_id=dpp_id)
@@ -77,9 +77,9 @@ async def issue_dpp(
 ) -> DppRevisionResponseDTO:
     """Issue a new logical DPP and create its first immutable revision.
 
-    This endpoint implements the platform-side ``issue`` operation from the transition system
-    (Section 5.1.1). It enforces:
+    This endpoint implements the platform-side ``issue`` operation from the transition system.
 
+     It enforces:
     - I1: revision uniqueness via composite (dpp_id, version) key
     - I2: version monotonicity by assigning version 1 to the first revision
     - I3: schema explicitness by requiring the schema to be present in the local cache

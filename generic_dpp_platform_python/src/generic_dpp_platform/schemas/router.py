@@ -79,7 +79,7 @@ async def cache_schema_manually(
 ) -> None:
     """Manually fetch schemas for a subject type from the resolver into the local platform cache.
 
-    This endpoint implements the platform-side ``cacheSchema`` operation (Section 5.1.3). It
+    This endpoint implements the platform-side ``cacheSchema`` operation. It
     does not create schemas; it only copies resolver-published schemas into this platform's cache
     so that payloads can be validated during issue and revise.
 

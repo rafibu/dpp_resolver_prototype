@@ -1,35 +1,46 @@
 package ch.bfh.dpp_resolver.schemas.services;
 
+import ch.bfh.dpp_resolver.admin.models.SubjectType;
+import ch.bfh.dpp_resolver.admin.repositories.SubjectTypeRepository;
 import ch.bfh.dpp_resolver.schemas.dtos.DppSchemaDTO;
 import ch.bfh.dpp_resolver.schemas.exceptions.SchemaCycleException;
 import ch.bfh.dpp_resolver.schemas.exceptions.SchemaSelfReferenceException;
 import ch.bfh.dpp_resolver.schemas.models.DppSchema;
 import ch.bfh.dpp_resolver.schemas.models.DppSchemaId;
-import ch.bfh.dpp_resolver.admin.models.SubjectType;
 import ch.bfh.dpp_resolver.schemas.models.SchemaDependency;
 import ch.bfh.dpp_resolver.schemas.repositories.DppSchemaRepository;
-import ch.bfh.dpp_resolver.admin.repositories.SubjectTypeRepository;
 import ch.bfh.dpp_resolver.schemas.repositories.SchemaDependencyRepository;
 import ch.bfh.dpp_resolver.utils.JsonUtil;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
+ * Implements the {@code publishSchema} operation and read access to the
+ * authoritative schema set that forms part of the resolver state (Definition 6).
  *
- * @author rbu on 20.04.2026
+ * <p>Every published schema artefact (Definition 3) is added to the authoritative schema
+ * set. DPP platforms must subsequently execute {@code cacheSchema} to obtain schemas for
+ * local validation. Invariant I3 (schema explicitness) requires every revision on any
+ * DPP platform to reference a schema present in this set.</p>
+ *
+ * <p>Schema publication enforces three preconditions:</p>
+ * <ol>
+ *   <li>Version monotonicity: the new version must follow the active version with major or
+ *       minor incremented by exactly one.</li>
+ *   <li>Backward compatibility for minor updates: the new schema must satisfy
+ *       Definition 15 with respect to its predecessor (Definition 16).</li>
+ *   <li>Acyclicity: the hard-reference targets declared in the new schema must not
+ *       introduce a cycle into the schema dependency graph (Invariant I6, Definition 13).
+ *       This is the resolver-side precondition P4.</li>
+ * </ol>
  */
 @Service
 @RequiredArgsConstructor
@@ -70,6 +81,21 @@ public class DppSchemaService {
         return mapToDTO(dppSchema);
     }
 
+    /**
+     * Publishes a new schema artefact to the authoritative schema set, implementing the
+     * {@code publishSchema} operation.
+     *
+     * <p>Enforces version monotonicity, backward compatibility for minor updates
+     * (Definitions 15 and 16), and schema-graph acyclicity (Invariant I6, precondition P4).
+     * If all preconditions hold, the schema is persisted and its dependency edges are added
+     * to the {@code schema_dependency} table in the same transaction.</p>
+     *
+     * @throws IllegalArgumentException if version monotonicity or backward compatibility fails
+     * @throws ch.bfh.dpp_resolver.schemas.exceptions.SchemaSelfReferenceException if the schema
+     *         declares a hard reference to its own subject type
+     * @throws ch.bfh.dpp_resolver.schemas.exceptions.SchemaCycleException if publishing would
+     *         introduce a cycle into the schema dependency graph
+     */
     @Transactional
     public DppSchemaDTO save(DppSchemaDTO dto) {
         SubjectType subjectType = subjectTypeRepository.findByName(dto.getSubjectType()).orElseThrow();
@@ -97,20 +123,20 @@ public class DppSchemaService {
                 existingEdges
         );
 
-        if (cycleResult instanceof SchemaCycleDetector.CycleCheckResult.SelfReference selfRef) {
+        if (cycleResult instanceof SchemaCycleDetector.CycleCheckResult.SelfReference) {
             log.warn("Rejected schema publication for '{}' due to self-reference", subjectType.getName());
             throw new SchemaSelfReferenceException(
                     String.format("Schema '%s' %d.%d declares a hard reference to its own subject type",
                             subjectType.getName(), dppSchema.getId().getMajorVersion(), dppSchema.getId().getMinorVersion()),
                     subjectType.getName()
             );
-        } else if (cycleResult instanceof SchemaCycleDetector.CycleCheckResult.CycleDetected cycleDetected) {
-            String pathStr = String.join(" -> ", cycleDetected.path());
+        } else if (cycleResult instanceof SchemaCycleDetector.CycleCheckResult.CycleDetected(List<String> path)) {
+            String pathStr = String.join(" -> ", path);
             log.warn("Rejected schema publication for '{}' due to cycle: {}", subjectType.getName(), pathStr);
             throw new SchemaCycleException(
                     String.format("Publishing schema '%s' %d.%d would introduce a cycle: %s",
                             subjectType.getName(), dppSchema.getId().getMajorVersion(), dppSchema.getId().getMinorVersion(), pathStr),
-                    cycleDetected.path()
+                    path
             );
         }
 

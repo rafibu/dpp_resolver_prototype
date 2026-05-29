@@ -33,14 +33,13 @@ class UrlResolverServiceTest {
     @Autowired
     private UrlResolverService urlResolverService;
 
-    private SubjectType subjectType;
     private Platform platform;
 
     @BeforeEach
     void setUp() {
         databaseCleaner.clean();
 
-        subjectType = new SubjectType();
+        SubjectType subjectType = new SubjectType();
         subjectType.setName("Car");
         subjectType = subjectTypeRepository.save(subjectType);
 
@@ -60,44 +59,45 @@ class UrlResolverServiceTest {
     }
 
     @Test
-    void resolveUrl_withRevision_shouldReplaceMajorMinor() {
-        platform.setResolutionUrl("https://eurotax.com/res/{subjectType}/{dppId}/{major}.{minor}");
+    void resolveUrl_withIntegerRevision_shouldAppendRevisionAsPathSegment() {
+        String resolvedUrl = urlResolverService.resolveUrl("Car", "ET-123", "2");
+
+        assertEquals("https://eurotax.com/res/Car/ET-123/2", resolvedUrl);
+    }
+
+    @Test
+    void resolveUrl_withRevisionPlaceholder_shouldSubstituteRevision() {
+        platform.setResolutionUrl("https://eurotax.com/res/{subjectType}/{dppId}/{revision}");
         platformRepository.save(platform);
 
-        String resolvedUrl = urlResolverService.resolveUrl("Car", "ET-123", "1.2");
+        String resolvedUrl = urlResolverService.resolveUrl("Car", "ET-123", "3");
 
-        assertEquals("https://eurotax.com/res/Car/ET-123/1.2", resolvedUrl);
+        assertEquals("https://eurotax.com/res/Car/ET-123/3", resolvedUrl);
     }
 
     @Test
-    void resolveUrl_withMajorOnly_shouldHandleMinorPlaceholder() {
-        platform.setResolutionUrl("https://eurotax.com/res/{subjectType}/{dppId}/{major}.{minor}");
-        platformRepository.save(platform);
+    void resolveUrl_withMultiDashDppId_shouldExtractIssuerFromFirstSegment() {
+        // DPP IDs can have multiple dashes; only the first segment is the issuer.
+        // e.g. issuerA-550e8400-e29b-41d4-a716-446655440000 (issuer UUID format)
+        String resolvedUrl = urlResolverService.resolveUrl("Car", "ET-item-with-dashes");
 
-        String resolvedUrl = urlResolverService.resolveUrl("Car", "ET-123", "1");
-
-        assertFalse(resolvedUrl.contains("{minor}"), "Should not contain {minor} placeholder");
-        assertEquals("https://eurotax.com/res/Car/ET-123/1", resolvedUrl);
+        assertEquals("https://eurotax.com/res/Car/ET-item-with-dashes", resolvedUrl);
     }
 
     @Test
-    void resolveUrl_withRevision_shouldAppendIfNoPlaceholders() {
-        platform.setResolutionUrl("https://eurotax.com/res/{subjectType}/{dppId}");
-        platformRepository.save(platform);
-
-        String resolvedUrl = urlResolverService.resolveUrl("Car", "ET-123", "1.2");
-
-        assertEquals("https://eurotax.com/res/Car/ET-123/1.2", resolvedUrl);
+    void resolveUrl_withNoDashInDppId_shouldThrowException() {
+        // A DPP ID with no dash has no issuer prefix, which is invalid.
+        assertThrows(IllegalArgumentException.class, () -> urlResolverService.resolveUrl("Car", "invalidformat"));
     }
 
     @Test
-    void resolveUrl_withInvalidDppId_shouldThrowException() {
-        assertThrows(IllegalArgumentException.class, () -> urlResolverService.resolveUrl("Car", "invalid-id-format"));
+    void resolveUrl_withNonIntegerRevision_shouldThrowException() {
+        assertThrows(IllegalArgumentException.class, () -> urlResolverService.resolveUrl("Car", "ET-123", "abc"));
     }
 
     @Test
-    void resolveUrl_withInvalidRevisionFormat_shouldThrowException() {
-        assertThrows(IllegalArgumentException.class, () -> urlResolverService.resolveUrl("Car", "ET-123", "1.2.3"));
+    void resolveUrl_withZeroRevision_shouldThrowException() {
+        assertThrows(IllegalArgumentException.class, () -> urlResolverService.resolveUrl("Car", "ET-123", "0"));
     }
 
     @Test
@@ -115,7 +115,14 @@ class UrlResolverServiceTest {
     }
 
     @Test
-    void createUrl_missingDppIdPlaceholder_shouldThrowException() {
+    void resolveUrl_whenIssuerNotRegistered_shouldReturnNull() {
+        String resolvedUrl = urlResolverService.resolveUrl("Car", "UNKNOWN-123");
+
+        assertNull(resolvedUrl);
+    }
+
+    @Test
+    void buildUrl_missingDppIdPlaceholder_shouldThrowException() {
         platform.setResolutionUrl("https://eurotax.com/res/{subjectType}/");
         platformRepository.save(platform);
 

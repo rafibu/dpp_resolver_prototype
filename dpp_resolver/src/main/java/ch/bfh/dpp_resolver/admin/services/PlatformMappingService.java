@@ -13,8 +13,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * Implements the {@code registerIssuer} and {@code migrate} resolver operations.
  *
- * @author rbu on 20.04.2026
+ * <p>The resolver registry (Definition 10) maps issuer identifiers to hosting
+ * platforms. This service persists and retrieves those mappings. Upsert semantics
+ * cover both operations: if the issuer is new the call registers it; if it already
+ * exists the call migrates it to a new platform.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -34,6 +38,14 @@ public class PlatformMappingService {
         return subjectType.getPlatforms().stream().map(PlatformMappingService::toDTO).toList();
     }
 
+    /**
+     * Persists an issuer-to-platform mapping, implementing {@code registerIssuer} or
+     * {@code migrate} depending on whether the issuer is already in the registry.
+     *
+     * <p>The {@code migrate} operation requires the issuer to be
+     * already registered. This method silently handles both cases via upsert; callers
+     * that need to enforce preconditions should check existence before calling.</p>
+     */
     @Transactional
     public PlatformMappingDTO save(PlatformMappingDTO platformMappingDTO) {
         List<SubjectType> subjectTypes = new ArrayList<>(platformMappingDTO.getSubjectTypes().stream()

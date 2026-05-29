@@ -1,4 +1,4 @@
-package ch.bfh.dpp_resolver.advice;
+package ch.bfh.dpp_resolver.admin.controllers;
 
 import ch.bfh.dpp_resolver.schemas.exceptions.SchemaCycleException;
 import ch.bfh.dpp_resolver.schemas.exceptions.SchemaSelfReferenceException;
