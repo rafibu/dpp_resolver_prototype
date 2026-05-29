@@ -1,11 +1,36 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.dpp.eu/pv_module/1.0",
   "title": "PV Module",
   "type": "object",
   "properties": {
+    "serial_number": { "type": "string" },
     "manufacturer": { "type": "string" },
     "model": { "type": "string" },
-    "peak_power_watts": { "type": "number" }
+    "peak_power_watts": { "type": "number" },
+    "components": {
+      "type": "object",
+      "properties": {
+        "battery": {
+          "type": "object",
+          "x-dpp-reference": "battery",
+          "properties": {
+            "$ref": { "type": "string" },
+            "version": { "type": "integer" }
+          },
+          "required": ["$ref"]
+        },
+        "inverter": {
+          "type": "object",
+          "x-dpp-reference": "inverter",
+          "properties": {
+            "$ref": { "type": "string" },
+            "version": { "type": "integer" }
+          },
+          "required": ["$ref"]
+        }
+      }
+    }
   },
   "required": ["manufacturer", "model"]
 }

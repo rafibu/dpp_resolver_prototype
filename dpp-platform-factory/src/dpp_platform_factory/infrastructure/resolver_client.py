@@ -1,3 +1,11 @@
+"""
+HTTP client for the Resolver's administrative endpoints.
+
+The Resolver is the shared infrastructure component that holds the authoritative
+schema set and the issuer-to-platform registry (Definition 6, Definition 10).
+This client is used by the Factory to wire the federated state (Definition 7)
+at startup and when new platforms are spawned.
+"""
 import structlog
 import httpx
 
@@ -11,7 +19,12 @@ class ResolverClient:
         self._base_url = resolver_url.rstrip("/")
 
     async def ensure_subject_type(self, subject_type: str) -> None:
-        """Ensure a Resolver subject type exists before platform registration."""
+        """Register a subject type on the Resolver if it does not already exist.
+
+        Subject types (Definition 3) must be registered before schemas can be published
+        for them and before platforms can declare them as supported. This is a Factory
+        bootstrap pre-condition, not a federated operation.
+        """
         url = f"{self._base_url}/admin/subject-types"
         body = {
             "name": subject_type,
@@ -42,7 +55,12 @@ class ResolverClient:
         )
 
     async def register_platform(self, platform: PlatformRecord) -> None:
-        """Call POST /platforms on the Resolver. Re-registration (upsert) is always accepted."""
+        """Call POST /admin/platforms on the Resolver to execute the registerIssuer operation.
+
+        Adds an entry to the resolver registry (Definition 10) mapping the platform's
+        issuer to its resolution URL. If the issuer is already registered this acts as
+        the migrate operation, updating the routing entry.
+        """
         url = f"{self._base_url}/admin/platforms"
         body = {
             "platform": platform.platform_id,
@@ -68,17 +86,41 @@ class ResolverClient:
         )
 
     async def get_platform(self, platform_id: str) -> dict | None:
-        url = f"{self._base_url}/platforms/{platform_id}"
+        url = f"{self._base_url}/admin/platforms"
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)
         if response.status_code == 404:
             return None
         response.raise_for_status()
-        return response.json()
+        mappings: list[dict] = response.json()
+        return next((m for m in mappings if m.get("platform") == platform_id), None)
 
-    async def publish_schema(self, subject_type: str, schema: dict) -> None:
+    async def publish_schema(
+        self,
+        subject_type: str,
+        major_version: int,
+        minor_version: int,
+        schema_document: dict,
+    ) -> None:
+        """Call POST /schemas to execute the publishSchema operation.
+
+        Adds a schema artefact (Definition 3) to the Resolver's authoritative schema set
+        (Definition 6). The Resolver enforces Invariant I6 (schema-graph acyclicity) and
+        returns 422 if publication would introduce a cycle.
+        """
         url = f"{self._base_url}/schemas"
-        logger.info("resolver_publishing_schema", subject_type=subject_type)
+        body = {
+            "subjectType": subject_type,
+            "majorVersion": major_version,
+            "minorVersion": minor_version,
+            "schemaDocument": schema_document,
+        }
+        logger.info(
+            "resolver_publishing_schema",
+            subject_type=subject_type,
+            major=major_version,
+            minor=minor_version,
+        )
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(url, json=schema)
+            response = await client.post(url, json=body)
         response.raise_for_status()

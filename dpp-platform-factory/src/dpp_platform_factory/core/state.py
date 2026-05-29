@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
 
@@ -14,6 +14,12 @@ class PlatformStatus(str, Enum):
 
 @dataclass
 class PlatformRecord:
+    """Factory-internal runtime record for a managed DPP platform container.
+
+    Not a formal model type. Tracks the Docker container IDs and port mapping
+    alongside the platform's logical identity (issuer_id, subject_types) which
+    mirrors what the Resolver registry (Definition 10) stores for routing.
+    """
     platform_id: str
     stack: str
     issuer_id: str
@@ -28,6 +34,12 @@ class PlatformRecord:
 
 @dataclass
 class ResolverRecord:
+    """Factory-internal runtime record for the managed Resolver container.
+
+    Not a formal model type. Tracks the container IDs and both the external URL
+    (used by the Frontend and Workload Generator) and the internal Docker-network
+    URL (used by platform containers to reach the Resolver for I3/I7 checks).
+    """
     container_id: str
     db_container_id: str
     external_url: str

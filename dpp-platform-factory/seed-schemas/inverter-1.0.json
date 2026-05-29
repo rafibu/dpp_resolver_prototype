@@ -1,8 +1,11 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.dpp.eu/inverter/1.0",
   "title": "Inverter",
   "type": "object",
   "properties": {
+    "serial_number": { "type": "string" },
+    "manufacturer": { "type": "string" },
     "max_ac_power_watts": { "type": "number" },
     "efficiency": { "type": "number" }
   },

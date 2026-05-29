@@ -1,3 +1,15 @@
+"""
+Container lifecycle for DPP platform instances.
+
+Each spawned platform is a running instance of either the Java/Postgres or Python/MongoDB
+platform implementation. Both implement the same REST contract, modelling a DPP platform
+state (Definition 5): a set of revisions and a local schema cache. The factory starts them
+with the correct environment variables (RESOLVER_URL, ISSUER_ID, SUBJECT_TYPES) so they
+can connect to the shared Resolver and satisfy Invariants I3 and I7 at issuance time.
+
+Container names and Docker labels are the sole persistence mechanism: on restart the
+factory can recover the running topology from Docker's label index without a database.
+"""
 import asyncio
 import time
 from dataclasses import dataclass

@@ -1,122 +1,108 @@
 # DPP Platform Factory
 
-The Factory is an orchestration service for the DPP Resolver Prototype. It manages the lifecycle of the Resolver and multiple DPP Platforms using Docker.
+## Role in the Paper
 
-## Features
+The Factory is the **test harness controller** for the prototype. It is not part of the federated DPP ecosystem. It creates and manages the containers that form that ecosystem.
 
-- **Automated Bootstrap**: Brings up the Resolver and a default set of platforms on startup.
-- **Dynamic Spawning**: Create new DPP platforms (Spring or FastAPI) on demand.
-- **Lifecycle Management**: Pause, resume, reset, and teardown platforms via REST API.
-- **Resolver Integration**: Automatically registers new platforms with the Resolver.
-- **Schema Seeding**: Bulk-load JSON schemas into the Resolver from local files.
-- **Orphan Handling**: Detects and handles containers from previous runs (shutdown, reuse, or fail) and can reconstruct state from running containers on startup.
-- **Graceful Cascade Shutdown**: Stops all managed containers in the correct order on exit.
+The paper's formal model defines a federated state (Definition 7) as a resolver plus a set of DPP platforms. In a real deployment these components would be operated independently by different organizations. For the prototype we need them all running in one place and wired together reproducibly. The Factory handles that:
+
+| What the Factory does                                                                           | Paper anchor                                                                        |
+|-------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| Brings up the Resolver and registers each platform with it via `POST /admin/platforms`          | Section 5.1.7 (`registerIssuer`) and Definition 10 (resolver registry)              |
+| Seeds the authoritative schema set on the Resolver via `POST /schemas`                          | Section 5.1.3 (`publishSchema`) and Definition 6 (resolver state)                   |
+| Ensures each subject type exists on the Resolver before schemas are published                   | Pre-condition for `publishSchema`                                                   |
+| Exposes `GET /federation` so the Frontend and Workload Generator can discover the live topology | Definition 7 (federated state) as an observable snapshot                            |
+| Pauses and resumes platform containers to drive offline scenarios (S1, S2)                      | Scenario infrastructure; the pause operation models a platform becoming unreachable |
+| Resets platform databases to a known empty state between scenario runs                          | Scenario infrastructure; restores the empty DPP platform state (Definition 5)       |
+
+The Resolver and DPP platforms behave exactly as they would in a real federation. The Factory is invisible to them: the Resolver receives `POST /admin/platforms` calls as if a real operator were registering platforms, and the platforms receive their `RESOLVER_URL` as an environment variable as if it were a stable production endpoint.
+
+## Architecture
+
+```
+Factory (port 8000)
+├── starts and monitors → Resolver (port 8080) + Postgres
+├── starts and monitors → Platform A (port 8081) + Postgres
+├── starts and monitors → Platform B (port 8082) + MongoDB
+├── starts and monitors → Platform C (port 8083) + Postgres
+└── exposes GET /federation → consumed by Frontend and Workload Generator
+```
+
+Source layout:
+
+- `api/` — FastAPI routes and Pydantic response models
+- `core/` — orchestration logic (`platform.py`, `platform_service.py`, `schema_seed_service.py`) and in-memory state (`state.py`)
+- `infrastructure/` — Docker SDK wrapper (`docker_client.py`), Resolver container lifecycle (`resolver.py`), Resolver HTTP client (`resolver_client.py`)
+- `utils/` — bootstrap, shutdown, orphan recovery, configuration, logging
+- `seed-schemas/` — JSON Schema 2020-12 documents for the default PV/battery/inverter federation
 
 ## Prerequisites
 
 - Python 3.14+
 - Docker Desktop or Docker Engine running
-- (Optional) `uv` for fast dependency management
+- Pre-built images: `dpp-resolver:latest`, `generic-dpp-platform-java:latest`, `generic-dpp-platform-python:latest`
 
-## Local Installation
+## Running the Factory
 
 ```bash
 cd dpp-platform-factory
 pip install -e .
+python -m dpp_platform_factory
 ```
 
-## Running the Factory
-
-### Locally
+Or via Docker Compose from the repository root:
 
 ```bash
-# From the dpp-platform-factory directory
-python -m factory
-```
-
-Or with uvicorn directly:
-
-```bash
-uvicorn factory.api:app --host 0.0.0.0 --port 8000
-```
-
-### With Docker Compose
-
-```bash
-# From the repository root
 docker compose up factory
 ```
 
 ## Testing
 
-The project uses a three-layered testing strategy:
+Three-layered strategy:
 
-### 1. Unit Tests
-Fast tests for pure logic using mocks where necessary.
-Located in `tests/`.
+| Layer       | What it tests                                                          | How                                             |
+|-------------|------------------------------------------------------------------------|-------------------------------------------------|
+| Unit        | Pure logic (config validation, state management, Docker label parsing) | Fast, no Docker                                 |
+| Integration | Orchestration flow through real service boundaries                     | `FakeDockerClient` + `FakeResolverClient` fakes |
+| E2E         | Full lifecycle against real Docker containers                          | Requires pre-built images                       |
 
-### 2. Service-level Integration Tests
-High-fidelity tests using realistic fakes (`FakeDockerClient`, `FakeResolverClient`) instead of broad mocks. These exercise the real orchestration logic through public service boundaries.
-Located in `tests/`.
-
-### 3. E2E Tests
-Tests that use real Docker containers to exercise the full system lifecycle.
-Located in `tests/e2e/`.
-
-#### Running Tests
-
-Normal tests (Unit + Integration):
 ```bash
+# Unit + Integration (no Docker required)
 py -3.14 -m pytest tests
-```
 
-E2E tests (Requires Docker and pre-built images):
-```bash
+# E2E (requires Docker and pre-built images)
 py -3.14 -m pytest tests/e2e -m e2e
 ```
 
 ## Environment Variables
 
-| Variable                   | Description                                                  | Default                            |
-|----------------------------|--------------------------------------------------------------|------------------------------------|
-| `DPP_FACTORY_ORPHANS`      | Action for orphaned containers (`shutdown`, `reuse`, `fail`) | `fail` (interactive prompt if TTY) |
-| `DPP_FACTORY_KEEP_RUNNING` | If `true`, skip cascade shutdown on exit                     | `false`                            |
-| `DPP_FACTORY_TESTING`      | If `true`, skip bootstrap during tests                       | `false`                            |
+| Variable                   | Description                                                             | Default                            |
+|----------------------------|-------------------------------------------------------------------------|------------------------------------|
+| `DPP_FACTORY_ORPHANS`      | Action for containers from a previous run (`shutdown`, `reuse`, `fail`) | `fail` (interactive prompt if TTY) |
+| `DPP_FACTORY_KEEP_RUNNING` | Skip cascade shutdown on exit                                           | `false`                            |
+| `DPP_FACTORY_TESTING`      | Skip bootstrap during unit/integration tests                            | `false`                            |
 
 ## API Endpoints
 
-The API is available at `http://localhost:8000`. Interactive documentation can be found at `http://localhost:8000/docs`.
+Interactive docs at `http://localhost:8000/docs`.
 
-### Key Endpoints
-
-- `GET /federation`: Overview of the whole federation.
-- `POST /platforms`: Spawn a new platform.
-- `POST /platforms/{id}/pause`: Stop a platform container.
-- `POST /platforms/{id}/resume`: Start a paused platform.
-- `POST /platforms/{id}/reset`: Reset a platform's database.
-- `DELETE /platforms/{id}`: Teardown a platform.
-- `POST /resolver/seed-schemas`: Seed schemas into the resolver.
-
-## Architecture
-
-The Factory is built with FastAPI and is organized into the following components:
-
-- `api/`: Route declarations and API models.
-- `core/`: Core business logic, including platform lifecycle and state management.
-- `infrastructure/`: Clients for external services like Docker and the Resolver.
-- `utils/`: Configuration, logging, and lifecycle utilities.
-
-## Pre-built Images
-
-To run E2E tests or the full Factory, ensure the following images are built:
-- `dpp-resolver:latest`
-- `dpp-platform-spring:latest`
-- `dpp-platform-fastapi:latest`
-- `dpp-factory:latest`
+| Method   | Path                     | Purpose                                                                                                 |
+|----------|--------------------------|---------------------------------------------------------------------------------------------------------|
+| `GET`    | `/health`                | Liveness probe                                                                                          |
+| `GET`    | `/federation`            | Full topology snapshot (resolver URL + all platforms). Entry point for Frontend and Workload Generator. |
+| `GET`    | `/platforms`             | List managed platforms                                                                                  |
+| `POST`   | `/platforms`             | Spawn a new platform container                                                                          |
+| `GET`    | `/platforms/{id}`        | Platform details                                                                                        |
+| `POST`   | `/platforms/{id}/pause`  | Stop the platform container (simulates platform going offline)                                          |
+| `POST`   | `/platforms/{id}/resume` | Restart a paused platform                                                                               |
+| `POST`   | `/platforms/{id}/reset`  | Rebuild the platform database from scratch                                                              |
+| `DELETE` | `/platforms/{id}`        | Tear down platform and its database                                                                     |
+| `GET`    | `/resolver`              | Resolver URL and status                                                                                 |
+| `POST`   | `/resolver/seed-schemas` | Load `seed-schemas/*.json` into the Resolver's authoritative schema set                                 |
 
 ## Troubleshooting
 
-- **Docker daemon unavailable**: Ensure Docker is running and the socket is accessible. On Linux/macOS, you might need `sudo` or to be in the `docker` group.
-- **Port conflicts**: The factory starts allocating ports from `8084`. Ensure these ports are not used by other services.
-- **Tests hanging**: Ensure `DPP_FACTORY_TESTING=true` is set when running tests manually to avoid accidental Docker orchestration.
-- **Orphans found**: If the factory crashed, it might leave containers. Use `DPP_FACTORY_ORPHANS=shutdown` to clean them up on next start.
+- **Docker daemon unavailable**: Ensure Docker is running and the socket is accessible.
+- **Port conflicts**: Default ports are 8080-8083. Dynamic platforms start at 8084.
+- **Tests hanging**: Set `DPP_FACTORY_TESTING=true` when running tests manually.
+- **Orphans found**: Use `DPP_FACTORY_ORPHANS=shutdown` to clean up containers from a previous crashed run.

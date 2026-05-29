@@ -1,6 +1,9 @@
-import pytest
 from datetime import datetime
 from dpp_platform_factory.core.state import PlatformStatus, PlatformRecord, ResolverRecord
+from datetime import datetime
+
+from dpp_platform_factory.core.state import PlatformStatus, PlatformRecord, ResolverRecord
+
 
 def test_spawn_docker_failure(client, fake_docker, test_state):
     test_state.resolver = ResolverRecord(
@@ -46,7 +49,7 @@ def test_seed_schemas_partial_failure(client, fake_resolver, test_state):
     )
     
     # Mock publish_schema to fail for one specific schema
-    async def side_effect(subject_type, schema):
+    async def side_effect(subject_type, major_version, minor_version, schema_document):
         if "battery" in subject_type.lower():
             raise Exception("Publish failed")
         return None

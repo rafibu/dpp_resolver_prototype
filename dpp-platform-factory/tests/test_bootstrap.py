@@ -1,11 +1,14 @@
-import pytest
+from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from dpp_platform_factory.core.platform import PlatformRecord
+from dpp_platform_factory.core.state import PlatformStatus
+from dpp_platform_factory.infrastructure.resolver import ResolverRecord
 from dpp_platform_factory.utils.bootstrap import bootstrap
 from dpp_platform_factory.utils.config import FederationConfig, ResolverConfig, PlatformConfig
-from dpp_platform_factory.core.state import FactoryState, PlatformStatus
-from dpp_platform_factory.infrastructure.resolver import ResolverRecord
-from dpp_platform_factory.core.platform import PlatformRecord
-from datetime import datetime, UTC
+
 
 @pytest.mark.asyncio
 async def test_bootstrap_success(mocker):
@@ -57,6 +60,7 @@ async def test_bootstrap_success(mocker):
 
     # Mock ResolverClient
     mock_resolver_client = MagicMock()
+    mock_resolver_client.ensure_subject_type = AsyncMock()
     mock_resolver_client.register_platform = AsyncMock()
     mocker.patch("dpp_platform_factory.utils.bootstrap.ResolverClient", return_value=mock_resolver_client)
 
@@ -129,6 +133,7 @@ async def test_bootstrap_platform_failure_continues(mocker):
 
     # Mock ResolverClient
     mock_resolver_client = MagicMock()
+    mock_resolver_client.ensure_subject_type = AsyncMock()
     mock_resolver_client.register_platform = AsyncMock()
     mocker.patch("dpp_platform_factory.utils.bootstrap.ResolverClient", return_value=mock_resolver_client)
 

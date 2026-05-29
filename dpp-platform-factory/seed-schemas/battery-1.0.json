@@ -1,9 +1,13 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.dpp.eu/battery/1.0",
   "title": "Battery",
   "type": "object",
   "properties": {
+    "serial_number": { "type": "string" },
+    "manufacturer": { "type": "string" },
     "capacity_kwh": { "type": "number" },
+    "capacity_wh": { "type": "number" },
     "chemistry": { "type": "string" },
     "cycles": { "type": "integer" }
   },

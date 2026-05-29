@@ -22,6 +22,11 @@ class ResolverInfo(BaseModel):
     status: PlatformStatus
 
 class FederationOverview(BaseModel):
+    """Observable snapshot of the federated state (Definition 7).
+
+    Consumed by the Frontend and Workload Generator via GET /federation to discover
+    the live topology without knowing container details in advance.
+    """
     resolver: Optional[ResolverInfo]
     platforms: List[PlatformInfo]
 

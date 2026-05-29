@@ -1,12 +1,13 @@
 import asyncio
-import httpx
-from datetime import datetime
 from typing import List, Optional, Set
 
-from .state import FactoryState, PlatformStatus, PlatformRecord, ResolverRecord
+import httpx
+
+from .platform import PlatformSpec, spawn_platform, teardown_platform, rebuild_db
+from .state import FactoryState, PlatformStatus, PlatformRecord
 from ..infrastructure.docker_client import DockerClient, DPP_NET
 from ..infrastructure.resolver_client import ResolverClient
-from .platform import PlatformSpec, spawn_platform, teardown_platform, rebuild_db
+
 
 class PlatformService:
     def __init__(
@@ -30,6 +31,13 @@ class PlatformService:
         return await self.state.get_platform(platform_id)
 
     async def spawn_platform(self, stack: str, issuer_id: str, subject_types: List[str]) -> PlatformRecord:
+        """Spawn a new platform container and wire it into the federation.
+
+        The operation is atomic: if Resolver registration fails (registerIssuer), 
+        the containers are torn down and RuntimeError is raised.
+        Only after a successful registration entry exists in the resolver registry
+        (Definition 10) is the platform added to the factory's in-memory state.
+        """
         if stack not in ("spring-postgres", "fastapi-mongo"):
             raise ValueError(f"Unsupported stack: {stack}")
         if not issuer_id:

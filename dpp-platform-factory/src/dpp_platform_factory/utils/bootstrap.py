@@ -1,3 +1,17 @@
+"""
+Builds the initial federated state (Definition 7) for the prototype.
+
+Startup sequence:
+1. Start the Resolver container - the shared infrastructure that holds the authoritative
+   schema set and resolver registry (Definition 6, Definition 10).
+2. Register all subject types on the Resolver - required before schemas or platforms
+   can reference them.
+3. Spawn each default DPP platform container and call registerIssuer
+   on the Resolver so that federated references to that issuer resolve correctly.
+
+Failures during platform spawning are logged and recorded as ERROR in state; they do
+not abort startup. A partially-bootstrapped federation is still useful for debugging.
+"""
 import structlog
 
 from .config import FederationConfig
