@@ -66,9 +66,9 @@ public class PlatformController {
      * Registers a new issuer or updates an existing issuer's platform mapping.
      *
      * <p>When the issuer named in {@code platformMappingDTO.issuerId} is not yet in the
-     * resolver registry, this implements the {@code registerIssuer} operation:
-     * it adds a new entry mapping the issuer to its hosting platform. When the
-     * issuer is already registered, this implements the {@code migrate} operation:
+     * resolver registry, this implements the {@code registerIssuer} operation:<br>
+     * it adds a new entry mapping the issuer to its hosting platform.<br>
+     * When the issuer is already registered, this implements the {@code migrate} operation:<br>
      * it updates the registry entry to point to the new hosting platform.</p>
      *
      * <p>The {@code resolutionUrl} field contains the URL template used by the resolver

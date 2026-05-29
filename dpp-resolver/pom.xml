@@ -9,7 +9,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>ch.bfh</groupId>
-    <artifactId>dpp_resolver</artifactId>
+    <artifactId>dpp-resolver</artifactId>
     <version>1.0.0</version>
     <name>DPP Resolver Prototype</name>
     <description>

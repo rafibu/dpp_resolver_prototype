@@ -43,8 +43,7 @@ public class PlatformMappingService {
      * {@code migrate} depending on whether the issuer is already in the registry.
      *
      * <p>The {@code migrate} operation requires the issuer to be
-     * already registered. This method silently handles both cases via upsert; callers
-     * that need to enforce preconditions should check existence before calling.</p>
+     * already registered. This method silently handles both cases via upsert.</p>
      */
     @Transactional
     public PlatformMappingDTO save(PlatformMappingDTO platformMappingDTO) {
