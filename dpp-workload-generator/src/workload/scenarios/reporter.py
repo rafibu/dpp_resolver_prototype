@@ -98,7 +98,7 @@ class ScenarioReporter:
             md.append("")
             md.append(f"**Observed:** {step.observed}")
             md.append("")
-            md.append(f"**Result:** {'PASSED' if step.success else 'FAILED'}")
+            md.append(f"Result: {'PASSED' if step.success else 'FAILED'}")
             md.append(f"**Duration:** {step.duration_ms:.2f}ms")
             if step.details:
                 md.append("")
