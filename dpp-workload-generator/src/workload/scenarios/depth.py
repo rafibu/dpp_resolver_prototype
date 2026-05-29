@@ -36,10 +36,11 @@ async def generate_depth_chain(federation: FederationOverview, depth: int, seed:
         raise RuntimeError("No platforms available in federation")
 
     # 1. Seed schemas
-    # We do this up front to ensure all subject types are known to the Resolver
+    # Subject types must be registered before schemas can be published (precondition for publishSchema).
     for i in range(1, depth + 1):
         st = f"link_{i}"
         schema = generate_schema(st, with_dependencies=True)
+        await resolver.ensure_subject_type(st)
         await resolver.publish_schema(st, 1, 0, schema)
 
     # 2. Issue DPPs leaf-first

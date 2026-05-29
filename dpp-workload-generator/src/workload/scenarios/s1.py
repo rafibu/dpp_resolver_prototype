@@ -3,6 +3,7 @@ import structlog
 from pathlib import Path
 from typing import Optional
 from ..federation import FederationClient
+from ..clients import ResolverClient
 from ..scenarios.pv import generate_pv_scenario
 from .reporter import ScenarioReporter
 
@@ -27,8 +28,8 @@ async def run_s1(factory_url: str, seed: int, output_dir: Optional[Path] = None)
             platform_b = await fed_client.find_platform_for_subject_type("battery")
             
             pv_id = pv_result.pv_module.dpp_id
-            pv_url = f"{platform_a.external_url.rstrip('/')}/dpps/pv_module/{pv_id}"
-            
+            pv_url = f"{platform_a.external_url.rstrip('/')}/dpps/{pv_id}"
+
             with reporter.step("Cache dependencies on platform-a", "PV-module DPP's hard refs resolve and cache"):
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     # This GET forces platform-a to resolve and cache references
@@ -43,10 +44,9 @@ async def run_s1(factory_url: str, seed: int, output_dir: Optional[Path] = None)
             # Step 6: Verify online resolution works baseline
             resolver_url = await fed_client.resolver_url()
             with reporter.step("Verify online resolution works baseline", "GET via Resolver returns 200"):
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.get(f"{resolver_url.rstrip('/')}/resolve/pv_module/{pv_id}")
-                    resp.raise_for_status()
-                    reporter.record_observation("200 OK via Resolver", True)
+                resolver_client = ResolverClient(resolver_url)
+                resolved_url = await resolver_client.resolve("pv_module", pv_id)
+                reporter.record_observation(f"Resolved to {resolved_url}", True)
 
             # Step 7: Pause platform-b via Factory
             with reporter.step("Pause platform-b", "platform-b becomes unreachable"):

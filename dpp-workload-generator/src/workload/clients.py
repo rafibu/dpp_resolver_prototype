@@ -102,11 +102,11 @@ class PlatformClient(BaseClient):
         self.platform_info = platform
 
     async def issue_dpp(self, spec: IssueDppSpec) -> DppResponse:
-        resp = await self._request("POST", "/dpps", json=spec.model_dump())
+        resp = await self._request("POST", "/dpps/issue", json=spec.model_dump())
         return DppResponse.model_validate(resp.json())
 
     async def revise_dpp(self, dpp_id: str, spec: ReviseDppSpec) -> DppResponse:
-        resp = await self._request("POST", f"/dpps/{dpp_id}", json=spec.model_dump())
+        resp = await self._request("POST", f"/dpps/{dpp_id}/revise", json=spec.model_dump())
         return DppResponse.model_validate(resp.json())
 
     async def get_revision(self, dpp_id: str, version: int | None = None) -> DppResponse:
@@ -121,6 +121,21 @@ class PlatformClient(BaseClient):
 class ResolverClient(BaseClient):
     def __init__(self, base_url: str):
         super().__init__(base_url, follow_redirects=True)
+
+    async def ensure_subject_type(self, subject_type: str) -> None:
+        """Register a subject type on the Resolver if it does not already exist.
+
+        Required before publishing a schema for a new subject type. The Resolver's
+        SubjectTypeService is idempotent: duplicate registrations are silently ignored.
+        """
+        payload = {
+            "name": subject_type,
+            "description": subject_type.replace("_", " ").title()
+        }
+        try:
+            await self._request("POST", "/admin/subject-types", json=payload)
+        except (WorkloadError, ConflictError):
+            pass  # already exists
 
     async def publish_schema(self, subject_type: str, major: int, minor: int, document: dict) -> None:
         payload = {

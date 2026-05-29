@@ -34,7 +34,9 @@ async def generate_fanout(federation: FederationOverview, fanout: int, root_plat
         raise RuntimeError("No platforms available in federation")
 
     # 1. Seed schemas
+    await resolver.ensure_subject_type("parent")
     await resolver.publish_schema("parent", 1, 0, generate_schema("parent", with_dependencies=True))
+    await resolver.ensure_subject_type("child")
     await resolver.publish_schema("child", 1, 0, generate_schema("child", with_dependencies=False))
 
     # Identify root platform

@@ -12,6 +12,7 @@ from .scenarios.pv import generate_pv_scenario
 from .scenarios.schema_evolution import run_schema_evolution
 from .scenarios.s1 import run_s1
 from .scenarios.s2 import run_s2
+from .scenarios.s3 import run_s3
 from .clients import ResolverClient, PlatformClient, IssueDppSpec, DppSchemaVersion
 from .payloads import generate_valid_payload, generate_dpp_id
 from .schemas.generator import generate_schema
@@ -272,6 +273,21 @@ def s2(
             raise typer.Exit(code=1)
     except Exception as e:
         logger.error("s2_failed", error=str(e))
+        raise typer.Exit(code=1)
+
+@scenario_app.command()
+def s3(
+    factory_url: str = typer.Option("http://localhost:8000", "--factory-url"),
+    seed: int = typer.Option(42, "--seed"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir")
+):
+    """Scenario S3: Schema-Level Cycle Rejection"""
+    try:
+        success = asyncio.run(run_s3(factory_url, seed, output_dir))
+        if not success:
+            raise typer.Exit(code=1)
+    except Exception as e:
+        logger.error("s3_failed", error=str(e))
         raise typer.Exit(code=1)
 
 if __name__ == "__main__":

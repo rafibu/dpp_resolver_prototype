@@ -39,6 +39,7 @@ async def run_schema_evolution(
     
     # 1. Seed v1.0
     schema_v10 = generate_schema(subject_type)
+    await resolver.ensure_subject_type(subject_type)
     await resolver.publish_schema(subject_type, 1, 0, schema_v10)
     
     # 2. Issue revisions under v1.0
