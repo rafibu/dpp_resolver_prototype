@@ -1,9 +1,10 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from workload.scenarios.depth import generate_depth_chain
-from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
-from workload.clients import DppResponse, DppSchemaVersion
 from datetime import datetime
+from unittest.mock import AsyncMock, patch, MagicMock
+from workload.clients import DppResponse, DppSchemaVersion
+from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
+from workload.scenarios.depth import generate_depth_chain
+
 
 @pytest.fixture
 def mock_federation():
@@ -29,6 +30,7 @@ async def test_generate_depth_chain_logic(mock_federation):
          patch("workload.scenarios.depth.PlatformClient") as MockPlatform:
         
         mock_resolver = MockResolver.return_value
+        mock_resolver.ensure_subject_type = AsyncMock()
         mock_resolver.publish_schema = AsyncMock()
         
         mock_platform = MockPlatform.return_value
@@ -62,5 +64,6 @@ async def test_generate_depth_chain_logic(mock_federation):
         # Verify round-robin (3 links, 3 platforms)
         assert len(set(result.platform_mapping.values())) == 3
         
-        # Verify schema seeding
+        # Verify subject type registration and schema seeding (one call per link)
+        assert mock_resolver.ensure_subject_type.call_count == 3
         assert mock_resolver.publish_schema.call_count == 3

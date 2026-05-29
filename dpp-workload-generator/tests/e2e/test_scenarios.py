@@ -11,6 +11,7 @@ def test_scenario_help():
     assert result.exit_code == 0
     assert "s1" in result.output
     assert "s2" in result.output
+    assert "s3" in result.output
 
 @pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")
 def test_scenario_s1_full(tmp_path):
@@ -30,14 +31,28 @@ def test_scenario_s1_full(tmp_path):
 @pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")
 def test_scenario_s2_full(tmp_path):
     result = runner.invoke(app, [
-        "scenario", "s2", 
+        "scenario", "s2",
         "--output-dir", str(tmp_path),
         "--factory-url", os.getenv("FACTORY_URL", "http://localhost:8000")
     ])
     assert result.exit_code == 0
-    
-    # Verify report exists
+
     reports = list(tmp_path.glob("s2-*.md"))
+    assert len(reports) == 1
+    content = reports[0].read_text()
+    assert "Outcome: PASSED" in content
+
+
+@pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")
+def test_scenario_s3_full(tmp_path):
+    result = runner.invoke(app, [
+        "scenario", "s3",
+        "--output-dir", str(tmp_path),
+        "--factory-url", os.getenv("FACTORY_URL", "http://localhost:8000")
+    ])
+    assert result.exit_code == 0
+
+    reports = list(tmp_path.glob("s3-*.md"))
     assert len(reports) == 1
     content = reports[0].read_text()
     assert "Outcome: PASSED" in content

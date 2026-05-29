@@ -28,6 +28,7 @@ async def test_generate_fanout_logic(mock_federation):
          patch("workload.scenarios.fanout.PlatformClient") as MockPlatform:
         
         mock_resolver = MockResolver.return_value
+        mock_resolver.ensure_subject_type = AsyncMock()
         mock_resolver.publish_schema = AsyncMock()
         
         mock_platform = MockPlatform.return_value

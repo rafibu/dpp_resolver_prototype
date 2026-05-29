@@ -23,6 +23,7 @@ async def test_run_schema_evolution_minor(mock_federation):
          patch("workload.scenarios.schema_evolution.PlatformClient") as MockPlatform:
         
         mock_resolver = MockResolver.return_value
+        mock_resolver.ensure_subject_type = AsyncMock()
         mock_resolver.publish_schema = AsyncMock()
         
         mock_platform = MockPlatform.return_value

@@ -21,3 +21,31 @@ def test_generate_schema_with_dependencies():
 def test_generate_schema_required_fields():
     schema = generate_schema("test")
     assert set(schema["required"]) == {"manufacturer", "model", "serial_number"}
+
+
+def test_generate_schema_hard_reference_targets():
+    schema = generate_schema("pv_module", hard_reference_targets=["battery", "inverter"])
+
+    assert "battery_ref" in schema["properties"]
+    assert "inverter_ref" in schema["properties"]
+    assert schema["properties"]["battery_ref"]["x-dpp-reference"] == "battery"
+    assert schema["properties"]["inverter_ref"]["x-dpp-reference"] == "inverter"
+
+
+def test_generate_schema_hard_reference_targets_empty():
+    schema = generate_schema("pv_module", hard_reference_targets=[])
+    for prop in schema["properties"].values():
+        assert "x-dpp-reference" not in prop
+
+
+def test_generate_schema_hard_reference_targets_none():
+    schema = generate_schema("pv_module", hard_reference_targets=None)
+    for prop in schema["properties"].values():
+        assert "x-dpp-reference" not in prop
+
+
+def test_generate_schema_hard_reference_ref_field():
+    schema = generate_schema("type_a", hard_reference_targets=["type_b"])
+    ref_prop = schema["properties"]["type_b_ref"]
+    assert "$ref" in ref_prop["properties"]
+    assert ref_prop["required"] == ["$ref"]

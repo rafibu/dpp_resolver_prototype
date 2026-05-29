@@ -19,7 +19,7 @@ def platform_info():
 async def test_platform_issue_dpp(httpx_mock, platform_info):
     httpx_mock.add_response(
         method="POST",
-        url="http://platform-a:8082/dpps",
+        url="http://platform-a:8082/dpps/issue",
         json={
             "dpp_id": "issuerA-pv-001",
             "version": 1,
@@ -39,6 +39,32 @@ async def test_platform_issue_dpp(httpx_mock, platform_info):
         assert resp.dpp_id == "issuerA-pv-001"
         assert resp.version == 1
 
+
+@pytest.mark.asyncio
+async def test_platform_revise_dpp(httpx_mock, platform_info):
+    from workload.clients import ReviseDppSpec
+    httpx_mock.add_response(
+        method="POST",
+        url="http://platform-a:8082/dpps/issuerA-pv-001/revise",
+        json={
+            "dpp_id": "issuerA-pv-001",
+            "version": 2,
+            "schema_version": {"subject_type": "pv_module", "major_version": 1, "minor_version": 0},
+            "dpp_payload": {"foo": "updated"},
+            "payload_hash": "hash456",
+            "created_at": "2026-05-03T13:00:00Z"
+        }
+    )
+
+    async with PlatformClient(platform_info) as client:
+        spec = ReviseDppSpec(
+            schema_version=DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0),
+            dpp_payload={"foo": "updated"}
+        )
+        resp = await client.revise_dpp("issuerA-pv-001", spec)
+        assert resp.dpp_id == "issuerA-pv-001"
+        assert resp.version == 2
+
 @pytest.mark.asyncio
 async def test_platform_not_found(httpx_mock, platform_info):
     httpx_mock.add_response(method="GET", url="http://platform-a:8082/dpps/missing", status_code=404)
@@ -47,10 +73,39 @@ async def test_platform_not_found(httpx_mock, platform_info):
             await client.get_revision("missing")
 
 @pytest.mark.asyncio
+async def test_resolver_ensure_subject_type_creates(httpx_mock):
+    resolver_url = "http://resolver:8081"
+    httpx_mock.add_response(method="POST", url=f"{resolver_url}/admin/subject-types", status_code=201)
+
+    async with ResolverClient(resolver_url) as client:
+        await client.ensure_subject_type("new_type")
+
+
+@pytest.mark.asyncio
+async def test_resolver_ensure_subject_type_idempotent(httpx_mock):
+    resolver_url = "http://resolver:8081"
+    # 409 Conflict (already exists) must be swallowed silently
+    httpx_mock.add_response(method="POST", url=f"{resolver_url}/admin/subject-types", status_code=409)
+
+    async with ResolverClient(resolver_url) as client:
+        await client.ensure_subject_type("existing_type")
+
+
+@pytest.mark.asyncio
+async def test_resolver_ensure_subject_type_400_swallowed(httpx_mock):
+    resolver_url = "http://resolver:8081"
+    # Resolver may return 400 for duplicates in some versions; treat as harmless
+    httpx_mock.add_response(method="POST", url=f"{resolver_url}/admin/subject-types", status_code=400)
+
+    async with ResolverClient(resolver_url) as client:
+        await client.ensure_subject_type("some_type")
+
+
+@pytest.mark.asyncio
 async def test_resolver_publish_schema(httpx_mock):
     resolver_url = "http://resolver:8081"
     httpx_mock.add_response(method="POST", url=f"{resolver_url}/schemas", status_code=201)
-    
+
     async with ResolverClient(resolver_url) as client:
         await client.publish_schema("pv_module", 1, 0, {"type": "object"})
 
