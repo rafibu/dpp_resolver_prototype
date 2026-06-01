@@ -66,6 +66,7 @@ class DockerClient:
         volumes: dict[str, Any],
         network: str,
         labels: dict[str, str],
+        command: list[str] | None = None,
     ) -> Container:
         """Create and start a container. Always attaches the MANAGED_BY_LABEL."""
         all_labels = {_LABEL_KEY: _LABEL_VALUE, **labels}
@@ -80,6 +81,7 @@ class DockerClient:
             labels=all_labels,
             detach=True,
             remove=False,
+            command=command,
         )
         logger.info(
             "docker_container_started",

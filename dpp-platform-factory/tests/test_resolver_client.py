@@ -38,9 +38,10 @@ async def test_register_platform_sends_correct_body(httpx_mock):
 
     body = json.loads(httpx_mock.get_request().content)
     assert body["platform"] == "platform-a"
-    assert body["issuerId"] == "issuerA"
-    assert body["resolutionUrl"] == "http://localhost:8081"
-    assert "pv_module" in body["subjectTypes"]
+    assert body["issuer_id"] == "issuerA"
+    # Internal Docker URL template so platform containers can follow the resolver redirect (I7).
+    assert body["resolution_url"] == "http://dpp-platform-a:8080/dpps/{dppId}"
+    assert "pv_module" in body["subject_types"]
 
 @pytest.mark.asyncio
 async def test_register_platform_accepts_201(httpx_mock):
@@ -94,10 +95,10 @@ async def test_publish_schema_posts_correct_dto(httpx_mock):
     await resolver.publish_schema("battery", 1, 0, schema_doc)
 
     body = json.loads(httpx_mock.get_request().content)
-    assert body["subjectType"] == "battery"
-    assert body["majorVersion"] == 1
-    assert body["minorVersion"] == 0
-    assert body["schemaDocument"] == schema_doc
+    assert body["subject_type"] == "battery"
+    assert body["major_version"] == 1
+    assert body["minor_version"] == 0
+    assert body["schema_document"] == schema_doc
 
 @pytest.mark.asyncio
 async def test_publish_schema_raises_on_server_error(httpx_mock):

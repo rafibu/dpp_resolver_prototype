@@ -18,10 +18,10 @@ class FakeResolverClient:
             raise RuntimeError("Simulated Resolver failure")
 
         self.platforms[platform.platform_id] = {
-            "platformId": platform.platform_id,
-            "baseUrl": platform.external_url,
-            "issuerId": platform.issuer_id,
-            "subjectTypes": platform.subject_types,
+            "platform": platform.platform_id,
+            "resolution_url": f"{platform.internal_url.rstrip('/')}/dpps/{{dppId}}",
+            "issuer_id": platform.issuer_id,
+            "subject_types": platform.subject_types,
         }
 
     async def get_platform(self, platform_id: str) -> Optional[dict]:

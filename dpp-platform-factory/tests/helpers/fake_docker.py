@@ -62,7 +62,7 @@ class FakeDockerClient:
                 results.append(c)
         return results
 
-    def run_container(self, image, name, env, ports, volumes, network, labels) -> FakeContainer:
+    def run_container(self, image, name, env, ports, volumes, network, labels, command=None) -> FakeContainer:
         if self.fail_run_on == name:
             raise RuntimeError(f"Simulated failure for {name}")
         

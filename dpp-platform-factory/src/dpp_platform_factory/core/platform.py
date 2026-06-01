@@ -68,6 +68,7 @@ async def spawn_platform(
             volumes={f"{db_name}-data": {"bind": db_mount, "mode": "rw"}},
             network=network_name,
             labels=db_labels,
+            command=_db_command(spec.stack),
         )
         await _wait_db_ready(db_container, spec.stack, timeout=60)
 
@@ -137,6 +138,7 @@ async def rebuild_db(client: DockerClient, record: PlatformRecord, network_name:
         volumes={f"{db_name}-data": {"bind": db_mount, "mode": "rw"}},
         network=network_name,
         labels=_db_labels(record.platform_id),
+        command=_db_command(record.stack),
     )
     await _wait_db_ready(db_container, record.stack, timeout=60)
     return db_container.id
@@ -156,10 +158,20 @@ def _db_env_and_mount(stack: str) -> tuple[dict[str, str], str]:
     return {}, "/data/db"
 
 
+def _db_command(stack: str) -> list[str] | None:
+    if stack == "fastapi-mongo":
+        # --replSet rs0 enables multi-document transactions required by the Python platform.
+        # Without it, PyMongo raises "Transaction numbers are only allowed on a replica set member".
+        return ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    return None
+
+
 def _database_url(stack: str, db_name: str) -> str:
     if stack == "spring-postgres":
         return f"jdbc:postgresql://{db_name}:5432/dpp_platform"
-    return f"mongodb://{db_name}:27017"
+    # replicaSet=rs0 is required: without it PyMongo connects in standalone mode
+    # and raises "Transaction numbers are only allowed on a replica set member".
+    return f"mongodb://{db_name}:27017/?replicaSet=rs0"
 
 
 def _db_labels(platform_id: str) -> dict[str, str]:
@@ -218,8 +230,56 @@ async def _wait_db_ready(container, stack: str, timeout: int = 60) -> None:
                 )
             if code == 0:
                 logger.info("db_ready", container=container.name, stack=stack)
+                if stack == "fastapi-mongo":
+                    await _init_mongo_replset(container)
                 return
         except Exception:
             pass
         await asyncio.sleep(1)
     raise TimeoutError(f"Database '{container.name}' did not become ready within {timeout}s")
+
+
+async def _init_mongo_replset(container, timeout: int = 30) -> None:
+    """Initiate single-node replica set and wait for primary election.
+
+    Required because MongoDB standalone instances do not support multi-document
+    transactions. rs.initiate() is skipped if already done (idempotent).
+
+    The replica set member must be configured with the container name (not 'localhost')
+    because platform containers reach MongoDB over the Docker network using that name.
+    Using 'localhost' causes ServerSelectionTimeoutError from other containers.
+    """
+    host = f"{container.name}:27017"
+    # Try rs.initiate() first (fresh DB). If already initiated (stale volume),
+    # force-reconfig to ensure the correct container-name hostname is used.
+    # Using 'localhost' would cause ServerSelectionTimeoutError from other containers.
+    init_js = (
+        f"var h = '{host}'; "
+        f"try {{ "
+        f"  rs.initiate({{_id:'rs0', members:[{{_id:0, host:h}}]}}); "
+        f"  print('initiated'); "
+        f"}} catch(e) {{ "
+        f"  var c = rs.conf(); "
+        f"  c.members[0].host = h; "
+        f"  c.version = c.version + 1; "
+        f"  rs.reconfig(c, {{force:true}}); "
+        f"  print('reconfigured'); "
+        f"}}"
+    )
+    code, _ = container.exec_run(["mongosh", "--eval", init_js], demux=False)
+    if code != 0:
+        logger.warning("mongo_replset_init_failed", container=container.name)
+        return
+
+    # Wait until this node becomes primary before handing back to the caller.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        code, out = container.exec_run(
+            ["mongosh", "--quiet", "--eval", "db.adminCommand({isMaster:1}).ismaster"],
+            demux=False,
+        )
+        if code == 0 and b"true" in out:
+            logger.info("mongo_replset_primary_elected", container=container.name)
+            return
+        await asyncio.sleep(1)
+    logger.warning("mongo_replset_primary_not_elected", container=container.name)

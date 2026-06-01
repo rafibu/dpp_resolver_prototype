@@ -43,11 +43,16 @@ def prompt_orphan_action() -> str:
         return "fail"
 
 async def shutdown_orphans(client: DockerClient, containers: list[Container]) -> None:
-    """Stop and remove orphaned containers."""
+    """Stop and remove orphaned containers and their volumes.
+
+    Volumes must be removed so that DB containers (Postgres, MongoDB) start with a
+    clean state on the next Factory run. Without remove_volumes=True, Docker keeps
+    the named volume and Flyway finds stale migration history on the next startup.
+    """
     for container in containers:
         logger.info("orphan_shutdown", name=container.name)
         client.stop_container(container)
-        client.remove_container(container)
+        client.remove_container(container, remove_volumes=True)
 
 async def reuse_orphans(client: DockerClient, containers: list[Container]) -> FactoryState:
     """Reconstruct FactoryState from container labels and inspect data."""

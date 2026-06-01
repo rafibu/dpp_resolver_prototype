@@ -39,7 +39,7 @@ def test_scenario_spawn_and_seed(client, fake_docker, fake_resolver, test_state)
     
     # 5. Verify it was registered with resolver
     assert platform_id in fake_resolver.platforms
-    assert fake_resolver.platforms[platform_id]["issuerId"] == "issuer-X"
+    assert fake_resolver.platforms[platform_id]["issuer_id"] == "issuer-X"
     
     # 6. Delete platform and check consistency
     del_resp = client.delete(f"/platforms/{platform_id}")

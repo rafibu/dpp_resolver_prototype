@@ -38,7 +38,7 @@ async def test_shutdown_orphans(mock_client):
     mock_cont.name = "orphan-1"
     await shutdown_orphans(mock_client, [mock_cont])
     mock_client.stop_container.assert_called_once_with(mock_cont)
-    mock_client.remove_container.assert_called_once_with(mock_cont)
+    mock_client.remove_container.assert_called_once_with(mock_cont, remove_volumes=True)
 
 @pytest.mark.asyncio
 async def test_reuse_orphans(mock_client):

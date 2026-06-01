@@ -64,9 +64,12 @@ class ResolverClient:
         url = f"{self._base_url}/admin/platforms"
         body = {
             "platform": platform.platform_id,
-            "resolutionUrl": platform.external_url,
-            "issuerId": platform.issuer_id,
-            "subjectTypes": platform.subject_types,
+            # Internal Docker URL template: other platform containers follow the resolver
+            # redirect over the Docker network during the I7 hard-reference check, and the
+            # Resolver expands {dppId} (and appends the revision) when building the redirect.
+            "resolution_url": f"{platform.internal_url.rstrip('/')}/dpps/{{dppId}}",
+            "issuer_id": platform.issuer_id,
+            "subject_types": platform.subject_types,
         }
         logger.info(
             "resolver_registering_platform",
@@ -110,10 +113,10 @@ class ResolverClient:
         """
         url = f"{self._base_url}/schemas"
         body = {
-            "subjectType": subject_type,
-            "majorVersion": major_version,
-            "minorVersion": minor_version,
-            "schemaDocument": schema_document,
+            "subject_type": subject_type,
+            "major_version": major_version,
+            "minor_version": minor_version,
+            "schema_document": schema_document,
         }
         logger.info(
             "resolver_publishing_schema",
