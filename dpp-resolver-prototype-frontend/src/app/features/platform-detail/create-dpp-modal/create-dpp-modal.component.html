@@ -1,62 +1,100 @@
-<div class="modal-overlay" [class.open]="isOpen()">
-  <div class="modal-container">
-    <header class="modal-header">
-      <h2>Issue New DPP <small>on {{ platformId() }}</small></h2>
-      <button class="close-btn" (click)="close()">×</button>
-    </header>
+<h2 mat-dialog-title>
+  <mat-icon>note_add</mat-icon>
+  Issue DPP
+</h2>
 
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>DPP ID</label>
-          <input type="text" [(ngModel)]="dppId" placeholder="issuer-xxxx">
-          <small class="hint">Prefix: {{ issuerId() }}</small>
-        </div>
+<mat-dialog-content class="dialog-content">
+  <div class="form-grid">
+    <mat-form-field appearance="outline">
+      <mat-label>DPP ID</mat-label>
+      <input
+        matInput
+        [ngModel]="dppId()"
+        (ngModelChange)="dppId.set($event)"
+        [disabled]="isSubmitting()"
+        autocomplete="off"
+      >
+      <mat-hint>Prefix: {{ data.issuerId }}</mat-hint>
+      @if (dppIdInvalid()) {
+        <mat-error>DPP ID must start with {{ data.issuerId }}.</mat-error>
+      }
+    </mat-form-field>
 
-        <div class="form-group">
-          <label>Subject Type</label>
-          <select [(ngModel)]="selectedSubjectType" (change)="onSubjectTypeChange()">
-            @for (type of subjectTypes(); track type) {
-              <option [value]="type">{{ type }}</option>
-            }
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Schema Version</label>
-          <select [(ngModel)]="selectedSchema" (change)="onSchemaChange()">
-            @for (schema of schemas(); track schema.major + '.' + schema.minor) {
-              <option [ngValue]="schema">{{ schema.major }}.{{ schema.minor }}</option>
-            }
-          </select>
-        </div>
-      </div>
-
-      <div class="editor-section">
-        <label>Payload</label>
-        <div class="monaco-wrapper">
-          <ngx-monaco-editor
-            [options]="editorOptions"
-            [ngModel]="code()"
-            (ngModelChange)="onCodeChange($event)"
-          ></ngx-monaco-editor>
-        </div>
-      </div>
-
-      <div class="validation-section">
-        @if (validationErrors().length === 0) {
-          <p class="valid-msg">Payload is valid.</p>
-        } @else {
-          <div class="error-msg">
-            Invalid payload: {{ validationErrors().length }} errors found.
-          </div>
+    <mat-form-field appearance="outline">
+      <mat-label>Subject Type</mat-label>
+      <mat-select
+        [value]="selectedSubjectType()"
+        [disabled]="isSubmitting()"
+        (valueChange)="onSubjectTypeChange($event)"
+      >
+        @for (type of data.subjectTypes; track type) {
+          <mat-option [value]="type">{{ type }}</mat-option>
         }
-      </div>
-    </div>
+      </mat-select>
+    </mat-form-field>
 
-    <footer class="modal-footer">
-      <button class="btn btn-secondary" (click)="close()">Cancel</button>
-      <button class="btn btn-primary" [disabled]="validationErrors().length > 0 || !dppId()" (click)="onSubmit()">Issue DPP</button>
-    </footer>
+    <mat-form-field appearance="outline">
+      <mat-label>Schema Version</mat-label>
+      <mat-select
+        [value]="selectedSchema()"
+        [disabled]="isSubmitting() || schemaLoading()"
+        (valueChange)="onSchemaChange($event)"
+      >
+        @for (schema of schemas(); track schema.subject_type + '-' + schema.major + '-' + schema.minor) {
+          <mat-option [value]="schema">{{ schema.major }}.{{ schema.minor }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
   </div>
-</div>
+
+  @if (schemaLoading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  @if (schemaError()) {
+    <div class="inline-error">
+      <mat-icon>error</mat-icon>
+      <span>{{ schemaError() }}</span>
+    </div>
+  }
+
+  <section class="editor-section">
+    <div class="section-heading">
+      <span>Payload</span>
+      @if (selectedSchema() && validationErrors().length === 0) {
+        <span class="valid-pill"><mat-icon>check_circle</mat-icon> Valid</span>
+      } @else if (!selectedSchema()) {
+        <span class="error-pill"><mat-icon>error</mat-icon> Schema unavailable</span>
+      } @else {
+        <span class="error-pill"><mat-icon>error</mat-icon> {{ validationErrors().length }} issue(s)</span>
+      }
+    </div>
+    <div class="monaco-wrapper">
+      <ngx-monaco-editor
+        [options]="editorOptions"
+        [ngModel]="code()"
+        (ngModelChange)="onCodeChange($event)"
+      />
+    </div>
+  </section>
+
+  @if (validationErrors().length > 0) {
+    <mat-list class="validation-list">
+      @for (err of validationErrors(); track err.instancePath + err.message) {
+        <mat-list-item>
+          <mat-icon matListItemIcon color="warn">report</mat-icon>
+          <span matListItemTitle>{{ err.instancePath || 'root' }}</span>
+          <span matListItemLine>{{ err.message }}</span>
+        </mat-list-item>
+      }
+    </mat-list>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button type="button" [disabled]="isSubmitting()" (click)="close()">Cancel</button>
+  <button mat-flat-button color="primary" type="button" [disabled]="!canSubmit()" (click)="onSubmit()">
+    <mat-icon>publish</mat-icon>
+    Issue
+  </button>
+</mat-dialog-actions>

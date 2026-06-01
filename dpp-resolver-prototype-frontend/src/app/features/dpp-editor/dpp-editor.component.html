@@ -1,65 +1,99 @@
-<div class="editor-container">
+<section class="editor-container">
   <header class="editor-header">
-    <div class="header-left">
-      <button class="back-link" [routerLink]="['/platforms', platformId(), 'dpps']">← Back to DPPs</button>
-      <h2>{{ dppId() }} <small>v{{ currentRevision()?.version }}</small></h2>
+    <div>
+      <a mat-button [routerLink]="['/platforms', platformId(), 'dpps']">
+        <mat-icon>arrow_back</mat-icon>
+        Back to DPPs
+      </a>
+      <h1>
+        {{ dppId() }}
+        @if (currentRevision()) {
+          <span>v{{ currentRevision()?.version }}</span>
+        }
+      </h1>
     </div>
 
-    <div class="header-right">
+    <div class="header-actions">
       @if (!isEditable()) {
-        <button class="btn btn-secondary btn-sm" (click)="verifyHash()">Verify Hash</button>
-        <button class="btn btn-primary btn-sm" (click)="onRevise()">Revise</button>
+        <button mat-stroked-button type="button" [disabled]="!currentRevision()" (click)="verifyHash()">
+          <mat-icon>verified</mat-icon>
+          Verify Hash
+        </button>
+        <button mat-flat-button color="primary" type="button" [disabled]="!currentRevision()" (click)="onRevise()">
+          <mat-icon>edit</mat-icon>
+          Revise
+        </button>
       } @else {
-        <button class="btn btn-secondary btn-sm" (click)="isEditable.set(false)">Cancel</button>
-        <button class="btn btn-primary btn-sm" [disabled]="validationErrors().length > 0" (click)="onSubmit()">Submit Revision</button>
+        <button mat-button type="button" [disabled]="saving()" (click)="cancelEdit()">Cancel</button>
+        <button mat-flat-button color="primary" type="button" [disabled]="!canSubmit()" (click)="onSubmit()">
+          <mat-icon>publish</mat-icon>
+          Submit Revision
+        </button>
       }
     </div>
   </header>
 
-  <div class="metadata-panel">
-    <div class="meta-item">
-      <label>Schema Reference</label>
-      <span>{{ currentRevision()?.schema_ref }}</span>
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  @if (error()) {
+    <div class="inline-error">
+      <mat-icon>error</mat-icon>
+      <span>{{ error() }}</span>
     </div>
-    <div class="meta-item">
-      <label>Hash</label>
-      <span class="hash" [ngClass]="hashVerification()">{{ currentRevision()?.hash }}</span>
-      @if (hashVerification() === 'success') { <span class="hash-check">✓</span> }
-      @if (hashVerification() === 'failure') { <span class="hash-fail">✗</span> }
+  }
+
+  <mat-card appearance="outlined" class="metadata-panel">
+    <div>
+      <span>Schema</span>
+      <strong>{{ currentRevision()?.schema_ref || '-' }}</strong>
     </div>
-    <div class="meta-item">
-      <label>Timestamp</label>
-      <span>{{ currentRevision()?.timestamp | date:'medium' }}</span>
+    <div>
+      <span>Hash</span>
+      <strong class="hash" [ngClass]="hashVerification()">{{ currentRevision()?.hash || '-' }}</strong>
     </div>
-  </div>
+    <div>
+      <span>Verification</span>
+      @if (hashVerification() === 'success') {
+        <mat-chip class="valid"><mat-icon>check_circle</mat-icon> Match</mat-chip>
+      } @else if (hashVerification() === 'failure') {
+        <mat-chip class="invalid"><mat-icon>error</mat-icon> Mismatch</mat-chip>
+      } @else {
+        <mat-chip>Not checked</mat-chip>
+      }
+    </div>
+  </mat-card>
 
   <div class="editor-main">
     <div class="monaco-wrapper">
       <ngx-monaco-editor
-        [options]="editorOptions"
+        [options]="editorOptions()"
         [ngModel]="code()"
         (ngModelChange)="onCodeChange($event)"
-      ></ngx-monaco-editor>
+      />
     </div>
 
     @if (isEditable()) {
       <aside class="validation-panel">
-        <h3>Validation</h3>
+        <h2>Validation</h2>
         @if (validationErrors().length === 0) {
-          <p class="valid-msg">Payload is valid against schema.</p>
+          <div class="valid-state">
+            <mat-icon>check_circle</mat-icon>
+            <span>Payload is valid against the pinned schema.</span>
+          </div>
         } @else {
-          <ul class="error-list">
-            @for (err of validationErrors(); track err) {
-              <li>
-                <strong>{{ err.instancePath || 'root' }}</strong>: {{ err.message }}
-                @if (err.params) {
-                  <pre>{{ err.params | json }}</pre>
-                }
-              </li>
+          <mat-list>
+            @for (err of validationErrors(); track err.instancePath + err.message) {
+              <mat-list-item>
+                <mat-icon matListItemIcon color="warn">report</mat-icon>
+                <span matListItemTitle>{{ err.instancePath || 'root' }}</span>
+                <span matListItemLine>{{ err.message }}</span>
+              </mat-list-item>
             }
-          </ul>
+          </mat-list>
         }
       </aside>
     }
   </div>
-</div>
+</section>

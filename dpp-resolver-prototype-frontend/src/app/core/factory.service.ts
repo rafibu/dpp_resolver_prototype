@@ -1,9 +1,9 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
-import { SpawnSpec, LogLine, ScenarioResult, ScenarioStatus } from './models/api.model';
-import { PlatformInfo } from './models/federation.model';
+import {inject, Injectable} from '@angular/core';
+import {HttpClient, HttpParams} from '@angular/common/http';
+import {Observable} from 'rxjs';
+import {environment} from '../../environments/environment';
+import {LogLine, ScenarioStatus, SpawnSpec} from './models/api.model';
+import {PlatformInfo} from './models/federation.model';
 
 @Injectable({
   providedIn: 'root'
@@ -24,20 +24,20 @@ export class FactoryService {
     return this.http.post<PlatformInfo>(`${this.factoryUrl}/platforms`, spec);
   }
 
-  pausePlatform(id: string): Observable<void> {
-    return this.http.post<void>(`${this.factoryUrl}/platforms/${id}/pause`, {});
+  pausePlatform(id: string): Observable<PlatformInfo> {
+    return this.http.post<PlatformInfo>(`${this.factoryUrl}/platforms/${id}/pause`, {});
   }
 
-  resumePlatform(id: string): Observable<void> {
-    return this.http.post<void>(`${this.factoryUrl}/platforms/${id}/resume`, {});
+  resumePlatform(id: string): Observable<PlatformInfo> {
+    return this.http.post<PlatformInfo>(`${this.factoryUrl}/platforms/${id}/resume`, {});
   }
 
-  resetPlatform(id: string): Observable<void> {
-    return this.http.post<void>(`${this.factoryUrl}/platforms/${id}/reset`, {});
+  resetPlatform(id: string): Observable<PlatformInfo> {
+    return this.http.post<PlatformInfo>(`${this.factoryUrl}/platforms/${id}/reset`, {});
   }
 
-  deletePlatform(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.factoryUrl}/platforms/${id}`);
+  deletePlatform(id: string): Observable<{ status: string }> {
+    return this.http.delete<{ status: string }>(`${this.factoryUrl}/platforms/${id}`);
   }
 
   getPlatformLogs(id: string, lines: number = 200): Observable<LogLine[]> {
@@ -45,8 +45,8 @@ export class FactoryService {
     return this.http.get<LogLine[]>(`${this.factoryUrl}/platforms/${id}/logs`, { params });
   }
 
-  runScenario(id: 's1' | 's2'): Observable<ScenarioResult> {
-    return this.http.post<ScenarioResult>(`${this.factoryUrl}/scenarios/${id}`, {});
+  runScenario(id: 's1' | 's2'): Observable<ScenarioStatus> {
+    return this.http.post<ScenarioStatus>(`${this.factoryUrl}/scenarios/${id}`, {});
   }
 
   getScenarioStatus(id: 's1' | 's2'): Observable<ScenarioStatus> {

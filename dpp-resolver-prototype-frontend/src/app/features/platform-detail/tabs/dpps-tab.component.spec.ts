@@ -1,12 +1,14 @@
-import { TestBed } from '@angular/core/testing';
-import { DppsTabComponent } from './dpps-tab.component';
-import { PlatformService } from '../../../core/platform.service';
-import { FederationService } from '../../../core/federation.service';
-import { of } from 'rxjs';
-import { ActivatedRoute, provideRouter } from '@angular/router';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { signal } from '@angular/core';
-import { provideMonacoEditor } from 'ngx-monaco-editor-v2';
+import {TestBed} from '@angular/core/testing';
+import {signal} from '@angular/core';
+import {ActivatedRoute, convertToParamMap} from '@angular/router';
+import {MatDialog} from '@angular/material/dialog';
+import {of} from 'rxjs';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {DppsTabComponent} from './dpps-tab.component';
+import {PlatformService} from '../../../core/platform.service';
+import {FederationService} from '../../../core/federation.service';
+import {PollingService} from '../../../core/polling.service';
+import {PlatformStatus} from '../../../core/models/federation.model';
 
 describe('DppsTabComponent', () => {
   let platformServiceSpy: any;
@@ -19,7 +21,15 @@ describe('DppsTabComponent', () => {
     };
 
     federationServiceSpy = {
-      getPlatformById: vi.fn().mockReturnValue(of({ external_url: 'http://p1' }))
+      platforms: signal([{
+        platform_id: 'p1',
+        stack: 'spring-postgres',
+        issuer_id: 'issuer',
+        subject_types: ['pv_module'],
+        external_url: 'http://p1',
+        status: PlatformStatus.RUNNING,
+        created_at: '2026-01-01T00:00:00Z'
+      }])
     };
 
     await TestBed.configureTestingModule({
@@ -27,13 +37,14 @@ describe('DppsTabComponent', () => {
       providers: [
         { provide: PlatformService, useValue: platformServiceSpy },
         { provide: FederationService, useValue: federationServiceSpy },
+        { provide: PollingService, useValue: { register: vi.fn(() => () => {}) } },
+        { provide: MatDialog, useValue: { open: vi.fn() } },
         {
           provide: ActivatedRoute,
           useValue: {
-            parent: { params: of({ id: 'p1' }) }
+            parent: { paramMap: of(convertToParamMap({ id: 'p1' })) }
           }
-        },
-        provideMonacoEditor()
+        }
       ]
     }).compileComponents();
   });
@@ -43,10 +54,9 @@ describe('DppsTabComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should load DPPs on init', () => {
+  it('should load DPPs from the current platform', () => {
     const fixture = TestBed.createComponent(DppsTabComponent);
     fixture.detectChanges();
-    expect(federationServiceSpy.getPlatformById).toHaveBeenCalledWith('p1');
     expect(platformServiceSpy.listDpps).toHaveBeenCalledWith('http://p1');
   });
 

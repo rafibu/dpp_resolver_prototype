@@ -1,11 +1,11 @@
-import { TestBed } from '@angular/core/testing';
-import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { FactoryService } from './factory.service';
-import { PlatformService } from './platform.service';
-import { ResolverService } from './resolver.service';
-import { environment } from '../../environments/environment';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import {TestBed} from '@angular/core/testing';
+import {HttpTestingController, provideHttpClientTesting} from '@angular/common/http/testing';
+import {provideHttpClient} from '@angular/common/http';
+import {FactoryService} from './factory.service';
+import {PlatformService} from './platform.service';
+import {ResolverService} from './resolver.service';
+import {environment} from '../../environments/environment';
+import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 
 describe('API Services', () => {
   let httpMock: HttpTestingController;
@@ -52,6 +52,28 @@ describe('API Services', () => {
       const req = httpMock.expectOne(`http://p1/dpps`);
       expect(req.request.method).toBe('GET');
       req.flush([]);
+    });
+
+    it('should issue DPPs through the platform issue endpoint', () => {
+      const service = TestBed.inject(PlatformService);
+      service.issueDpp('http://p1', {
+        schema_version: { subject_type: 'pv_module', major_version: 1, minor_version: 0 },
+        dpp_payload: {}
+      }).subscribe();
+      const req = httpMock.expectOne(`http://p1/dpps/issue`);
+      expect(req.request.method).toBe('POST');
+      req.flush({});
+    });
+
+    it('should revise DPPs through the platform revise endpoint', () => {
+      const service = TestBed.inject(PlatformService);
+      service.reviseDpp('http://p1', 'dpp-1', {
+        schema_version: { subject_type: 'pv_module', major_version: 1, minor_version: 0 },
+        dpp_payload: {}
+      }).subscribe();
+      const req = httpMock.expectOne(`http://p1/dpps/dpp-1/revise`);
+      expect(req.request.method).toBe('POST');
+      req.flush({});
     });
   });
 

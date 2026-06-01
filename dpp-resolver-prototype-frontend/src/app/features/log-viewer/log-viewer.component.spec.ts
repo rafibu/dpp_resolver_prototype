@@ -1,18 +1,19 @@
-import { TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { LogViewerComponent } from './log-viewer.component';
-import { FactoryService } from '../../core/factory.service';
-import { PollingService } from '../../core/polling.service';
-import { of, BehaviorSubject } from 'rxjs';
-import { ActivatedRoute } from '@angular/router';
-import { signal } from '@angular/core';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {TestBed} from '@angular/core/testing';
+import {signal} from '@angular/core';
+import {ActivatedRoute, convertToParamMap} from '@angular/router';
+import {BehaviorSubject, of} from 'rxjs';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {LogViewerComponent} from './log-viewer.component';
+import {FactoryService} from '../../core/factory.service';
+import {PollingService} from '../../core/polling.service';
+import {ToastService} from '../../core/toast.service';
 
 describe('LogViewerComponent', () => {
   let factoryServiceSpy: any;
   let paramsSubject: BehaviorSubject<any>;
 
   beforeEach(async () => {
-    paramsSubject = new BehaviorSubject({ id: 'p1' });
+    paramsSubject = new BehaviorSubject(convertToParamMap({ id: 'p1' }));
 
     factoryServiceSpy = {
       getPlatformLogs: vi.fn().mockReturnValue(of([
@@ -23,8 +24,6 @@ describe('LogViewerComponent', () => {
 
     const pollingServiceSpy = {
       register: vi.fn((cb: () => void) => { cb(); return () => {}; }),
-      reportSuccess: vi.fn(),
-      reportError: vi.fn(),
       isTabActive: signal(true),
       lastSuccess: signal<Date | null>(null),
       hasError: signal(false)
@@ -35,10 +34,11 @@ describe('LogViewerComponent', () => {
       providers: [
         { provide: FactoryService, useValue: factoryServiceSpy },
         { provide: PollingService, useValue: pollingServiceSpy },
+        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
         {
           provide: ActivatedRoute,
           useValue: {
-            parent: { params: paramsSubject.asObservable() }
+            parent: { paramMap: paramsSubject.asObservable() }
           }
         }
       ]
@@ -50,7 +50,7 @@ describe('LogViewerComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should load logs on init and filter them', () => {
+  it('should load logs and filter them', () => {
     const fixture = TestBed.createComponent(LogViewerComponent);
     fixture.detectChanges();
 
@@ -58,7 +58,6 @@ describe('LogViewerComponent', () => {
     expect(fixture.componentInstance.logs().length).toBe(2);
 
     fixture.componentInstance.searchTerm.set('Failed');
-    fixture.detectChanges();
     expect(fixture.componentInstance.filteredLogs().length).toBe(1);
     expect(fixture.componentInstance.filteredLogs()[0].message).toBe('Failed');
   });
@@ -69,9 +68,5 @@ describe('LogViewerComponent', () => {
 
     fixture.componentInstance.togglePause();
     expect(fixture.componentInstance.isPaused()).toBe(true);
-
-    // Clear mock calls to verify no new calls
-    factoryServiceSpy.getPlatformLogs.mockClear();
-    // In a real interval, it wouldn't call. Our startWith(0) already fired.
   });
 });

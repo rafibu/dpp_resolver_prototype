@@ -1,56 +1,104 @@
-<div class="map-container">
-  <ngx-graph
-    layout="dagre"
-    [nodes]="nodes()"
-    [links]="links()"
-    [autoZoom]="true"
-    [autoCenter]="true"
-    [enableZoom]="true"
-    [draggingEnabled]="false"
-  >
-    <ng-template #nodeTemplate let-node>
-      <svg:g class="node" (click)="onNodeClick(node)">
-        @if (node.data.type === 'resolver') {
-          <svg:rect
-            [attr.width]="140"
-            [attr.height]="60"
-            [attr.fill]="'#2c3e50'"
-            rx="10"
-            ry="10"
-          />
-          <svg:text alignment-baseline="central" x="70" y="30" text-anchor="middle" fill="white" font-weight="bold">
-            {{ node.label }}
-          </svg:text>
-        } @else {
-          <svg:rect
-            [attr.width]="160"
-            [attr.height]="100"
-            [attr.fill]="'white'"
-            [attr.stroke]="getStatusColor(node.data.status)"
-            stroke-width="3"
-            rx="5"
-            ry="5"
-          />
-          <svg:text alignment-baseline="central" x="10" y="25" font-weight="bold" fill="#2c3e50">
-            ID: {{ node.label }}
-          </svg:text>
-          <svg:text alignment-baseline="central" x="10" y="45" font-size="12" fill="#7f8c8d">
-            Issuer: {{ node.data.issuer }}
-          </svg:text>
-          <svg:text alignment-baseline="central" x="10" y="65" font-size="10" fill="#95a5a6">
-            Types: {{ node.data.subjectTypes.join(', ') }}
-          </svg:text>
-          <svg:text alignment-baseline="central" x="10" y="85" font-size="12" [attr.fill]="getStatusColor(node.data.status)" font-weight="bold">
-            {{ node.data.status }}
-          </svg:text>
-        }
-      </svg:g>
-    </ng-template>
+<section class="federation-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Federation</p>
+      <h1>Live Resolver Topology</h1>
+    </div>
+    <a mat-stroked-button routerLink="/scenarios">
+      <mat-icon>play_circle</mat-icon>
+      Scenarios
+    </a>
+  </header>
 
-    <ng-template #linkTemplate let-link>
-      <svg:g class="edge">
-        <svg:path class="line" stroke="#bdc3c7" stroke-width="2" marker-end="url(#arrow)"></svg:path>
-      </svg:g>
-    </ng-template>
-  </ngx-graph>
-</div>
+  <div class="summary-grid">
+    <mat-card appearance="outlined" class="summary-card resolver">
+      <mat-icon>hub</mat-icon>
+      <div>
+        <span>Resolver</span>
+        <strong>{{ federation()?.resolver?.status || 'OFFLINE' }}</strong>
+      </div>
+    </mat-card>
+
+    <mat-card appearance="outlined" class="summary-card">
+      <mat-icon>dns</mat-icon>
+      <div>
+        <span>Platforms</span>
+        <strong>{{ statusSummary() }}</strong>
+      </div>
+    </mat-card>
+
+    <mat-card appearance="outlined" class="summary-card">
+      <mat-icon>pause_circle</mat-icon>
+      <div>
+        <span>Paused</span>
+        <strong>{{ pausedCount() }}</strong>
+      </div>
+    </mat-card>
+
+    <mat-card appearance="outlined" class="summary-card">
+      <mat-icon>category</mat-icon>
+      <div>
+        <span>Subject Types</span>
+        <strong>{{ subjectTypes().length }}</strong>
+      </div>
+    </mat-card>
+  </div>
+
+  <section class="topology">
+    <mat-card appearance="outlined" class="resolver-card">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>account_tree</mat-icon>
+        <mat-card-title>Resolver</mat-card-title>
+        <mat-card-subtitle>{{ resolverUrl() || 'No resolver discovered' }}</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <mat-chip-set aria-label="Resolver status">
+          <mat-chip [ngClass]="statusClass(federation()?.resolver?.status || 'ERROR')">
+            {{ federation()?.resolver?.status || 'OFFLINE' }}
+          </mat-chip>
+        </mat-chip-set>
+      </mat-card-content>
+    </mat-card>
+
+    <div class="flow-line" aria-hidden="true">
+      <span></span>
+    </div>
+
+    <div class="platform-grid">
+      @for (platform of platforms(); track platform.platform_id) {
+        <mat-card appearance="outlined" class="platform-card" [ngClass]="statusClass(platform.status)">
+          <mat-card-header>
+            <span mat-card-avatar class="status-avatar" [ngClass]="statusClass(platform.status)"></span>
+            <mat-card-title>{{ platform.platform_id }}</mat-card-title>
+            <mat-card-subtitle>{{ platformSubtitle(platform) }}</mat-card-subtitle>
+          </mat-card-header>
+
+          <mat-card-content>
+            <div class="url-row" [matTooltip]="platform.external_url">
+              <mat-icon>link</mat-icon>
+              <span>{{ platform.external_url }}</span>
+            </div>
+            <mat-chip-set aria-label="Subject types">
+              @for (type of platform.subject_types; track type) {
+                <mat-chip>{{ type }}</mat-chip>
+              }
+            </mat-chip-set>
+          </mat-card-content>
+
+          <mat-card-actions align="end">
+            <a mat-button [routerLink]="['/platforms', platform.platform_id]">
+              Open
+              <mat-icon>chevron_right</mat-icon>
+            </a>
+          </mat-card-actions>
+        </mat-card>
+      } @empty {
+        <mat-card appearance="outlined" class="empty-card">
+          <mat-icon>inventory_2</mat-icon>
+          <h2>No platforms discovered</h2>
+          <p>Use the platform action in the sidebar to spawn a new platform.</p>
+        </mat-card>
+      }
+    </div>
+  </section>
+</section>

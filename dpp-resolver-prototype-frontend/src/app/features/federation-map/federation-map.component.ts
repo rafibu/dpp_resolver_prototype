@@ -1,88 +1,52 @@
 import {Component, computed, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
-import {Edge, NgxGraphModule, Node} from '@swimlane/ngx-graph';
+import {RouterLink} from '@angular/router';
+import {MatButtonModule} from '@angular/material/button';
+import {MatCardModule} from '@angular/material/card';
+import {MatChipsModule} from '@angular/material/chips';
+import {MatIconModule} from '@angular/material/icon';
+import {MatTooltipModule} from '@angular/material/tooltip';
 import {FederationService} from '../../core/federation.service';
-import {PlatformStatus} from '../../core/models/federation.model';
-import {Router} from '@angular/router';
+import {PlatformInfo, PlatformStatus} from '../../core/models/federation.model';
 
 @Component({
   selector: 'app-federation-map',
   standalone: true,
-  imports: [CommonModule, NgxGraphModule],
+  imports: [
+    CommonModule,
+    RouterLink,
+    MatButtonModule,
+    MatCardModule,
+    MatChipsModule,
+    MatIconModule,
+    MatTooltipModule
+  ],
   templateUrl: './federation-map.component.html',
   styleUrl: './federation-map.component.scss'
 })
 export class FederationMapComponent {
   private federationService = inject(FederationService);
-  private router = inject(Router);
 
-  public nodes = computed<Node[]>(() => {
-    const federation = this.federationService.federation();
-    if (!federation) return [];
-
-    const nodes: Node[] = [];
-
-    // Resolver node
-    if (federation.resolver) {
-      nodes.push({
-        id: 'resolver',
-        label: 'Resolver',
-        data: {
-          type: 'resolver',
-          url: federation.resolver.external_url,
-          status: federation.resolver.status
-        }
-      });
+  public federation = this.federationService.federation;
+  public platforms = this.federationService.platforms;
+  public resolverUrl = this.federationService.resolverUrl;
+  public runningCount = computed(() => this.platforms().filter(p => p.status === PlatformStatus.RUNNING).length);
+  public pausedCount = computed(() => this.platforms().filter(p => p.status === PlatformStatus.PAUSED).length);
+  public subjectTypes = computed(() => [...new Set(this.platforms().flatMap(p => p.subject_types))].sort());
+  public statusSummary = computed(() => {
+    const total = this.platforms().length;
+    const running = this.runningCount();
+    if (!total) {
+      return 'No platforms';
     }
-
-    // Platform nodes
-    federation.platforms.forEach(platform => {
-      nodes.push({
-        id: platform.platform_id,
-        label: platform.platform_id,
-        data: {
-          type: 'platform',
-          issuer: platform.issuer_id,
-          subjectTypes: platform.subject_types,
-          status: platform.status,
-          url: platform.external_url
-        }
-      });
-    });
-
-    return nodes;
+    return `${running}/${total} running`;
   });
 
-  public links = computed<Edge[]>(() => {
-    const federation = this.federationService.federation();
-    if (!federation || !federation.resolver) return [];
-
-    return federation.platforms.map(platform => ({
-      id: `edge-${platform.platform_id}`,
-      source: platform.platform_id,
-      target: 'resolver',
-      label: 'resolves'
-    }));
-  });
-
-  public getStatusColor(status: PlatformStatus): string {
-    switch (status) {
-      case PlatformStatus.RUNNING:
-        return '#27ae60';
-      case PlatformStatus.PAUSED:
-        return '#7f8c8d';
-      case PlatformStatus.ERROR:
-        return '#e74c3c';
-      case PlatformStatus.STARTING:
-        return '#f39c12';
-      default:
-        return '#bdc3c7';
-    }
+  public statusClass(status: PlatformStatus | string): string {
+    return status.toLowerCase();
   }
 
-  public onNodeClick(node: Node): void {
-    if (node.data.type === 'platform') {
-      void this.router.navigate(['/platforms', node.id]);
-    }
+  public platformSubtitle(platform: PlatformInfo): string {
+    return `${platform.issuer_id} · ${platform.stack}`;
   }
 }

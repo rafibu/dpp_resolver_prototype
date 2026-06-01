@@ -1,101 +1,114 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { PlatformService } from '../../core/platform.service';
-import { FederationService } from '../../core/federation.service';
-import { ResolverService } from '../../core/resolver.service';
-import { ToastService } from '../../core/toast.service';
-import { DppDetail, DppRevision } from '../../core/models/api.model';
-import { FormsModule } from '@angular/forms';
-import { MonacoEditorModule } from 'ngx-monaco-editor-v2';
-import Ajv from 'ajv';
+import {Component, computed, DestroyRef, inject, signal} from '@angular/core';
+import {CommonModule} from '@angular/common';
+import {FormsModule} from '@angular/forms';
+import {takeUntilDestroyed} from '@angular/core/rxjs-interop';
+import {ActivatedRoute, Router, RouterLink} from '@angular/router';
+import {MatButtonModule} from '@angular/material/button';
+import {MatCardModule} from '@angular/material/card';
+import {MatChipsModule} from '@angular/material/chips';
+import {MatIconModule} from '@angular/material/icon';
+import {MatListModule} from '@angular/material/list';
+import {MatProgressBarModule} from '@angular/material/progress-bar';
+import {MonacoEditorModule} from 'ngx-monaco-editor-v2';
+import Ajv, {AnySchema, ErrorObject} from 'ajv';
 import addFormats from 'ajv-formats';
-import { canonicalize, sha256 } from '../../core/utils/crypto.utils';
+import {finalize, take} from 'rxjs';
+import {PlatformService} from '../../core/platform.service';
+import {FederationService} from '../../core/federation.service';
+import {ResolverService} from '../../core/resolver.service';
+import {ToastService} from '../../core/toast.service';
+import {DppDetail, DppRevision} from '../../core/models/api.model';
+import {canonicalize, sha256} from '../../core/utils/crypto.utils';
+import {toErrorMessage} from '../../core/http-error.utils';
+
+type ValidationIssue = Pick<ErrorObject, 'instancePath' | 'message' | 'params'>;
 
 @Component({
   selector: 'app-dpp-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule, MonacoEditorModule, RouterLink],
+  imports: [
+    CommonModule,
+    FormsModule,
+    MonacoEditorModule,
+    RouterLink,
+    MatButtonModule,
+    MatCardModule,
+    MatChipsModule,
+    MatIconModule,
+    MatListModule,
+    MatProgressBarModule
+  ],
   templateUrl: './dpp-editor.component.html',
   styleUrl: './dpp-editor.component.scss'
 })
-export class DppEditorComponent implements OnInit {
+export class DppEditorComponent {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private platformService = inject(PlatformService);
   private federationService = inject(FederationService);
   private resolverService = inject(ResolverService);
   private toastService = inject(ToastService);
+  private destroyRef = inject(DestroyRef);
 
   public platformId = signal<string | null>(null);
   public dppId = signal<string | null>(null);
   public version = signal<number | null>(null);
-
   public dpp = signal<DppDetail | null>(null);
   public currentRevision = signal<DppRevision | null>(null);
-
-  public editorOptions = { theme: 'vs-light', language: 'json', readOnly: true };
+  public editorOptions = signal({ theme: 'vs-light', language: 'json', readOnly: true, minimap: { enabled: false } });
   public code = signal<string>('');
   public isEditable = signal(false);
-
-  public validationErrors = signal<any[]>([]);
+  public loading = signal(false);
+  public saving = signal(false);
+  public error = signal<string | null>(null);
+  public validationErrors = signal<ValidationIssue[]>([]);
   public hashVerification = signal<'success' | 'failure' | null>(null);
+  public canSubmit = computed(() => this.isEditable() && !this.saving() && this.validationErrors().length === 0);
 
   private ajv = new Ajv();
 
   constructor() {
     addFormats(this.ajv);
-  }
 
-  ngOnInit(): void {
-    this.route.params.subscribe(params => {
-      this.platformId.set(params['id']);
-      this.dppId.set(params['dppId']);
-      this.version.set(params['version'] ? +params['version'] : null);
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      this.platformId.set(params.get('id'));
+      this.dppId.set(params.get('dppId'));
+      const version = params.get('version');
+      this.version.set(version ? Number(version) : null);
       this.loadData();
-    });
-  }
-
-  private loadData(): void {
-    const pId = this.platformId();
-    const dId = this.dppId();
-    if (!pId || !dId) return;
-
-    this.federationService.getPlatformById(pId).subscribe(p => {
-      if (!p) return;
-      this.platformService.getDpp(p.external_url, dId).subscribe(detail => {
-        this.dpp.set(detail);
-        const v = this.version();
-        const rev = v ? detail.revisions.find(r => r.version === v) : detail.revisions[detail.revisions.length - 1];
-        if (rev) {
-          this.currentRevision.set(rev);
-          this.code.set(JSON.stringify(rev.payload, null, 2));
-          this.hashVerification.set(null);
-        }
-      });
     });
   }
 
   public async verifyHash(): Promise<void> {
     const rev = this.currentRevision();
-    if (!rev) return;
+    if (!rev) {
+      return;
+    }
 
-    const jcs = canonicalize(rev.payload);
-    const hash = await sha256(jcs);
-
+    const hash = await sha256(canonicalize(rev.payload));
     if (hash === rev.hash) {
       this.hashVerification.set('success');
-      this.toastService.success('Hash verified successfully!');
+      this.toastService.success('Hash verified successfully');
     } else {
       this.hashVerification.set('failure');
-      this.toastService.error('Hash verification failed!');
+      this.toastService.error('Hash verification failed');
     }
   }
 
   public onRevise(): void {
     this.isEditable.set(true);
-    this.editorOptions = { ...this.editorOptions, readOnly: false };
+    this.editorOptions.update(options => ({ ...options, readOnly: false }));
     this.validate();
+  }
+
+  public cancelEdit(): void {
+    const revision = this.currentRevision();
+    this.isEditable.set(false);
+    this.editorOptions.update(options => ({ ...options, readOnly: true }));
+    this.validationErrors.set([]);
+    if (revision) {
+      this.code.set(JSON.stringify(revision.payload, null, 2));
+    }
   }
 
   public onCodeChange(newCode: string): void {
@@ -103,54 +116,111 @@ export class DppEditorComponent implements OnInit {
     this.validate();
   }
 
-  private async validate(): Promise<void> {
-    const rev = this.currentRevision();
-    if (!rev) return;
-
-    try {
-      const payload = JSON.parse(this.code());
-      const resUrl = this.federationService.resolverUrl();
-      if (!resUrl) return;
-
-      // Extract type and version from schema_ref (e.g. pv_module/1.0)
-      const [type, version] = rev.schema_ref.split('/');
-      const [major, minor] = version.split('.');
-
-      this.resolverService.getSchema(resUrl, type, +major, +minor).subscribe(schema => {
-        const validate = this.ajv.compile(schema);
-        const valid = validate(payload);
-        this.validationErrors.set(valid ? [] : (validate.errors || []));
-      });
-    } catch (e) {
-      this.validationErrors.set([{ message: 'Invalid JSON' }]);
-    }
-  }
-
   public onSubmit(): void {
     const pId = this.platformId();
     const dId = this.dppId();
     const rev = this.currentRevision();
-    if (!pId || !dId || !rev) return;
+    if (!pId || !dId || !rev || !this.canSubmit()) {
+      return;
+    }
 
     try {
       const payload = JSON.parse(this.code());
       const [schemaType, schemaVer] = rev.schema_ref.split('/');
       const [major, minor] = schemaVer.split('.').map(Number);
-      this.federationService.getPlatformById(pId).subscribe(p => {
-        if (!p) return;
-        this.platformService.reviseDpp(p.external_url, dId, {
-          schema_version: { subject_type: schemaType, major_version: major, minor_version: minor },
-          dpp_payload: payload
-        }).subscribe({
-          next: () => {
-            this.toastService.success('Revision submitted successfully');
-            this.router.navigate(['/platforms', pId, 'dpps']);
-          },
-          error: (err) => this.toastService.error(`Failed to revise: ${err.message || 'Unknown error'}`)
-        });
+      const platform = this.federationService.platforms().find(p => p.platform_id === pId);
+      if (!platform) {
+        this.toastService.error(`Platform ${pId} is not in the current federation snapshot`);
+        return;
+      }
+
+      this.saving.set(true);
+      this.platformService.reviseDpp(platform.external_url, dId, {
+        schema_version: { subject_type: schemaType, major_version: major, minor_version: minor },
+        dpp_payload: payload
+      }).pipe(
+        take(1),
+        finalize(() => this.saving.set(false))
+      ).subscribe({
+        next: () => {
+          this.toastService.success('Revision submitted successfully');
+          void this.router.navigate(['/platforms', pId, 'dpps']);
+        },
+        error: err => this.toastService.error(toErrorMessage(err, 'Failed to submit revision'))
       });
-    } catch (e) {
+    } catch {
       this.toastService.error('Invalid JSON payload');
+    }
+  }
+
+  private loadData(): void {
+    const pId = this.platformId();
+    const dId = this.dppId();
+    if (!pId || !dId) {
+      return;
+    }
+
+    const platform = this.federationService.platforms().find(p => p.platform_id === pId);
+    if (!platform) {
+      this.error.set(`Platform ${pId} is not in the current federation snapshot.`);
+      return;
+    }
+
+    this.loading.set(true);
+    this.error.set(null);
+    this.platformService.getDpp(platform.external_url, dId).pipe(
+      take(1),
+      finalize(() => this.loading.set(false))
+    ).subscribe({
+      next: detail => {
+        this.dpp.set(detail);
+        const selectedVersion = this.version();
+        const revision = selectedVersion
+          ? detail.revisions.find(r => r.version === selectedVersion)
+          : detail.revisions.at(-1);
+        if (revision) {
+          this.currentRevision.set(revision);
+          this.code.set(JSON.stringify(revision.payload, null, 2));
+          this.hashVerification.set(null);
+          this.validationErrors.set([]);
+          this.isEditable.set(false);
+          this.editorOptions.update(options => ({ ...options, readOnly: true }));
+        }
+      },
+      error: err => this.error.set(toErrorMessage(err, `Failed to load ${dId}`))
+    });
+  }
+
+  private validate(): void {
+    const rev = this.currentRevision();
+    const resolverUrl = this.federationService.resolverUrl();
+    if (!rev || !resolverUrl) {
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(this.code());
+      const [type, version] = rev.schema_ref.split('/');
+      const [major, minor] = version.split('.');
+
+      this.resolverService.getSchema(resolverUrl, type, Number(major), Number(minor)).pipe(take(1)).subscribe({
+        next: schema => {
+          const validate = this.ajv.compile(schema as AnySchema);
+          const valid = validate(payload);
+          this.validationErrors.set(valid ? [] : (validate.errors || []).map(error => ({
+            instancePath: error.instancePath,
+            message: error.message,
+            params: error.params
+          })));
+        },
+        error: err => this.validationErrors.set([{
+          instancePath: '',
+          message: toErrorMessage(err, 'Could not load schema'),
+          params: {}
+        }])
+      });
+    } catch {
+      this.validationErrors.set([{ instancePath: '', message: 'Invalid JSON', params: {} }]);
     }
   }
 }

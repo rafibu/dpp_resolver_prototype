@@ -1,55 +1,65 @@
-<div class="modal-overlay" [class.open]="isOpen()">
-  <div class="modal-container">
-    <header class="modal-header">
-      <h2>Spawn New Platform</h2>
-      <button class="close-btn" (click)="close()" [disabled]="isSpawning()">×</button>
-    </header>
+<h2 mat-dialog-title>
+  <mat-icon>add_circle</mat-icon>
+  Spawn Platform
+</h2>
 
-    <div class="modal-body">
-      <div class="form-group">
-        <label>Stack</label>
-        <select [ngModel]="stack()" (ngModelChange)="stack.set($event)" [disabled]="isSpawning()">
-          <option value="spring-postgres">Java (Spring + Postgres)</option>
-          <option value="fastapi-mongo">Python (FastAPI + MongoDB)</option>
-        </select>
-      </div>
+<mat-dialog-content class="dialog-content">
+  <section class="field-block">
+    <label>Stack</label>
+    <mat-button-toggle-group
+      [value]="stack()"
+      [disabled]="isSpawning()"
+      (valueChange)="stack.set($event)"
+      aria-label="Platform stack"
+    >
+      <mat-button-toggle value="spring-postgres">Java Spring</mat-button-toggle>
+      <mat-button-toggle value="fastapi-mongo">Python FastAPI</mat-button-toggle>
+    </mat-button-toggle-group>
+  </section>
 
-      <div class="form-group">
-        <label>Issuer ID</label>
-        <input type="text" [ngModel]="issuerId()" (ngModelChange)="issuerId.set($event)"
-               placeholder="e.g. issuerD" [disabled]="isSpawning()">
-        <small class="hint">Lowercase alphanumeric and dashes only.</small>
-        @if (issuerId() && !isIssuerIdValid()) {
-          <small class="error">Lowercase letters, digits and dashes only.</small>
-        }
-      </div>
+  <mat-form-field appearance="outline">
+    <mat-label>Issuer ID</mat-label>
+    <input
+      matInput
+      [ngModel]="issuerId()"
+      (ngModelChange)="issuerId.set($event)"
+      [disabled]="isSpawning()"
+      autocomplete="off"
+      placeholder="issuer-d"
+    >
+    <mat-hint>Lowercase letters, digits, and dashes.</mat-hint>
+    @if (issuerInvalid()) {
+      <mat-error>Use lowercase letters, digits, and dashes only.</mat-error>
+    }
+  </mat-form-field>
 
-      <div class="form-group">
-        <label>Subject Types (Select at least one)</label>
-        <div class="chip-container">
-          @for (type of availableSubjectTypes(); track type) {
-            <div class="chip"
-                 [class.selected]="selectedSubjectTypes().includes(type)"
-                 (click)="!isSpawning() && toggleSubjectType(type)">
-              {{ type }}
-            </div>
-          }
-        </div>
-      </div>
-
-      @if (isSpawning()) {
-        <div class="progress-indicator">
-          <div class="spinner"></div>
-          <p>Spawning platform... this may take up to 30 seconds.</p>
-        </div>
+  <section class="field-block">
+    <label>Subject Types</label>
+    <mat-chip-listbox aria-label="Subject types" multiple>
+      @for (type of availableSubjectTypes(); track type) {
+        <mat-chip-option
+          [selected]="selectedSubjectTypes().includes(type)"
+          [disabled]="isSpawning()"
+          (selectionChange)="toggleSubjectType(type, $event.selected)"
+        >
+          {{ type }}
+        </mat-chip-option>
       }
-    </div>
+    </mat-chip-listbox>
+  </section>
 
-    <footer class="modal-footer">
-      <button class="btn btn-secondary" (click)="close()" [disabled]="isSpawning()">Cancel</button>
-      <button class="btn btn-primary" [disabled]="!isValid() || isSpawning()" (click)="onSubmit()">
-        {{ isSpawning() ? 'Spawning...' : 'Spawn Platform' }}
-      </button>
-    </footer>
-  </div>
-</div>
+  @if (isSpawning()) {
+    <div class="progress-panel" aria-live="polite">
+      <mat-progress-bar mode="indeterminate" />
+      <span>Spawning platform</span>
+    </div>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button type="button" [disabled]="isSpawning()" (click)="close()">Cancel</button>
+  <button mat-flat-button color="primary" type="button" [disabled]="!isValid() || isSpawning()" (click)="onSubmit()">
+    <mat-icon>rocket_launch</mat-icon>
+    Spawn
+  </button>
+</mat-dialog-actions>

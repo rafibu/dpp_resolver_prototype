@@ -1,22 +1,58 @@
-<div class="detail-container">
-  <div class="detail-header">
-    <div class="title-row">
-      <h2>Platform: {{ platformId() }}</h2>
+<section class="detail-container">
+  <header class="detail-header">
+    <div>
+      <p class="eyebrow">Platform</p>
+      <div class="title-row">
+        <h1>{{ platformId() }}</h1>
+        @if (platform()) {
+          <mat-chip [ngClass]="platform()?.status?.toLowerCase()">
+            {{ platform()?.status }}
+          </mat-chip>
+        }
+      </div>
       @if (platform()) {
-        <span class="status-badge" [ngClass]="platform()?.status?.toLowerCase()">
-          {{ platform()?.status }}
-        </span>
+        <p class="subtitle">
+          <mat-icon>badge</mat-icon>
+          {{ platform()?.issuer_id }}
+          <span></span>
+          <mat-icon>deployed_code</mat-icon>
+          {{ platform()?.stack }}
+        </p>
       }
     </div>
+  </header>
 
-    <nav class="tabs">
-      <a routerLink="dpps" routerLinkActive="active" class="tab-link">DPPs</a>
-      <a routerLink="logs" routerLinkActive="active" class="tab-link">Logs</a>
-      <a routerLink="status" routerLinkActive="active" class="tab-link">Status</a>
-    </nav>
-  </div>
+  <nav mat-tab-nav-bar [tabPanel]="tabPanel" class="tabs">
+    <a
+      mat-tab-link
+      routerLink="dpps"
+      routerLinkActive
+      #dppsActive="routerLinkActive"
+      [active]="dppsActive.isActive"
+    >
+      DPPs
+    </a>
+    <a
+      mat-tab-link
+      routerLink="logs"
+      routerLinkActive
+      #logsActive="routerLinkActive"
+      [active]="logsActive.isActive"
+    >
+      Logs
+    </a>
+    <a
+      mat-tab-link
+      routerLink="status"
+      routerLinkActive
+      #statusActive="routerLinkActive"
+      [active]="statusActive.isActive"
+    >
+      Status
+    </a>
+  </nav>
 
-  <div class="tab-content">
+  <mat-tab-nav-panel #tabPanel class="tab-content">
     <router-outlet />
-  </div>
-</div>
+  </mat-tab-nav-panel>
+</section>

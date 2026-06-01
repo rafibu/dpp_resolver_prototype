@@ -1,82 +1,114 @@
-<div class="scenarios-container">
-  <header class="scenarios-header">
-    <h1>Scenario Runner</h1>
-    <p>Trigger automated scenarios and view validation reports.</p>
+<section class="scenarios-container">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Evaluation</p>
+      <h1>Scenario Runner</h1>
+    </div>
   </header>
 
   <div class="scenarios-grid">
-    <!-- Scenario 1 -->
-    <div class="scenario-card" [class.running]="s1Status()?.status === 'running'">
-      <div class="card-header">
-        <div class="scenario-title">
-          <h3>S1: Offline Interpretability</h3>
-          <p>Verifies resolver can still interpret DPPs when the issuer platform is offline.</p>
-        </div>
-        <button class="btn btn-primary" [disabled]="isRunning()" (click)="runScenario('s1')">
-          {{ s1Status()?.status === 'running' ? 'Running...' : 'Run Scenario' }}
+    <mat-card appearance="outlined" class="scenario-card" [class.running]="isRunning('s1')">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>cloud_off</mat-icon>
+        <mat-card-title>S1: Offline Interpretability</mat-card-title>
+        <mat-card-subtitle>Resolver interpretation after issuer platform outage</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-actions align="end">
+        <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario('s1')">
+          <mat-icon>play_arrow</mat-icon>
+          {{ isRunning('s1') ? 'Running' : 'Run' }}
         </button>
-      </div>
+      </mat-card-actions>
+
+      @if (isRunning('s1')) {
+        <mat-progress-bar mode="indeterminate" />
+      }
+
+      @if (errors().s1) {
+        <div class="inline-error">
+          <mat-icon>error</mat-icon>
+          <span>{{ errors().s1 }}</span>
+        </div>
+      }
 
       @if (s1Status()) {
-        <div class="progress-section">
-          <h4>Steps</h4>
-          <ul class="step-list">
-            @for (step of s1Status()?.steps; track step.name) {
-              <li class="step-item" [ngClass]="step.status">
-                <span class="step-icon">{{ getStepIcon(step.status) }}</span>
-                <span class="step-name">{{ step.name }}</span>
-              </li>
-            }
-          </ul>
-        </div>
+        <mat-chip class="status-chip" [ngClass]="s1Status()?.status">{{ s1Status()?.status }}</mat-chip>
+        <mat-list>
+          @for (step of s1Status()?.steps; track step.name) {
+            <mat-list-item [ngClass]="step.status">
+              <mat-icon matListItemIcon>{{ getStepIcon(step.status) }}</mat-icon>
+              <span matListItemTitle>{{ step.name }}</span>
+              @if (step.error) {
+                <span matListItemLine>{{ step.error }}</span>
+              }
+            </mat-list-item>
+          }
+        </mat-list>
       }
 
       @if (s1Report()) {
-        <div class="report-section">
-          <div class="report-header">
-            <h4>Validation Report</h4>
-            <button class="btn btn-secondary btn-sm" (click)="downloadReport('s1')">Download .md</button>
-          </div>
-          <div class="markdown-body" [innerHTML]="s1Report()"></div>
+        <div class="report-header">
+          <h2>Validation Report</h2>
+          <button mat-stroked-button type="button" (click)="downloadReport('s1')">
+            <mat-icon>download</mat-icon>
+            Markdown
+          </button>
+        </div>
+        <div class="markdown-body" [innerHTML]="s1Report()"></div>
+      }
+    </mat-card>
+
+    <mat-card appearance="outlined" class="scenario-card" [class.running]="isRunning('s2')">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>schema</mat-icon>
+        <mat-card-title>S2: Independent Schema Evolution</mat-card-title>
+        <mat-card-subtitle>Schema update handling without platform intervention</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-actions align="end">
+        <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario('s2')">
+          <mat-icon>play_arrow</mat-icon>
+          {{ isRunning('s2') ? 'Running' : 'Run' }}
+        </button>
+      </mat-card-actions>
+
+      @if (isRunning('s2')) {
+        <mat-progress-bar mode="indeterminate" />
+      }
+
+      @if (errors().s2) {
+        <div class="inline-error">
+          <mat-icon>error</mat-icon>
+          <span>{{ errors().s2 }}</span>
         </div>
       }
-    </div>
-
-    <!-- Scenario 2 -->
-    <div class="scenario-card" [class.running]="s2Status()?.status === 'running'">
-      <div class="card-header">
-        <div class="scenario-title">
-          <h3>S2: Independent Schema Evolution</h3>
-          <p>Verifies resolver can handle updated schemas without platform intervention.</p>
-        </div>
-        <button class="btn btn-primary" [disabled]="isRunning()" (click)="runScenario('s2')">
-          {{ s2Status()?.status === 'running' ? 'Running...' : 'Run Scenario' }}
-        </button>
-      </div>
 
       @if (s2Status()) {
-        <div class="progress-section">
-          <h4>Steps</h4>
-          <ul class="step-list">
-            @for (step of s2Status()?.steps; track step.name) {
-              <li class="step-item" [ngClass]="step.status">
-                <span class="step-icon">{{ getStepIcon(step.status) }}</span>
-                <span class="step-name">{{ step.name }}</span>
-              </li>
-            }
-          </ul>
-        </div>
+        <mat-chip class="status-chip" [ngClass]="s2Status()?.status">{{ s2Status()?.status }}</mat-chip>
+        <mat-list>
+          @for (step of s2Status()?.steps; track step.name) {
+            <mat-list-item [ngClass]="step.status">
+              <mat-icon matListItemIcon>{{ getStepIcon(step.status) }}</mat-icon>
+              <span matListItemTitle>{{ step.name }}</span>
+              @if (step.error) {
+                <span matListItemLine>{{ step.error }}</span>
+              }
+            </mat-list-item>
+          }
+        </mat-list>
       }
 
       @if (s2Report()) {
-        <div class="report-section">
-          <div class="report-header">
-            <h4>Validation Report</h4>
-            <button class="btn btn-secondary btn-sm" (click)="downloadReport('s2')">Download .md</button>
-          </div>
-          <div class="markdown-body" [innerHTML]="s2Report()"></div>
+        <div class="report-header">
+          <h2>Validation Report</h2>
+          <button mat-stroked-button type="button" (click)="downloadReport('s2')">
+            <mat-icon>download</mat-icon>
+            Markdown
+          </button>
         </div>
+        <div class="markdown-body" [innerHTML]="s2Report()"></div>
       }
-    </div>
+    </mat-card>
   </div>
-</div>
+</section>

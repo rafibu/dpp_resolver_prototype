@@ -1,46 +1,72 @@
 <div class="sidebar-container">
-  <nav class="sidebar-nav">
-    <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-item">
-      <span class="nav-icon">🗺️</span> Federation Map
+  <nav mat-nav-list class="primary-nav" aria-label="Main navigation">
+    <a mat-list-item routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+      <mat-icon matListItemIcon>account_tree</mat-icon>
+      <span matListItemTitle>Federation</span>
     </a>
-    <a routerLink="/scenarios" routerLinkActive="active" class="nav-item">
-      <span class="nav-icon">🚀</span> Scenario Runner
+    <a mat-list-item routerLink="/scenarios" routerLinkActive="active">
+      <mat-icon matListItemIcon>play_circle</mat-icon>
+      <span matListItemTitle>Scenarios</span>
     </a>
   </nav>
 
+  <mat-divider />
+
   <div class="sidebar-header">
-    <h2>Platforms</h2>
-    <button class="btn btn-sm btn-accent" (click)="onSpawnNew()">+ Spawn</button>
+    <div>
+      <span class="eyebrow">Factory</span>
+      <h2>Platforms</h2>
+    </div>
+    <button mat-mini-fab color="primary" type="button" matTooltip="Spawn platform" (click)="onSpawnNew()">
+      <mat-icon>add</mat-icon>
+    </button>
   </div>
 
   <div class="platform-list">
     @for (platform of platforms(); track platform.platform_id) {
-      <div class="platform-item" [routerLink]="['/platforms', platform.platform_id]" routerLinkActive="active">
-        <div class="platform-info">
+      <div class="platform-row" routerLinkActive="active">
+        <a class="platform-link" [routerLink]="['/platforms', platform.platform_id]">
           <span class="status-dot" [ngClass]="platform.status.toLowerCase()"></span>
-          <span class="platform-id">{{ platform.platform_id }}</span>
-        </div>
+          <span class="platform-main">
+            <span class="platform-id">{{ platform.platform_id }}</span>
+            <span class="platform-meta">{{ platform.stack }}</span>
+          </span>
+        </a>
 
-        <div class="platform-actions" (click)="$event.stopPropagation()">
+        <div class="platform-actions">
           @if (processing()[platform.platform_id]) {
-            <span class="spinner-sm"></span>
+            <mat-progress-spinner diameter="24" mode="indeterminate" />
           } @else {
             @if (platform.status === 'RUNNING') {
-              <button class="action-btn" title="Pause" (click)="onPause(platform.platform_id)">⏸</button>
+              <button mat-icon-button type="button" matTooltip="Pause" (click)="onPause(platform.platform_id)">
+                <mat-icon>pause</mat-icon>
+              </button>
             } @else if (platform.status === 'PAUSED') {
-              <button class="action-btn" title="Resume" (click)="onResume(platform.platform_id)">▶</button>
+              <button mat-icon-button type="button" matTooltip="Resume" (click)="onResume(platform.platform_id)">
+                <mat-icon>play_arrow</mat-icon>
+              </button>
             }
-            <button class="action-btn" title="Reset" (click)="onReset(platform.platform_id)">🔄</button>
-            <button class="action-btn delete" title="Delete"
-                    [disabled]="isDefaultPlatform(platform.platform_id)"
-                    (click)="onDelete(platform.platform_id)">🗑</button>
+            <button mat-icon-button type="button" matTooltip="Reset" (click)="onReset(platform.platform_id)">
+              <mat-icon>restart_alt</mat-icon>
+            </button>
+            <button
+              mat-icon-button
+              color="warn"
+              type="button"
+              matTooltip="Delete"
+              [disabled]="isDefaultPlatform(platform.platform_id)"
+              (click)="onDelete(platform.platform_id)"
+            >
+              <mat-icon>delete</mat-icon>
+            </button>
           }
         </div>
       </div>
     } @empty {
-      <p class="empty-msg">No platforms found.</p>
+      <div class="empty-state">
+        <mat-icon>inventory_2</mat-icon>
+        <p>No platforms found.</p>
+      </div>
     }
   </div>
 </div>
-
-<app-spawn-platform-modal #spawnModal />

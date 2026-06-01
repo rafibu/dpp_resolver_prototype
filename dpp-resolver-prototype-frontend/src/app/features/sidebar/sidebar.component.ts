@@ -1,16 +1,35 @@
-import { Component, inject, signal, ViewChild } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FederationService } from '../../core/federation.service';
-import { FactoryService } from '../../core/factory.service';
-import { ToastService } from '../../core/toast.service';
-import { PlatformInfo, PlatformStatus } from '../../core/models/federation.model';
 import { RouterLink, RouterLinkActive } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
+import { MatDividerModule } from '@angular/material/divider';
+import { MatIconModule } from '@angular/material/icon';
+import { MatListModule } from '@angular/material/list';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { Observable, finalize, take } from 'rxjs';
+import { FactoryService } from '../../core/factory.service';
+import { FederationService } from '../../core/federation.service';
+import { toErrorMessage } from '../../core/http-error.utils';
+import { ToastService } from '../../core/toast.service';
+import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { SpawnPlatformModalComponent } from '../spawn-platform-modal/spawn-platform-modal.component';
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive, SpawnPlatformModalComponent],
+  imports: [
+    CommonModule,
+    RouterLink,
+    RouterLinkActive,
+    MatButtonModule,
+    MatDividerModule,
+    MatIconModule,
+    MatListModule,
+    MatProgressSpinnerModule,
+    MatTooltipModule
+  ],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss'
 })
@@ -18,8 +37,7 @@ export class SidebarComponent {
   public federationService = inject(FederationService);
   private factoryService = inject(FactoryService);
   private toastService = inject(ToastService);
-
-  @ViewChild('spawnModal') spawnModal!: SpawnPlatformModalComponent;
+  private dialog = inject(MatDialog);
 
   public platforms = this.federationService.platforms;
   public processing = signal<Record<string, boolean>>({});
@@ -41,27 +59,44 @@ export class SidebarComponent {
   }
 
   public onDelete(id: string): void {
-    if (confirm(`Are you sure you want to delete platform ${id}?`)) {
-      this.wrapAction(id, this.factoryService.deletePlatform(id), 'Deleted');
-    }
-  }
-
-  private wrapAction(id: string, obs: any, actionName: string): void {
-    this.processing.update(p => ({ ...p, [id]: true }));
-    obs.subscribe({
-      next: () => {
-        this.toastService.success(`Platform ${id} ${actionName} successfully`);
-        this.federationService.refresh().subscribe();
-        this.processing.update(p => ({ ...p, [id]: false }));
-      },
-      error: (err: any) => {
-        this.toastService.error(`Failed to ${actionName.toLowerCase()} platform ${id}: ${err.message || 'Unknown error'}`);
-        this.processing.update(p => ({ ...p, [id]: false }));
+    this.dialog.open(ConfirmDialogComponent, {
+      data: {
+        title: 'Delete platform',
+        message: `Delete ${id} and tear down its backing container?`,
+        confirmText: 'Delete',
+        destructive: true
+      }
+    }).afterClosed().pipe(take(1)).subscribe(confirmed => {
+      if (confirmed) {
+        this.wrapAction(id, this.factoryService.deletePlatform(id), 'Deleted');
       }
     });
   }
 
   public onSpawnNew(): void {
-    this.spawnModal.open();
+    this.dialog.open(SpawnPlatformModalComponent, {
+      autoFocus: 'first-tabbable',
+      maxWidth: 'calc(100vw - 2rem)',
+      width: '34rem'
+    }).afterClosed().pipe(take(1)).subscribe(spawned => {
+      if (spawned) {
+        this.federationService.refresh().pipe(take(1)).subscribe();
+      }
+    });
+  }
+
+  private wrapAction(id: string, obs: Observable<unknown>, actionName: string): void {
+    this.processing.update(p => ({ ...p, [id]: true }));
+    obs.pipe(finalize(() => {
+      this.processing.update(p => ({ ...p, [id]: false }));
+    })).subscribe({
+      next: () => {
+        this.toastService.success(`Platform ${id} ${actionName} successfully`);
+        this.federationService.refresh().pipe(take(1)).subscribe();
+      },
+      error: (err: unknown) => {
+        this.toastService.error(toErrorMessage(err, `Failed to ${actionName.toLowerCase()} platform ${id}`));
+      }
+    });
   }
 }

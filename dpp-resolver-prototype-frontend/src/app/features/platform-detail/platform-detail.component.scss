@@ -1,72 +1,83 @@
-@use '../../../styles/var' as *;
-@use '../../../styles/mix' as *;
-
 .detail-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  gap: 1rem;
+  min-height: 100%;
 }
 
 .detail-header {
-  margin-bottom: $padding-large;
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+}
+
+.eyebrow {
+  color: #607085;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  margin: 0 0 0.25rem;
+  text-transform: uppercase;
 }
 
 .title-row {
-  display: flex;
   align-items: center;
-  gap: $padding-medium;
-  margin-bottom: $padding-medium;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 
-  h2 {
+  h1 {
+    color: #172033;
+    font-size: clamp(1.55rem, 2vw, 2.2rem);
+    line-height: 1.12;
     margin: 0;
-    font-size: rem(24px);
   }
 }
 
-.status-badge {
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: rem(12px);
-  font-weight: 600;
-  text-transform: uppercase;
-  color: white;
+.subtitle {
+  align-items: center;
+  color: #607085;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0;
 
-  &.running { background: $success; }
-  &.paused { background: $gray-dark; }
-  &.error { background: $error; }
-  &.starting { background: $warning; }
+  mat-icon {
+    color: #7b8a9c;
+    font-size: 1.05rem;
+    height: 1.05rem;
+    width: 1.05rem;
+  }
+
+  span {
+    background: #c9d5df;
+    border-radius: 999px;
+    height: 0.25rem;
+    margin-inline: 0.25rem;
+    width: 0.25rem;
+  }
 }
+
+mat-chip.running { --mdc-chip-label-text-color: #16734b; }
+mat-chip.paused { --mdc-chip-label-text-color: #526174; }
+mat-chip.starting { --mdc-chip-label-text-color: #9b5d00; }
+mat-chip.error { --mdc-chip-label-text-color: #9b231b; }
 
 .tabs {
-  display: flex;
-  gap: $padding-small;
-  border-bottom: 2px solid $gray-light;
-}
-
-.tab-link {
-  padding: $padding-small $padding-large;
-  font-weight: 600;
-  color: $gray-dark;
-  border-bottom: 4px solid transparent;
-  margin-bottom: -2px;
-  transition: all 0.2s;
-
-  &:hover {
-    color: $primary;
-    background: rgba($accent, 0.05);
-  }
-
-  &.active {
-    color: $accent;
-    border-bottom-color: $accent;
-  }
+  background: #ffffff;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px 8px 0 0;
+  padding: 0 0.4rem;
 }
 
 .tab-content {
+  background: #ffffff;
+  border: 1px solid #d8e0e8;
+  border-radius: 0 0 8px 8px;
+  border-top: 0;
+  display: block;
   flex: 1;
-  background: white;
-  border-radius: $border-radius;
-  padding: $padding-large;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 1rem;
 }

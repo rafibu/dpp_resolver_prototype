@@ -1,144 +1,127 @@
-@use '../styles/var' as *;
-@use '../styles/mix' as *;
-
 .bootstrap-container {
-  @include flex-center;
+  align-items: center;
+  background:
+    radial-gradient(circle at top left, rgba(0, 137, 123, 0.12), transparent 32rem),
+    linear-gradient(135deg, #f7fafc 0%, #eef5f1 48%, #f5f7fb 100%);
+  color: #1f2937;
+  display: flex;
   flex-direction: column;
+  gap: 1rem;
   height: 100vh;
-  gap: $padding-medium;
+  justify-content: center;
+  padding: 1.5rem;
 
   p {
-    color: $gray-dark;
-    font-size: rem(18px);
+    font-size: 1.1rem;
+    font-weight: 650;
+    margin: 0;
   }
-}
 
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 5px solid $gray-light;
-  border-top-color: $accent;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+  span {
+    color: #607085;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+  }
 }
 
 .error-card {
-  @include card;
-  text-align: center;
-  max-width: 400px;
-
-  h1 {
-    color: $error;
-    margin-bottom: $padding-medium;
-  }
-
-  .url {
-    font-family: monospace;
-    background: #f8f9fa;
-    padding: $padding-small;
-    margin: $padding-medium 0;
-    font-size: rem(14px);
-  }
+  border-radius: 8px;
+  max-width: 32rem;
+  width: min(100%, 32rem);
 }
 
-.btn {
-  @include button-base;
-  &-primary {
-    background: $accent;
-    color: white;
-    &:hover { background: darken($accent, 10%); }
-  }
-}
-
-.app-layout {
-  display: flex;
-  flex-direction: column;
+.shell {
   height: 100vh;
 }
 
-.app-header {
-  height: $header-height;
-  background: $primary;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 $padding-large;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  z-index: 10;
+.shell-sidebar {
+  background: #ffffff;
+  border-right: 1px solid #d8e0e8;
+  width: 18rem;
+}
 
-  h1 {
-    color: white;
-    font-size: rem(20px);
-    margin: 0;
+.shell-content {
+  background: #f4f7f9;
+  min-width: 0;
+}
+
+.topbar {
+  background: #ffffff;
+  border-bottom: 1px solid #d8e0e8;
+  color: #1f2937;
+  gap: 1rem;
+  height: 4rem;
+  padding-inline: 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+.brand {
+  align-items: center;
+  color: #172033;
+  display: flex;
+  font-size: 1.05rem;
+  font-weight: 750;
+  gap: 0.65rem;
+  letter-spacing: 0;
+
+  mat-icon {
+    color: #00796b;
   }
 }
 
-.status {
-  display: flex;
-  align-items: center;
-  gap: $padding-small;
-  font-size: rem(14px);
-}
-
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  &.running { background: $success; }
-  &.error { background: $error; }
-}
-
-.app-content {
-  display: flex;
+.topbar-spacer {
   flex: 1;
-  overflow: hidden;
 }
 
-.sidebar {
-  width: $sidebar-width;
-  background: $white;
-  border-right: 1px solid $gray-light;
-  padding: $padding-medium;
-  overflow-y: auto;
+.sync-pill {
+  align-items: center;
+  background: #eef8f5;
+  border: 1px solid #c7e5dd;
+  border-radius: 999px;
+  color: #0f6258;
+  display: inline-flex;
+  font-size: 0.85rem;
+  font-weight: 650;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
+}
+
+.sync-dot {
+  background: #17a673;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(23, 166, 115, 0.14);
+  height: 0.55rem;
+  width: 0.55rem;
+
+  &.error {
+    background: #d64545;
+    box-shadow: 0 0 0 4px rgba(214, 69, 69, 0.14);
+  }
 }
 
 .main-area {
-  flex: 1;
-  padding: $padding-large;
-  overflow-y: auto;
-  background: $background;
+  height: calc(100vh - 4rem);
+  overflow: auto;
+  padding: 1.5rem;
 }
 
-.toast-container {
-  position: fixed;
-  bottom: $padding-large;
-  right: $padding-large;
-  display: flex;
-  flex-direction: column;
-  gap: $padding-small;
-  z-index: 1000;
-}
+@media (max-width: 900px) {
+  .shell-sidebar {
+    width: 15.5rem;
+  }
 
-.toast {
-  padding: $padding-medium;
-  border-radius: $border-radius;
-  color: white;
-  min-width: 250px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  cursor: pointer;
-  animation: slideIn 0.3s ease-out;
+  .topbar {
+    padding-inline: 1rem;
+  }
 
-  &.success { background: $success; }
-  &.error { background: $error; }
-  &.info { background: $accent; }
-}
+  .brand span {
+    display: none;
+  }
 
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  .main-area {
+    padding: 1rem;
+  }
 }

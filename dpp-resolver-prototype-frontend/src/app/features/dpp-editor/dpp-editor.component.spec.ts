@@ -1,15 +1,16 @@
-import { TestBed } from '@angular/core/testing';
-import { DppEditorComponent } from './dpp-editor.component';
-import { PlatformService } from '../../core/platform.service';
-import { FederationService } from '../../core/federation.service';
-import { ResolverService } from '../../core/resolver.service';
-import { ToastService } from '../../core/toast.service';
-import { of, BehaviorSubject } from 'rxjs';
-import { ActivatedRoute, provideRouter } from '@angular/router';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { signal } from '@angular/core';
-import { provideMonacoEditor } from 'ngx-monaco-editor-v2';
-import { canonicalize, sha256 } from '../../core/utils/crypto.utils';
+import {TestBed} from '@angular/core/testing';
+import {signal} from '@angular/core';
+import {ActivatedRoute, convertToParamMap, provideRouter} from '@angular/router';
+import {BehaviorSubject, of} from 'rxjs';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {provideMonacoEditor} from 'ngx-monaco-editor-v2';
+import {DppEditorComponent} from './dpp-editor.component';
+import {PlatformService} from '../../core/platform.service';
+import {FederationService} from '../../core/federation.service';
+import {ResolverService} from '../../core/resolver.service';
+import {ToastService} from '../../core/toast.service';
+import {PlatformStatus} from '../../core/models/federation.model';
+import {canonicalize, sha256} from '../../core/utils/crypto.utils';
 
 describe('DppEditorComponent', () => {
   let platformServiceSpy: any;
@@ -19,18 +20,27 @@ describe('DppEditorComponent', () => {
   let paramsSubject: BehaviorSubject<any>;
 
   beforeEach(async () => {
-    paramsSubject = new BehaviorSubject({ id: 'p1', dppId: 'p1-dpp1' });
+    paramsSubject = new BehaviorSubject(convertToParamMap({ id: 'p1', dppId: 'p1-dpp1' }));
 
     platformServiceSpy = {
       getDpp: vi.fn().mockReturnValue(of({
         dpp_id: 'p1-dpp1',
-        revisions: [{ version: 1, payload: { a: 1 }, hash: 'h1', schema_ref: 'type/1.0', timestamp: '2026-01-01' }]
+        subject_type: 'type',
+        revisions: [{ version: 1, payload: { a: 1 }, hash: 'h1', schema_ref: 'type/1.0' }]
       })),
       reviseDpp: vi.fn().mockReturnValue(of({}))
     };
 
     federationServiceSpy = {
-      getPlatformById: vi.fn().mockReturnValue(of({ external_url: 'http://p1' })),
+      platforms: signal([{
+        platform_id: 'p1',
+        stack: 'spring-postgres',
+        issuer_id: 'issuer',
+        subject_types: ['type'],
+        external_url: 'http://p1',
+        status: PlatformStatus.RUNNING,
+        created_at: '2026-01-01T00:00:00Z'
+      }]),
       resolverUrl: signal('http://resolver')
     };
 
@@ -50,13 +60,8 @@ describe('DppEditorComponent', () => {
         { provide: FederationService, useValue: federationServiceSpy },
         { provide: ResolverService, useValue: resolverServiceSpy },
         { provide: ToastService, useValue: toastServiceSpy },
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            params: paramsSubject.asObservable()
-          }
-        },
         provideRouter([]),
+        { provide: ActivatedRoute, useValue: { paramMap: paramsSubject.asObservable() } },
         provideMonacoEditor()
       ]
     }).compileComponents();
@@ -67,28 +72,24 @@ describe('DppEditorComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should load DPP data on init', async () => {
+  it('should load DPP data', () => {
     const fixture = TestBed.createComponent(DppEditorComponent);
     fixture.detectChanges();
-    await Promise.resolve();
-    expect(federationServiceSpy.getPlatformById).toHaveBeenCalled();
+    expect(platformServiceSpy.getDpp).toHaveBeenCalledWith('http://p1', 'p1-dpp1');
   });
 
   it('should verify hash correctly', async () => {
     const fixture = TestBed.createComponent(DppEditorComponent);
     fixture.detectChanges();
 
-    // Explicitly set a payload and its correct hash
     const payload = { test: 123 };
-    const jcs = canonicalize(payload);
-    const expectedHash = await sha256(jcs);
+    const expectedHash = await sha256(canonicalize(payload));
 
     fixture.componentInstance.currentRevision.set({
       version: 1,
-      payload: payload,
+      payload,
       hash: expectedHash,
-      schema_ref: 'type/1.0',
-      timestamp: '2026-01-01'
+      schema_ref: 'type/1.0'
     });
 
     await fixture.componentInstance.verifyHash();

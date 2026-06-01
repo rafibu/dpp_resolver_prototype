@@ -7,6 +7,7 @@ import { ToastService } from '../../core/toast.service';
 import { of } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { signal } from '@angular/core';
+import { MatDialogRef } from '@angular/material/dialog';
 
 describe('SpawnPlatformModalComponent', () => {
   let factoryServiceSpy: any;
@@ -34,7 +35,8 @@ describe('SpawnPlatformModalComponent', () => {
         { provide: FactoryService, useValue: factoryServiceSpy },
         { provide: ResolverService, useValue: {} },
         { provide: FederationService, useValue: federationServiceSpy },
-        { provide: ToastService, useValue: toastServiceSpy }
+        { provide: ToastService, useValue: toastServiceSpy },
+        { provide: MatDialogRef, useValue: { close: vi.fn() } }
       ]
     }).compileComponents();
   });

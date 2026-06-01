@@ -12,7 +12,7 @@ export class ResolverService {
 
   getSchema(resolverUrl: string, subjectType: string, major: number, minor: number): Observable<any> {
     return this.http.get<any>(`${resolverUrl}/schemas/${subjectType}/${major}/${minor}`).pipe(
-      map(dto => dto?.schemaDocument ?? dto)
+      map(dto => dto?.schema_document ?? dto?.schemaDocument ?? dto)
     );
   }
 

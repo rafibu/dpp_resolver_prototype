@@ -1,147 +1,155 @@
-@use '../../../styles/var' as *;
-@use '../../../styles/mix' as *;
-
 .editor-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  gap: $padding-medium;
+  gap: 1rem;
+  height: calc(100vh - 7rem);
+  min-height: 34rem;
 }
 
 .editor-header {
+  align-items: flex-start;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  gap: 1rem;
 
-  h2 {
-    margin: 0;
-    font-size: rem(20px);
+  h1 {
+    color: #172033;
+    font-size: clamp(1.35rem, 2vw, 2rem);
+    line-height: 1.12;
+    margin: 0.25rem 0 0;
 
-    small {
-      color: $gray-dark;
-      font-weight: 400;
-      margin-left: $padding-small;
+    span {
+      color: #607085;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-left: 0.4rem;
     }
   }
 }
 
-.back-link {
-  display: block;
-  margin-bottom: 4px;
-  font-size: rem(12px);
-  color: $accent;
-  font-weight: 600;
-
-  &:hover { text-decoration: underline; }
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: flex-end;
 }
 
-.header-right {
+.inline-error {
+  align-items: center;
+  background: #fff1f0;
+  border: 1px solid #f3c5c0;
+  border-radius: 8px;
+  color: #9b231b;
   display: flex;
-  gap: $padding-small;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
 }
 
 .metadata-panel {
-  display: flex;
-  gap: $padding-large;
-  background: white;
-  padding: $padding-medium;
-  border-radius: $border-radius;
-  border: 1px solid $gray-light;
-  font-size: rem(13px);
-}
+  border-radius: 8px;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 1.6fr) auto;
+  padding: 1rem;
 
-.meta-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-
-  label {
-    font-weight: 600;
-    color: $gray-dark;
+  span {
+    color: #607085;
+    display: block;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.25rem;
     text-transform: uppercase;
-    font-size: rem(11px);
   }
 
-  span { color: $text; }
-
-  .hash {
-    font-family: monospace;
-    &.success { color: $success; }
-    &.failure { color: $error; }
+  strong {
+    color: #172033;
+    display: block;
+    overflow-wrap: anywhere;
   }
 }
 
-.hash-check { color: $success; font-weight: bold; margin-left: 4px; }
-.hash-fail { color: $error; font-weight: bold; margin-left: 4px; }
+.hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+
+  &.success { color: #16734b; }
+  &.failure { color: #9b231b; }
+}
+
+mat-chip.valid { --mdc-chip-label-text-color: #16734b; }
+mat-chip.invalid { --mdc-chip-label-text-color: #9b231b; }
 
 .editor-main {
-  flex: 1;
   display: flex;
-  gap: $padding-medium;
-  min-height: 0; /* Important for flex child with overflow */
+  flex: 1;
+  gap: 1rem;
+  min-height: 0;
 }
 
 .monaco-wrapper {
+  background: #ffffff;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
   flex: 1;
-  border: 1px solid $gray-light;
-  border-radius: $border-radius;
+  min-width: 0;
   overflow: hidden;
-  background: white;
 
   ngx-monaco-editor {
+    display: block;
     height: 100%;
     width: 100%;
   }
 }
 
 .validation-panel {
-  width: 300px;
-  background: white;
-  border: 1px solid $gray-light;
-  border-radius: $border-radius;
-  padding: $padding-medium;
-  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  overflow: auto;
+  padding: 1rem;
+  width: min(24rem, 34vw);
 
-  h3 {
-    margin-top: 0;
-    margin-bottom: $padding-small;
-    font-size: rem(14px);
-    border-bottom: 1px solid $gray-light;
-    padding-bottom: 4px;
+  h2 {
+    color: #172033;
+    font-size: 1rem;
+    margin: 0;
   }
 }
 
-.valid-msg {
-  color: $success;
-  font-weight: 600;
-  font-size: rem(13px);
+.valid-state {
+  align-items: center;
+  background: #eaf7ef;
+  border: 1px solid #c9e9d5;
+  border-radius: 8px;
+  color: #16734b;
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.8rem;
 }
 
-.error-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: rem(12px);
-
-  li {
-    padding: $padding-small;
-    background: rgba($error, 0.05);
-    border-left: 3px solid $error;
-    border-radius: 2px;
-    margin-bottom: $padding-small;
-
-    pre {
-      margin-top: 4px;
-      font-size: 10px;
-      color: $gray-dark;
-      white-space: pre-wrap;
-    }
+@media (max-width: 980px) {
+  .editor-container {
+    height: auto;
   }
-}
 
-.btn {
-  @include button-base;
-  &-sm { padding: 4px 12px; font-size: 12px; }
-  &-primary { background: $accent; color: white; }
-  &-secondary { background: $gray-light; color: $text; }
+  .editor-header,
+  .editor-main {
+    flex-direction: column;
+  }
+
+  .metadata-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .monaco-wrapper {
+    min-height: 28rem;
+  }
+
+  .validation-panel {
+    width: auto;
+  }
 }

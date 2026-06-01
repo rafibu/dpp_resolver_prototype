@@ -5,8 +5,27 @@ body {
   background-color: $background;
   color: $text;
   line-height: 1.5;
+  margin: 0;
 }
 
 h1, h2, h3, h4, h5, h6 {
   color: $primary;
+}
+
+.snack-success {
+  --mdc-snackbar-container-color: #0f8f65;
+  --mdc-snackbar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
+}
+
+.snack-error {
+  --mdc-snackbar-container-color: #b3261e;
+  --mdc-snackbar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
+}
+
+.snack-info {
+  --mdc-snackbar-container-color: #1f5f8b;
+  --mdc-snackbar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
 }

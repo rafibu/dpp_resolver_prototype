@@ -1,12 +1,14 @@
-import {Injectable, OnDestroy, signal} from '@angular/core';
-import {fromEvent, interval, map, merge, Subscription} from 'rxjs';
+import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { fromEvent, interval, map, merge, Subscription } from 'rxjs';
 
 export type PollingCallback = () => void;
 
 @Injectable({
   providedIn: 'root'
 })
-export class PollingService implements OnDestroy {
+export class PollingService {
+  private destroyRef = inject(DestroyRef);
   private callbacks = new Set<PollingCallback>();
   private pollSubscription?: Subscription;
 
@@ -15,22 +17,18 @@ export class PollingService implements OnDestroy {
   public hasError = signal(false);
 
   constructor() {
-    // Page Visibility API
     merge(
       fromEvent(document, 'visibilitychange').pipe(map(() => !document.hidden)),
       fromEvent(window, 'focus').pipe(map(() => true)),
       fromEvent(window, 'blur').pipe(map(() => false))
-    ).subscribe(active => {
+    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(active => {
       this.isTabActive.set(active);
       if (active) this.start();
       else this.stop();
     });
 
+    this.destroyRef.onDestroy(() => this.stop());
     this.start();
-  }
-
-  ngOnDestroy(): void {
-    this.stop();
   }
 
   public register(cb: PollingCallback): () => void {

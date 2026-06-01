@@ -1,18 +1,20 @@
-import {Injectable, inject, signal, computed, OnDestroy} from '@angular/core';
+import {computed, DestroyRef, inject, Injectable, signal} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
-import {BehaviorSubject, Observable, catchError, map, of, tap, throwError, filter} from 'rxjs';
+import {BehaviorSubject, catchError, map, Observable, of, tap, throwError} from 'rxjs';
 import {environment} from '../../environments/environment';
 import {FederationOverview, PlatformInfo} from './models/federation.model';
 import {PollingService} from './polling.service';
 import {deepEqual} from './utils/deep-equals.utils';
+import {toErrorMessage} from './http-error.utils';
 
 
 @Injectable({
   providedIn: 'root'
 })
-export class FederationService implements OnDestroy {
+export class FederationService {
   private http = inject(HttpClient);
   private pollingService = inject(PollingService);
+  private destroyRef = inject(DestroyRef);
   private factoryUrl = environment.factoryUrl;
 
   private overviewSubject = new BehaviorSubject<FederationOverview | null>(null);
@@ -35,10 +37,8 @@ export class FederationService implements OnDestroy {
         error: () => this.pollingService.reportError()
       });
     });
-  }
 
-  ngOnDestroy(): void {
-    this.unregisterPolling();
+    this.destroyRef.onDestroy(() => this.unregisterPolling());
   }
 
   discover(): Observable<FederationOverview> {
@@ -49,15 +49,16 @@ export class FederationService implements OnDestroy {
   }
 
   refresh(): Observable<FederationOverview> {
-    this._error.set(null);
     return this.http.get<FederationOverview>(`${this.factoryUrl}/federation`).pipe(
-      filter(overview => overviewChanged(this._overview(), overview)),
       tap(overview => {
-        this.overviewSubject.next(overview);
-        this._overview.set(overview);
+        this._error.set(null);
+        if (overviewChanged(this._overview(), overview)) {
+          this.overviewSubject.next(overview);
+          this._overview.set(overview);
+        }
       }),
       catchError(err => {
-        const errorMessage = `Failed to connect to Factory at ${this.factoryUrl}`;
+        const errorMessage = toErrorMessage(err, `Failed to connect to Factory at ${this.factoryUrl}`);
         this._error.set(errorMessage);
         return throwError(() => err);
       })
@@ -90,4 +91,3 @@ function overviewChanged(currentOverview: FederationOverview | null, newOverview
 
   return !deepEqual(currentOverview, newOverview);
 }
-

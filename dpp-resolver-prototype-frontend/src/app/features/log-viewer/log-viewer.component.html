@@ -1,40 +1,66 @@
-<div class="log-viewer">
+<section class="log-viewer">
   <div class="log-toolbar">
-    <div class="toolbar-left">
-      <input type="text" [(ngModel)]="searchTerm" placeholder="Search logs..." class="search-input">
-      <button class="btn btn-secondary btn-sm" (click)="togglePause()">
-        {{ isPaused() ? '▶ Resume' : '⏸ Pause' }}
-      </button>
-    </div>
+    <mat-form-field appearance="outline" subscriptSizing="dynamic">
+      <mat-label>Search logs</mat-label>
+      <mat-icon matPrefix>search</mat-icon>
+      <input matInput [ngModel]="searchTerm()" (ngModelChange)="searchTerm.set($event)">
+    </mat-form-field>
 
-    <div class="toolbar-right">
-      @if (!autoScroll()) {
-        <button class="btn btn-accent btn-sm" (click)="scrollToBottom()">↓ Scroll to bottom</button>
-      }
-      <span class="log-count">{{ filteredLogs().length }} lines</span>
-    </div>
+    <button mat-stroked-button type="button" (click)="togglePause()">
+      <mat-icon>{{ isPaused() ? 'play_arrow' : 'pause' }}</mat-icon>
+      {{ isPaused() ? 'Resume' : 'Pause' }}
+    </button>
+
+    <mat-slide-toggle [checked]="autoScroll()" (change)="autoScroll.set($event.checked)">
+      Auto scroll
+    </mat-slide-toggle>
+
+    <span class="toolbar-spacer"></span>
+
+    @if (!autoScroll()) {
+      <button mat-stroked-button type="button" (click)="scrollToBottom()">
+        <mat-icon>south</mat-icon>
+        Bottom
+      </button>
+    }
+
+    <span class="log-count">{{ filteredLogs().length }} lines</span>
   </div>
 
-  <div class="log-container" #logContainer (scroll)="onScroll()">
-    @for (line of filteredLogs(); track $index) {
-      <div class="log-line" [ngClass]="getLevelClass(line.level)">
+  @if (loading()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  @if (error()) {
+    <div class="inline-error">
+      <mat-icon>error</mat-icon>
+      <span>{{ error() }}</span>
+    </div>
+  }
+
+  @if (filteredLogs().length === 0) {
+    <div class="empty-logs">
+      <mat-icon>article</mat-icon>
+      @if (searchTerm()) {
+        <span>No logs match "{{ searchTerm() }}"</span>
+      } @else {
+        <span>Waiting for logs</span>
+      }
+    </div>
+  } @else {
+    <cdk-virtual-scroll-viewport #logViewport itemSize="36" class="log-container">
+      <div
+        *cdkVirtualFor="let line of filteredLogs(); let i = index; trackBy: trackLog"
+        class="log-line"
+        [ngClass]="getLevelClass(line.level)"
+      >
+        <span class="log-timestamp">{{ line.timestamp ? (line.timestamp | date:'HH:mm:ss.SSS') : '--:--:--' }}</span>
         <span class="log-level">{{ line.level }}</span>
         <span class="log-message">{{ line.message }}</span>
-
-        <div class="line-actions">
-          <button class="copy-btn" title="Copy line" (click)="copyLine(line)">📋</button>
-        </div>
-
-        <span class="log-timestamp">{{ line.timestamp | date:'HH:mm:ss.SSS' }}</span>
+        <button mat-icon-button type="button" matTooltip="Copy line" (click)="copyLine(line)">
+          <mat-icon>content_copy</mat-icon>
+        </button>
       </div>
-    } @empty {
-      <div class="empty-logs">
-        @if (searchTerm()) {
-          No logs match "{{ searchTerm() }}"
-        } @else {
-          Waiting for logs...
-        }
-      </div>
-    }
-  </div>
-</div>
+    </cdk-virtual-scroll-viewport>
+  }
+</section>

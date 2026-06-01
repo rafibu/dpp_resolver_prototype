@@ -1,29 +1,36 @@
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { PlatformDetailComponent } from './platform-detail.component';
 import { FederationService } from '../../core/federation.service';
-import { of } from 'rxjs';
-import { provideRouter, ActivatedRoute } from '@angular/router';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PlatformStatus } from '../../core/models/federation.model';
 
 describe('PlatformDetailComponent', () => {
-  let federationServiceSpy: any;
-
   beforeEach(async () => {
-    federationServiceSpy = {
-      getPlatformById: vi.fn().mockReturnValue(of({
-        platform_id: 'p1',
-        status: PlatformStatus.RUNNING
-      }))
+    const platform = {
+      platform_id: 'p1',
+      stack: 'spring-postgres',
+      issuer_id: 'issuer',
+      subject_types: ['pv_module'],
+      external_url: 'http://p1',
+      status: PlatformStatus.RUNNING,
+      created_at: '2026-01-01T00:00:00Z'
     };
 
     await TestBed.configureTestingModule({
       imports: [PlatformDetailComponent],
       providers: [
-        { provide: FederationService, useValue: federationServiceSpy },
-        provideRouter([
-          { path: 'platforms/:id', component: PlatformDetailComponent }
-        ])
+        { provide: FederationService, useValue: { platforms: signal([platform]) } },
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { paramMap: convertToParamMap({ id: 'p1' }) },
+            paramMap: of(convertToParamMap({ id: 'p1' }))
+          }
+        }
       ]
     }).compileComponents();
   });
@@ -33,9 +40,8 @@ describe('PlatformDetailComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should load platform on init', () => {
+  it('should resolve the platform from the federation snapshot', () => {
     const fixture = TestBed.createComponent(PlatformDetailComponent);
-    fixture.detectChanges();
-    expect(federationServiceSpy.getPlatformById).toHaveBeenCalled();
+    expect(fixture.componentInstance.platform()?.platform_id).toBe('p1');
   });
 });

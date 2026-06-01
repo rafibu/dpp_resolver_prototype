@@ -1,62 +1,106 @@
-<div class="tab-pane">
+<section class="tab-pane">
   <div class="action-bar">
-    <button class="btn btn-primary btn-sm" (click)="openCreateModal()">+ Create DPP</button>
+    <div>
+      <h2>DPPs</h2>
+      <p>{{ dpps().length }} item(s) on this platform</p>
+    </div>
+    <button mat-flat-button color="primary" type="button" [disabled]="!platformUrl()" (click)="openCreateModal()">
+      <mat-icon>add</mat-icon>
+      Create DPP
+    </button>
   </div>
 
   @if (loading()) {
-    <div class="loading-state">Loading DPPs...</div>
-  } @else {
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>DPP ID</th>
-          <th>Subject Type</th>
-          <th>Version</th>
-          <th>Last Updated</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (dpp of dpps(); track dpp.dpp_id) {
-          <tr class="clickable-row" (click)="toggleExpand(dpp.dpp_id)" [ngClass]="{ 'expanded': expandedDpp() === dpp.dpp_id }">
-            <td>{{ dpp.dpp_id }}</td>
-            <td><span class="type-badge">{{ dpp.subject_type }}</span></td>
-            <td>v{{ dpp.current_version }}</td>
-            <td>{{ dpp.last_updated | date:'medium' }}</td>
-            <td class="arrow">{{ expandedDpp() === dpp.dpp_id ? '▼' : '▶' }}</td>
-          </tr>
+    <mat-progress-bar mode="indeterminate" />
+  }
 
-          @if (expandedDpp() === dpp.dpp_id) {
-            <tr class="history-row">
-              <td colspan="5">
-                <div class="history-container">
-                  @if (loadingDetail()) {
-                    <div class="loading-sm">Loading history...</div>
-                  } @else if (dppDetail()) {
-                    <h4>Revision History</h4>
-                    <ul class="revision-list">
-                      @for (rev of dppDetail()?.revisions; track rev.version) {
-                        <li class="revision-item" [routerLink]="['/platforms', platformId(), 'dpps', dpp.dpp_id, 'revisions', rev.version]">
-                          <span class="rev-version">v{{ rev.version }}</span>
-                          <span class="rev-schema">{{ rev.schema_ref }}</span>
-                          <span class="rev-hash" [title]="rev.hash">{{ rev.hash.substring(0, 10) }}...</span>
-                          <span class="rev-date">{{ rev.timestamp | date:'short' }}</span>
-                        </li>
-                      }
-                    </ul>
-                  }
-                </div>
-              </td>
-            </tr>
-          }
-        } @empty {
-          <tr>
-            <td colspan="5" class="empty-cell">No DPPs found on this platform.</td>
-          </tr>
-        }
-      </tbody>
+  @if (error()) {
+    <div class="inline-error">
+      <mat-icon>error</mat-icon>
+      <span>{{ error() }}</span>
+    </div>
+  }
+
+  @if (!loading() && dpps().length === 0 && !error()) {
+    <div class="empty-state">
+      <mat-icon>inventory_2</mat-icon>
+      <h3>No DPPs found</h3>
+      <p>Create the first DPP for {{ platformId() }}.</p>
+    </div>
+  } @else if (dpps().length > 0) {
+    <table mat-table [dataSource]="dpps()" class="dpp-table">
+      <ng-container matColumnDef="dpp_id">
+        <th mat-header-cell *matHeaderCellDef>DPP ID</th>
+        <td mat-cell *matCellDef="let dpp">
+          <span class="dpp-id">{{ dpp.dpp_id }}</span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="subject_type">
+        <th mat-header-cell *matHeaderCellDef>Subject Type</th>
+        <td mat-cell *matCellDef="let dpp">
+          <mat-chip>{{ dpp.subject_type }}</mat-chip>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="current_version">
+        <th mat-header-cell *matHeaderCellDef>Version</th>
+        <td mat-cell *matCellDef="let dpp">v{{ dpp.current_version }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="last_updated">
+        <th mat-header-cell *matHeaderCellDef>Last Updated</th>
+        <td mat-cell *matCellDef="let dpp">{{ dpp.last_updated | date:'medium' }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="expand">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let dpp" class="expand-cell">
+          <button mat-icon-button type="button" matTooltip="Show revisions" (click)="$event.stopPropagation(); toggleExpand(dpp.dpp_id)">
+            <mat-icon>{{ expandedDpp() === dpp.dpp_id ? 'expand_less' : 'expand_more' }}</mat-icon>
+          </button>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+      <tr
+        mat-row
+        *matRowDef="let row; columns: displayedColumns"
+        class="dpp-row"
+        [class.expanded]="expandedDpp() === row.dpp_id"
+        (click)="toggleExpand(row.dpp_id)"
+      ></tr>
     </table>
   }
-</div>
 
-<app-create-dpp-modal #createDppModal />
+  @if (expandedDpp()) {
+    <mat-expansion-panel class="revision-panel" [expanded]="true">
+      <mat-expansion-panel-header>
+        <mat-panel-title>Revision History</mat-panel-title>
+        <mat-panel-description>{{ expandedDpp() }}</mat-panel-description>
+      </mat-expansion-panel-header>
+
+      @if (loadingDetail()) {
+        <mat-progress-bar mode="indeterminate" />
+      } @else if (detailError()) {
+        <div class="inline-error">
+          <mat-icon>error</mat-icon>
+          <span>{{ detailError() }}</span>
+        </div>
+      } @else if (dppDetail()) {
+        <mat-list>
+          @for (rev of dppDetail()?.revisions; track rev.version) {
+            <a
+              mat-list-item
+              [routerLink]="['/platforms', platformId(), 'dpps', expandedDpp(), 'revisions', rev.version]"
+            >
+              <mat-icon matListItemIcon>history</mat-icon>
+              <span matListItemTitle>v{{ rev.version }} · {{ rev.schema_ref }}</span>
+              <span matListItemLine>{{ rev.hash }}</span>
+            </a>
+          }
+        </mat-list>
+      }
+    </mat-expansion-panel>
+  }
+</section>

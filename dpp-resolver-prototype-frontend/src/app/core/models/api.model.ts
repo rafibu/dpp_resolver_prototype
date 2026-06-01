@@ -25,14 +25,24 @@ export interface DppRevision {
   version: number;
   schema_ref: string;
   hash: string;
-  timestamp: string;
-  payload: any;
+  timestamp?: string;
+  created_at?: string;
+  payload: unknown;
 }
 
 export interface DppDetail {
   dpp_id: string;
   subject_type: string;
   revisions: DppRevision[];
+}
+
+export interface DppRevisionResponse {
+  dpp_id: string;
+  version: number;
+  schema_version: SchemaVersion;
+  dpp_payload: unknown;
+  payload_hash: string;
+  created_at: string;
 }
 
 export interface DppSummary {
@@ -46,14 +56,15 @@ export interface SchemaInfo {
   subject_type: string;
   major: number;
   minor: number;
-  schema: any;
+  schema: unknown;
 }
 
 export interface LogLine {
   timestamp: string;
   level: string;
   message: string;
-  [key: string]: any;
+  extra?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface ScenarioStatus {

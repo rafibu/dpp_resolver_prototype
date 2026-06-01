@@ -1,45 +1,52 @@
 @if (state() === 'loading') {
-  <div class="bootstrap-container">
-    <div class="spinner"></div>
-    <p>Connecting to factory...</p>
-  </div>
+  <section class="bootstrap-container" aria-live="polite">
+    <mat-progress-spinner mode="indeterminate" diameter="48" />
+    <p>Connecting to Factory</p>
+    <span>{{ factoryUrl }}</span>
+  </section>
 } @else if (state() === 'error') {
-  <div class="bootstrap-container">
-    <div class="error-card">
-      <h1>Connection Error</h1>
-      <p>{{ errorMessage() }}</p>
-      <p class="url">URL: {{ factoryUrl }}</p>
-      <button class="btn btn-primary" (click)="retry()">Retry</button>
-    </div>
-  </div>
+  <section class="bootstrap-container">
+    <mat-card class="error-card" appearance="outlined">
+      <mat-card-header>
+        <mat-icon mat-card-avatar color="warn">cloud_off</mat-icon>
+        <mat-card-title>Connection Error</mat-card-title>
+        <mat-card-subtitle>{{ factoryUrl }}</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{ errorMessage() }}</p>
+      </mat-card-content>
+      <mat-card-actions align="end">
+        <button mat-flat-button color="primary" type="button" (click)="retry()">
+          <mat-icon>refresh</mat-icon>
+          Retry
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  </section>
 } @else {
-  <div class="app-layout">
-    <header class="app-header">
-      <div class="brand">
-        <h1 [routerLink]="['/']" style="cursor: pointer">DPP Resolver Prototype</h1>
-      </div>
-      <div class="status" [title]="'Last sync: ' + (pollingService.lastSuccess() | date:'HH:mm:ss')">
-        <span class="status-dot" [ngClass]="pollingService.hasError() ? 'error' : 'running'"></span>
-        {{ pollingService.hasError() ? 'Sync Error' : 'Live Sync' }}
-      </div>
-    </header>
+  <mat-sidenav-container class="shell">
+    <mat-sidenav mode="side" opened class="shell-sidebar">
+      <app-sidebar />
+    </mat-sidenav>
 
-    <div class="app-content">
-      <aside class="sidebar">
-        <app-sidebar />
-      </aside>
+    <mat-sidenav-content class="shell-content">
+      <mat-toolbar class="topbar">
+        <a class="brand" routerLink="/" aria-label="DPP Resolver Prototype home">
+          <mat-icon>hub</mat-icon>
+          <span>DPP Resolver Prototype</span>
+        </a>
+
+        <span class="topbar-spacer"></span>
+
+        <div class="sync-pill" [matTooltip]="'Last sync: ' + (pollingService.lastSuccess() | date:'HH:mm:ss')">
+          <span class="sync-dot" [class.error]="pollingService.hasError()"></span>
+          <span>{{ pollingService.hasError() ? 'Sync issue' : 'Live sync' }}</span>
+        </div>
+      </mat-toolbar>
 
       <main class="main-area">
         <router-outlet />
       </main>
-    </div>
-  </div>
-
-  <div class="toast-container">
-    @for (toast of toasts(); track toast.id) {
-      <div class="toast" [ngClass]="toast.type" (click)="removeToast(toast.id)">
-        {{ toast.message }}
-      </div>
-    }
-  </div>
+    </mat-sidenav-content>
+  </mat-sidenav-container>
 }
