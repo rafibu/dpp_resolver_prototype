@@ -1,9 +1,11 @@
-import pytest
-from unittest.mock import AsyncMock, patch
-from workload.scenarios.pv import generate_pv_scenario
-from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
-from workload.clients import DppResponse
 from datetime import datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from workload.clients import DppResponse
+from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
+from workload.scenarios.pv import generate_pv_scenario
+
 
 @pytest.fixture
 def mock_federation():
@@ -46,7 +48,9 @@ async def test_generate_pv_scenario_logic(mock_federation):
          patch("workload.scenarios.pv.PlatformClient") as MockPlatform:
         
         mock_resolver = MockResolver.return_value
+        mock_resolver.ensure_subject_type = AsyncMock()
         mock_resolver.publish_schema = AsyncMock()
+        mock_resolver.ensure_platform_route = AsyncMock()
         
         mock_platform = MockPlatform.return_value
         mock_platform.__aenter__ = AsyncMock(return_value=mock_platform)
@@ -69,11 +73,12 @@ async def test_generate_pv_scenario_logic(mock_federation):
         assert result.battery.schema_version.subject_type == "battery"
         assert result.inverter.schema_version.subject_type == "inverter"
         
-        # Verify PV-module has 2 dependencies
-        assert len(result.pv_module.dpp_payload["dependencies"]) == 2
+        # Hard refs use a flat dependencies array (components.$ref would confuse the Java validator)
         deps = result.pv_module.dpp_payload["dependencies"]
-        assert any(d["$ref"] == f"battery/{result.battery.dpp_id}" for d in deps)
-        assert any(d["$ref"] == f"inverter/{result.inverter.dpp_id}" for d in deps)
+        assert any(d["$ref"] == f"battery/{result.battery.dpp_id}" and d["version"] == result.battery.version
+                   for d in deps)
+        assert any(d["$ref"] == f"inverter/{result.inverter.dpp_id}" and d["version"] == result.inverter.version
+                   for d in deps)
         
         # Verify platform mapping
         assert result.platform_mapping[result.pv_module.dpp_id] == "http://platform-pv:8082"

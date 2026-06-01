@@ -1,10 +1,11 @@
 import structlog
-from typing import List, Dict, Optional
 from pydantic import BaseModel
-from ..federation import FederationOverview, PlatformInfo
+from typing import List, Dict, Optional
+
 from ..clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse
+from ..federation import FederationOverview
+from ..payloads import generate_seed_payload, generate_dpp_id, ReferenceSpec
 from ..schemas.generator import generate_schema
-from ..payloads import generate_valid_payload, generate_dpp_id, ReferenceSpec
 
 logger = structlog.get_logger(__name__)
 
@@ -56,42 +57,52 @@ async def generate_pv_scenario(federation: FederationOverview, seed: int | None 
     # 2. Seed schemas
     for st in ["pv_module", "battery", "inverter"]:
         schema = generate_schema(st, with_dependencies=(st == "pv_module"))
+        await resolver.ensure_subject_type(st)
         await resolver.publish_schema(st, 1, 0, schema)
 
-    # 3. Issue battery
+    # 3. Issue battery — payload conforms to the seed schema (required: capacity_kwh, chemistry)
     async with PlatformClient(p_ba) as client:
         dpp_id = generate_dpp_id(p_ba.issuer_id, "battery", 1)
         spec = IssueDppSpec(
             dpp_id=dpp_id,
             schema_version=DppSchemaVersion(subject_type="battery", major_version=1, minor_version=0),
-            dpp_payload=generate_valid_payload({}, seed=seed + 1 if seed else None)
+            dpp_payload=generate_seed_payload("battery", seed=seed + 1 if seed else None)
         )
+        await resolver.ensure_platform_route(p_ba, "battery")
         logger.info("creating_pv_scenario_battery", platform=p_ba.platform_id)
         battery_resp = await client.issue_dpp(spec)
 
-    # 4. Issue inverter
+    # 4. Issue inverter — payload conforms to the seed schema (required: max_ac_power_watts)
     async with PlatformClient(p_in) as client:
         dpp_id = generate_dpp_id(p_in.issuer_id, "inverter", 1)
         spec = IssueDppSpec(
             dpp_id=dpp_id,
             schema_version=DppSchemaVersion(subject_type="inverter", major_version=1, minor_version=0),
-            dpp_payload=generate_valid_payload({}, seed=seed + 2 if seed else None)
+            dpp_payload=generate_seed_payload("inverter", seed=seed + 2 if seed else None)
         )
+        await resolver.ensure_platform_route(p_in, "inverter")
         logger.info("creating_pv_scenario_inverter", platform=p_in.platform_id)
         inverter_resp = await client.issue_dpp(spec)
 
-    # 5. Issue PV-module
+    # 5. Issue PV-module — references go in components.<subject_type> as declared by
+    # x-dpp-reference annotations in the seed schema (not a dependencies array)
     async with PlatformClient(p_pv) as client:
-        dependencies = [
-            ReferenceSpec(subject_type="battery", dpp_id=battery_resp.dpp_id, version=battery_resp.version),
-            ReferenceSpec(subject_type="inverter", dpp_id=inverter_resp.dpp_id, version=inverter_resp.version)
-        ]
         dpp_id = generate_dpp_id(p_pv.issuer_id, "pv_module", 1)
         spec = IssueDppSpec(
             dpp_id=dpp_id,
             schema_version=DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0),
-            dpp_payload=generate_valid_payload({}, dependencies=dependencies, seed=seed)
+            dpp_payload=generate_seed_payload(
+                "pv_module",
+                seed=seed,
+                hard_refs={
+                    "battery": ReferenceSpec(subject_type="battery", dpp_id=battery_resp.dpp_id,
+                                             version=battery_resp.version),
+                    "inverter": ReferenceSpec(subject_type="inverter", dpp_id=inverter_resp.dpp_id,
+                                              version=inverter_resp.version)
+                }
+            )
         )
+        await resolver.ensure_platform_route(p_pv, "pv_module")
         logger.info("creating_pv_scenario_root", platform=p_pv.platform_id)
         pv_resp = await client.issue_dpp(spec)
 

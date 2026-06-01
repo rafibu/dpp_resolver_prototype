@@ -1,9 +1,10 @@
-import pytest
-import subprocess
 import os
-import pandas as pd
+import subprocess
 from pathlib import Path
+
 import httpx
+import pandas as pd
+import pytest
 
 # Skip if factory is not reachable
 FACTORY_URL = os.environ.get("FACTORY_URL", "http://localhost:8000")
@@ -30,7 +31,8 @@ def workload_bin():
     return "workload" # Fallback to PATH
 
 def run_cmd(workload_bin, args):
-    cmd = [workload_bin, "--factory-url", FACTORY_URL] + args
+    # --factory-url is a per-subcommand option, not a global flag
+    cmd = [workload_bin] + args + ["--factory-url", FACTORY_URL]
     return subprocess.run(cmd, capture_output=True, text=True)
 
 @pytest.mark.skipif(not is_factory_up(), reason="Factory not reachable")

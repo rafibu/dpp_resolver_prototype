@@ -1,22 +1,23 @@
-import typer
 import asyncio
-import time
-from pathlib import Path
+import httpx
 import structlog
+import time
+import typer
+from pathlib import Path
 from typing import Optional, List
+
+from .clients import ResolverClient, PlatformClient, IssueDppSpec, DppSchemaVersion
 from .federation import FederationClient
 from .measurement import MeasurementRecorder, measure_operation
+from .payloads import generate_valid_payload
 from .scenarios.depth import generate_depth_chain
-from .scenarios.fanout import generate_fanout
+from .scenarios.fanout import generate_fanout as _fanout_scenario
 from .scenarios.pv import generate_pv_scenario
-from .scenarios.schema_evolution import run_schema_evolution
 from .scenarios.s1 import run_s1
 from .scenarios.s2 import run_s2
 from .scenarios.s3 import run_s3
-from .clients import ResolverClient, PlatformClient, IssueDppSpec, DppSchemaVersion
-from .payloads import generate_valid_payload, generate_dpp_id
+from .scenarios.schema_evolution import run_schema_evolution
 from .schemas.generator import generate_schema
-import httpx
 
 app = typer.Typer(help="DPP Workload Generator")
 logger = structlog.get_logger(__name__)
@@ -102,7 +103,7 @@ async def _run_measure(workload: str, range_str: str, runs: int, warmup_runs: in
                             
                     elif workload == "fanout":
                         # Setup
-                        result = await generate_fanout(fed, val, seed=run_seed)
+                        result = await _fanout_scenario(fed, val, seed=run_seed)
                         # Measure
                         async with measure_operation(recorder, "resolve_all_children", val, warmup=is_warmup) as ctx:
                             await asyncio.gather(*[
@@ -165,6 +166,8 @@ def generate_depth(
 async def _run_generate_depth(depth: int, seed: int, factory_url: str):
     async with FederationClient() as fed_client:
         fed = await fed_client.discover(factory_url)
+        # Clear prior DPP revisions so deterministic IDs do not collide on re-run.
+        await fed_client.reset_all_platforms(factory_url)
         result = await generate_depth_chain(fed, depth, seed=seed)
         typer.echo(f"Created depth chain (depth={depth})")
         typer.echo(f"Root DPP: {result.root_subject_type}/{result.root_dpp_id}")
@@ -188,7 +191,9 @@ def generate_fanout(
 async def _run_generate_fanout(fanout: int, root_platform: Optional[str], seed: int, factory_url: str):
     async with FederationClient() as fed_client:
         fed = await fed_client.discover(factory_url)
-        result = await generate_fanout(fed, fanout, root_platform_id=root_platform, seed=seed)
+        # Clear prior DPP revisions so deterministic IDs do not collide on re-run.
+        await fed_client.reset_all_platforms(factory_url)
+        result = await _fanout_scenario(fed, fanout, root_platform=root_platform, seed=seed)
         typer.echo(f"Created fan-out (fanout={fanout})")
         typer.echo(f"Parent DPP: {result.parent_dpp.schema_version.subject_type}/{result.parent_dpp.dpp_id} on {result.platform_mapping[result.parent_dpp.dpp_id]}")
         typer.echo(f"Children:")
@@ -210,6 +215,8 @@ def pv_scenario(
 async def _run_pv_scenario(seed: int, factory_url: str):
     async with FederationClient() as fed_client:
         fed = await fed_client.discover(factory_url)
+        # Clear prior DPP revisions so deterministic IDs do not collide on re-run.
+        await fed_client.reset_all_platforms(factory_url)
         result = await generate_pv_scenario(fed, seed=seed)
         typer.echo("Created PV scenario")
         typer.echo(f"PV Module: {result.pv_module.dpp_id} on {result.platform_mapping[result.pv_module.dpp_id]}")

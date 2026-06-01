@@ -13,10 +13,10 @@ import structlog
 from pathlib import Path
 from typing import Optional
 
+from .reporter import ScenarioReporter
 from ..clients import ResolverClient, SchemaValidationError
 from ..federation import FederationClient
 from ..schemas.generator import generate_schema
-from .reporter import ScenarioReporter
 
 logger = structlog.get_logger(__name__)
 
@@ -29,15 +29,20 @@ async def run_s3(factory_url: str, seed: int, output_dir: Optional[Path] = None)
     reporter = ScenarioReporter("s3", "Schema-Level Cycle Rejection", output_dir=output_dir)
 
     async with FederationClient() as fed_client:
+        resolver = None
+
         with reporter.step("Setup federation", "Federation discovered and reset"):
             fed = await fed_client.discover(factory_url)
             await fed_client.reset_all_platforms(factory_url)
             resolver_url = await fed_client.resolver_url()
             resolver = ResolverClient(resolver_url)
-
             await resolver.ensure_subject_type(_TYPE_A)
             await resolver.ensure_subject_type(_TYPE_B)
             reporter.record_observation("Subject types registered, resolver ready", True)
+
+        if resolver is None:
+            reporter.finalize()
+            return False
 
         # Step 1: Publish schema A declaring a hard reference to type B.
         # The Resolver extracts the x-dpp-reference annotation and adds edge A -> B

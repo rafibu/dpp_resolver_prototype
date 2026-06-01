@@ -1,9 +1,9 @@
-import structlog
-from enum import Enum
-from typing import List, Optional
-from datetime import datetime
-from pydantic import BaseModel
 import httpx
+import structlog
+from datetime import datetime
+from enum import Enum
+from pydantic import BaseModel
+from typing import List, Optional
 
 logger = structlog.get_logger(__name__)
 
@@ -79,18 +79,29 @@ class FederationClient:
         return self._overview.resolver.external_url
 
     async def reset_all_platforms(self, factory_url: str):
-        """Reset all platforms in the federation via Factory."""
+        """Reset all platforms by calling POST /admin/reset directly on each platform.
+
+        Calls the platform's own reset endpoint, which deletes DPP revisions and the
+        external cache without touching the DB container or subject type registrations.
+        The Factory's POST /platforms/{id}/reset rebuilds the entire DB container, which
+        breaks MongoDB replica-set configuration and causes transaction errors on writes.
+        Direct platform reset avoids that entirely.
+        """
         if not self._overview:
             await self.discover(factory_url)
-        
+
         for platform in self._overview.platforms:
-            logger.info("factory_reset_platform", platform_id=platform.platform_id)
+            logger.info("platform_reset", platform_id=platform.platform_id)
             try:
-                response = await self._client.post(f"{factory_url.rstrip('/')}/platforms/{platform.platform_id}/reset")
+                response = await self._client.post(
+                    f"{platform.external_url.rstrip('/')}/admin/reset",
+                    timeout=15.0
+                )
                 response.raise_for_status()
+                logger.info("platform_reset_ok", platform_id=platform.platform_id)
             except Exception as e:
-                logger.error("factory_reset_failed", platform_id=platform.platform_id, error=str(e))
-                raise
+                logger.warning("platform_reset_failed", platform_id=platform.platform_id,
+                               error=str(e))
 
     async def pause_platform(self, factory_url: str, platform_id: str):
         """Pause a platform in the federation via Factory."""

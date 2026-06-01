@@ -1,7 +1,8 @@
+from unittest.mock import AsyncMock, patch, MagicMock
+
 import pytest
 from typer.testing import CliRunner
 from workload.cli import app
-from unittest.mock import AsyncMock, patch, MagicMock
 
 runner = CliRunner()
 
@@ -67,7 +68,8 @@ async def test_run_generate_depth_logic():
         mock_fed_client = MockFed.return_value
         mock_fed_client.__aenter__.return_value = mock_fed_client
         mock_fed_client.discover = AsyncMock()
-        
+        mock_fed_client.reset_all_platforms = AsyncMock()
+
         mock_result = MagicMock()
         mock_result.root_subject_type = "st"
         mock_result.root_dpp_id = "id"

@@ -1,10 +1,11 @@
 import structlog
-from typing import List, Dict, Optional
 from pydantic import BaseModel
-from ..federation import FederationOverview, PlatformInfo
+from typing import List, Dict, Optional
+
 from ..clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse
-from ..schemas.generator import generate_schema
+from ..federation import FederationOverview
 from ..payloads import generate_valid_payload, generate_dpp_id, ReferenceSpec
+from ..schemas.generator import generate_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -68,13 +69,19 @@ async def generate_depth_chain(federation: FederationOverview, depth: int, seed:
             # Use deterministic seed per link
             link_seed = (seed + i) if seed is not None else None
             
-            dpp_id = generate_dpp_id(platform_info.issuer_id, st, 1)
+            # Use the link index as the sequence: generate_dpp_id collapses link_1..link_n
+            # to the same short code ("li"), so links sharing a platform would otherwise
+            # produce identical IDs and collide (I1) within a single chain.
+            dpp_id = generate_dpp_id(platform_info.issuer_id, st, i)
             spec = IssueDppSpec(
                 dpp_id=dpp_id,
                 schema_version=DppSchemaVersion(subject_type=st, major_version=1, minor_version=0),
                 dpp_payload=generate_valid_payload({}, dependencies=dependencies, seed=link_seed)
             )
-            
+
+            # Make this link routable before the next (dependent) link references it (I7).
+            await resolver.ensure_platform_route(platform_info, st)
+
             logger.info("creating_chain_link", link=i, total=depth, platform=platform_info.platform_id)
             resp = await client.issue_dpp(spec)
             chain_reversed.append(resp)

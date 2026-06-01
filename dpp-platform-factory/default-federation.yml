@@ -20,5 +20,6 @@ platforms:
     issuer_id: issuerB
     subject_types:
       - battery
+      - inverter
     port: 8082
     db_volume: mongo-b

@@ -1,7 +1,10 @@
-import pytest
-from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppNotFoundError, SchemaValidationError, CycleDetectedError
-from workload.federation import PlatformInfo, PlatformStatus
 from datetime import datetime
+
+import pytest
+from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppNotFoundError, \
+    SchemaValidationError, CycleDetectedError
+from workload.federation import PlatformInfo, PlatformStatus
+
 
 @pytest.fixture
 def platform_info():
@@ -104,30 +107,83 @@ async def test_resolver_ensure_subject_type_400_swallowed(httpx_mock):
 @pytest.mark.asyncio
 async def test_resolver_publish_schema(httpx_mock):
     resolver_url = "http://resolver:8081"
+    # GET-first check: 404 means not yet published, then POST succeeds
+    httpx_mock.add_response(method="GET", url=f"{resolver_url}/schemas/pv_module/1/0", status_code=404)
     httpx_mock.add_response(method="POST", url=f"{resolver_url}/schemas", status_code=201)
 
     async with ResolverClient(resolver_url) as client:
         await client.publish_schema("pv_module", 1, 0, {"type": "object"})
 
+
+@pytest.mark.asyncio
+async def test_resolver_publish_schema_idempotent(httpx_mock):
+    resolver_url = "http://resolver:8081"
+    # GET returns 200 (already exists) — no POST should be made
+    httpx_mock.add_response(
+        method="GET", url=f"{resolver_url}/schemas/pv_module/1/0", status_code=200,
+        json={"subjectType": "pv_module", "majorVersion": 1, "minorVersion": 0, "schemaDocument": {}}
+    )
+
+    async with ResolverClient(resolver_url) as client:
+        await client.publish_schema("pv_module", 1, 0, {"type": "object"})
+        # No POST registered — if one is made the test will fail
+
+@pytest.mark.asyncio
+async def test_ensure_platform_route_merges_and_preserves_url(httpx_mock, platform_info):
+    import json
+    resolver_url = "http://resolver:8081"
+    internal_template = "http://dpp-platform-a:8080/dpps/{dppId}"
+    # Existing mapping registered by the Factory: one subject type, internal-URL template.
+    httpx_mock.add_response(
+        method="GET", url=f"{resolver_url}/admin/platforms", status_code=200,
+        json=[{"platform": "platform-a", "issuer_id": "issuerA",
+               "resolution_url": internal_template, "subject_types": ["pv_module"]}]
+    )
+    httpx_mock.add_response(method="POST", url=f"{resolver_url}/admin/platforms", status_code=201)
+
+    async with ResolverClient(resolver_url) as client:
+        await client.ensure_platform_route(platform_info, "link_1")
+
+    post = [r for r in httpx_mock.get_requests() if r.method == "POST"][-1]
+    body = json.loads(post.content)
+    # New subject type merged into the existing list, not replacing it.
+    assert sorted(body["subject_types"]) == ["link_1", "pv_module"]
+    # Factory-owned internal resolution_url preserved verbatim.
+    assert body["resolution_url"] == internal_template
+    assert body["issuer_id"] == "issuerA"
+
+
+@pytest.mark.asyncio
+async def test_ensure_platform_route_idempotent(httpx_mock, platform_info):
+    resolver_url = "http://resolver:8081"
+    # Subject type already declared: only the GET happens, no POST.
+    httpx_mock.add_response(
+        method="GET", url=f"{resolver_url}/admin/platforms", status_code=200,
+        json=[{"platform": "platform-a", "issuer_id": "issuerA",
+               "resolution_url": "http://dpp-platform-a:8080/dpps/{dppId}",
+               "subject_types": ["pv_module"]}]
+    )
+
+    async with ResolverClient(resolver_url) as client:
+        await client.ensure_platform_route(platform_info, "pv_module")
+
+    assert all(r.method != "POST" for r in httpx_mock.get_requests())
+
+
 @pytest.mark.asyncio
 async def test_resolver_resolve(httpx_mock):
     resolver_url = "http://resolver:8081"
-    # httpx-mock handles redirects if we add multiple responses or use a redirect response
     httpx_mock.add_response(
         method="GET", 
         url=f"{resolver_url}/pv_module/issuerA-pv-001", 
         status_code=302,
         headers={"Location": "http://platform-a:8082/dpps/issuerA-pv-001"}
     )
-    httpx_mock.add_response(
-        method="GET",
-        url="http://platform-a:8082/dpps/issuerA-pv-001",
-        status_code=200
-    )
 
     async with ResolverClient(resolver_url) as client:
         url = await client.resolve("pv_module", "issuerA-pv-001")
         assert url == "http://platform-a:8082/dpps/issuerA-pv-001"
+        assert len(httpx_mock.get_requests()) == 1
 
 @pytest.mark.asyncio
 async def test_retry_on_timeout(httpx_mock, platform_info):

@@ -1,9 +1,11 @@
-import pytest
-from unittest.mock import AsyncMock, patch
-from workload.scenarios.fanout import generate_fanout
-from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
-from workload.clients import DppResponse
 from datetime import datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from workload.clients import DppResponse
+from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
+from workload.scenarios.fanout import generate_fanout
+
 
 @pytest.fixture
 def mock_federation():
@@ -30,6 +32,7 @@ async def test_generate_fanout_logic(mock_federation):
         mock_resolver = MockResolver.return_value
         mock_resolver.ensure_subject_type = AsyncMock()
         mock_resolver.publish_schema = AsyncMock()
+        mock_resolver.ensure_platform_route = AsyncMock()
         
         mock_platform = MockPlatform.return_value
         mock_platform.__aenter__ = AsyncMock(return_value=mock_platform)

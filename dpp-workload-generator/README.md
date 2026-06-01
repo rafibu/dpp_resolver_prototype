@@ -138,6 +138,7 @@ Warmup runs are recorded with `warmup=True` and excluded from paper plots.
 # Unit + integration tests (no live federation required)
 pytest tests/
 
-# End-to-end tests (requires running Factory)
+# End-to-end tests (requires running Factory & DOCKER_AVAILABLE variable = true)
+env:DOCKER_AVAILABLE="true"
 pytest tests/e2e/ -m e2e
 ```
