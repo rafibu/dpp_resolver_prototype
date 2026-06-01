@@ -3,7 +3,9 @@ package ch.bfh.dpp_resolver.admin.controllers;
 import ch.bfh.dpp_resolver.ControllerTest;
 import ch.bfh.dpp_resolver.admin.dto.PlatformMappingDTO;
 import ch.bfh.dpp_resolver.admin.dto.SubjectTypeDTO;
+import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -11,7 +13,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PlatformControllerTest extends ControllerTest {
 
-    private final Gson gson = new Gson();
+    private final Gson gson = new GsonBuilder()
+            .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
+            .create();
 
     @Test
     void getAllPlatformMappings_shouldReturnEmptyArray() throws Exception {

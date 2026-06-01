@@ -3,20 +3,19 @@ package ch.bfh.dpp_resolver.schemas.controllers;
 import ch.bfh.dpp_resolver.ControllerTest;
 import ch.bfh.dpp_resolver.admin.dto.SubjectTypeDTO;
 import ch.bfh.dpp_resolver.schemas.dtos.DppSchemaDTO;
-import ch.bfh.dpp_resolver.schemas.repositories.DppSchemaRepository;
-import ch.bfh.dpp_resolver.admin.repositories.SubjectTypeRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterEach;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DppSchemaControllerTest extends ControllerTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    // Snake_case request bodies to match the Resolver's snake_case JSON contract.
+    private final ObjectMapper mapper = new ObjectMapper()
+            .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 
     @Test
     void createAndGetSchema_happyPath() throws Exception {

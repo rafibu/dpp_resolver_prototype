@@ -429,6 +429,8 @@ public abstract class ControllerTest {
      */
     private static Gson createGson(boolean ignoreError) {
         GsonBuilder builder = new GsonBuilder()
+                // The whole federation speaks snake_case JSON; map Java camelCase fields onto it.
+                .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
                 .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
                 .registerTypeAdapter(LocalDate.class, new LocalDateTypeAdapter())
                 .registerTypeAdapter(byte[].class, new ByteArrayTypeAdapter());

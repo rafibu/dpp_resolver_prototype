@@ -7,6 +7,7 @@ import ch.bfh.dpp_resolver.schemas.dtos.DppSchemaDTO;
 import ch.bfh.dpp_resolver.schemas.repositories.DppSchemaRepository;
 import ch.bfh.dpp_resolver.schemas.repositories.SchemaDependencyRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,7 +32,9 @@ class SchemaCycleIntegrationTest extends ControllerTest {
     @Autowired
     private SchemaDependencyRepository schemaDependencyRepository;
 
-    private final ObjectMapper jacksonMapper = new ObjectMapper();
+    // Snake_case request bodies to match the Resolver's snake_case JSON contract.
+    private final ObjectMapper jacksonMapper = new ObjectMapper()
+            .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 
     @BeforeEach
     void cleanDb() {
