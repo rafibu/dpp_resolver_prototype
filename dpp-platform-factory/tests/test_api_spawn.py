@@ -1,8 +1,9 @@
-import pytest
 from datetime import datetime
+
 from dpp_platform_factory.core.state import PlatformStatus, ResolverRecord
 
-def test_spawn_platform_success(client, fake_docker, test_state):
+
+def test_spawn_platform_success(client, fake_docker, fake_resolver, test_state):
     # Setup: Resolver must be ready
     test_state.resolver = ResolverRecord(
         container_id="res-id",
@@ -27,6 +28,7 @@ def test_spawn_platform_success(client, fake_docker, test_state):
     # Verify fake docker state
     assert "dpp-platform-a" in fake_docker.containers_list
     assert "dpp-platform-a-db" in fake_docker.containers_list
+    assert fake_resolver.resolver_url == "http://resolver-internal:8080"
 
 def test_spawn_platform_invalid_stack(client):
     resp = client.post("/platforms", json={

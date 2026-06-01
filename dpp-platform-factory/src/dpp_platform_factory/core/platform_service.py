@@ -54,7 +54,6 @@ class PlatformService:
                     raise RuntimeError("Resolver not ready")
                 
                 resolver_url_internal = self.state.resolver.internal_url
-                resolver_url_external = self.state.resolver.external_url
                 
                 used_ports = self.state._used_ports_no_lock()
                 next_port = 8084
@@ -80,7 +79,7 @@ class PlatformService:
             
             # 3. Register with Resolver
             try:
-                resolver_client = self.resolver_client_factory(resolver_url_external)
+                resolver_client = self.resolver_client_factory(resolver_url_internal)
                 await resolver_client.register_platform(record)
             except Exception as reg_exc:
                 # Atomic rollback
@@ -164,13 +163,13 @@ class PlatformService:
                 raise TimeoutError(f"Health check failed after reset: {str(health_exc)}")
 
             # 5. Re-register with Resolver
-            resolver_url_external = None
+            resolver_url_internal = None
             async with self.state.lock:
                  if not self.state.resolver:
                      raise RuntimeError("Resolver not ready")
-                 resolver_url_external = self.state.resolver.external_url
+                 resolver_url_internal = self.state.resolver.internal_url
                  
-            resolver_client = self.resolver_client_factory(resolver_url_external)
+            resolver_client = self.resolver_client_factory(resolver_url_internal)
             await resolver_client.register_platform(record)
 
             await self.state.update_status(platform_id, PlatformStatus.RUNNING)
