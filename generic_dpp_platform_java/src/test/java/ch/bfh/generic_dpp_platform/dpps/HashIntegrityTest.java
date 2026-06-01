@@ -149,7 +149,9 @@ public class HashIntegrityTest {
 
         DppRevision finalRevision = revision;
         Exception ex = assertThrows(Exception.class, () -> dppRevisionRepository.saveAndFlush(finalRevision));
-        assertTrue(ex.getMessage().contains("integrity violation"), "Exception message should contain 'integrity violation'");
+        // @PreUpdate rejectUpdate() fires: revisions are immutable, so any update is rejected.
+        assertTrue(ex.getMessage().contains("immutable") || ex.getMessage().contains("integrity violation"),
+                "Exception message should indicate immutability or integrity violation, got: " + ex.getMessage());
     }
 
     @Test

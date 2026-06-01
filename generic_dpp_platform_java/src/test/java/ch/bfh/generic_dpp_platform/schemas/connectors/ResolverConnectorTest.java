@@ -9,6 +9,7 @@ import ch.bfh.generic_dpp_platform.schemas.dtos.DppSchemaDTO;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
 import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,7 +59,10 @@ class ResolverConnectorTest {
     private ResolverConnector resolverConnector;
 
     private static final String RESOLVER_BASE_URL = "http://localhost:8080";
-    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    // Snake_case: the whole federation speaks snake_case JSON and the RestTemplate now uses the
+    // application's snake_case JsonMapper, so mocked resolver/platform responses must match.
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules()
+            .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 
     @BeforeEach
     void setUp() {
@@ -125,10 +129,9 @@ class ResolverConnectorTest {
                 .andRespond(withStatus(HttpStatus.FOUND)
                         .header(HttpHeaders.LOCATION, targetUrl));
 
-        // 2. Fetch from resolved URL
-        // Use camelCase JSON: the RestTemplate uses tools.jackson (Jackson 3.x) which does not
-        // recognize the legacy com.fasterxml @JsonNaming annotation, so default naming applies.
-        String responseJson = "{\"dppId\":\"" + dppId + "\",\"version\":" + version + ",\"dppPayload\":{\"key\":\"value\"}}";
+        // 2. Fetch from resolved URL. Platforms emit snake_case JSON and the RestTemplate now
+        // deserializes with the application's snake_case JsonMapper, so the mock uses snake_case.
+        String responseJson = "{\"dpp_id\":\"" + dppId + "\",\"version\":" + version + ",\"dpp_payload\":{\"key\":\"value\"}}";
 
         mockServer.expect(requestTo(targetUrl))
                 .andExpect(method(HttpMethod.GET))

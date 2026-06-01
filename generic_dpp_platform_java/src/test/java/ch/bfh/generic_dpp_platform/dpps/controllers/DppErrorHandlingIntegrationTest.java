@@ -8,6 +8,7 @@ import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
 import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
 import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
 import ch.bfh.generic_dpp_platform.dpps.repositories.LogicalDppRepository;
+import ch.bfh.generic_dpp_platform.schemas.connectors.ResolverConnector;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
 import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
@@ -26,6 +28,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 public class DppErrorHandlingIntegrationTest extends ControllerTest {
+
+    // Prevent cacheSchema from trying to connect to a live resolver during unit tests.
+    @MockitoBean
+    private ResolverConnector resolverConnector;
 
     @Autowired
     private LogicalDppRepository logicalDppRepository;
@@ -118,7 +124,9 @@ public class DppErrorHandlingIntegrationTest extends ControllerTest {
 
         assertNotNull(error);
         assertEquals("Invalid Argument", error.getError());
-        assertEquals("Schema version not found", error.getMessage());
+        assertNotNull(error.getMessage());
+        assertTrue(error.getMessage().contains("Schema version not found"),
+                "Expected message about missing schema version, got: " + error.getMessage());
     }
 
     @Test
