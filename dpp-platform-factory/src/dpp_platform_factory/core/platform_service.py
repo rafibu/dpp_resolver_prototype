@@ -162,16 +162,6 @@ class PlatformService:
                 await self.state.update_status(platform_id, PlatformStatus.ERROR)
                 raise TimeoutError(f"Health check failed after reset: {str(health_exc)}")
 
-            # 5. Re-register with Resolver
-            resolver_url_internal = None
-            async with self.state.lock:
-                 if not self.state.resolver:
-                     raise RuntimeError("Resolver not ready")
-                 resolver_url_internal = self.state.resolver.internal_url
-                 
-            resolver_client = self.resolver_client_factory(resolver_url_internal)
-            await resolver_client.register_platform(record)
-
             await self.state.update_status(platform_id, PlatformStatus.RUNNING)
             record.status = PlatformStatus.RUNNING
             

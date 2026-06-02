@@ -8,14 +8,14 @@ The paper's formal model defines a federated state (Definition 7) as a resolver 
 
 | What the Factory does                                                                           | Paper anchor                                                                        |
 |-------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| Brings up the Resolver and registers each platform with it via `POST /admin/platforms`          | Section 5.1.7 (`registerIssuer`) and Definition 10 (resolver registry)              |
+| Brings up the Resolver and registers each platform with it via `POST /admin/platforms/register` | Section 5.1.7 (`registerIssuer`) and Definition 10 (resolver registry)              |
 | Seeds the authoritative schema set on the Resolver via `POST /schemas`                          | Section 5.1.3 (`publishSchema`) and Definition 6 (resolver state)                   |
 | Ensures each subject type exists on the Resolver before schemas are published                   | Pre-condition for `publishSchema`                                                   |
 | Exposes `GET /federation` so the Frontend and Workload Generator can discover the live topology | Definition 7 (federated state) as an observable snapshot                            |
 | Pauses and resumes platform containers to drive offline scenarios (S1, S2)                      | Scenario infrastructure; the pause operation models a platform becoming unreachable |
 | Resets platform databases to a known empty state between scenario runs                          | Scenario infrastructure; restores the empty DPP platform state (Definition 5)       |
 
-The Resolver and DPP platforms behave exactly as they would in a real federation. The Factory is invisible to them: the Resolver receives `POST /admin/platforms` calls as if a real operator were registering platforms, and the platforms receive their `RESOLVER_URL` as an environment variable as if it were a stable production endpoint.
+The Resolver and DPP platforms behave exactly as they would in a real federation. The Factory is invisible to them: the Resolver receives `POST /admin/platforms/register` calls as if a real operator were registering platforms, and the platforms receive their `RESOLVER_URL` as an environment variable as if it were a stable production endpoint.
 
 ## Architecture
 

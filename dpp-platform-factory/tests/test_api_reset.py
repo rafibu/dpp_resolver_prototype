@@ -24,7 +24,7 @@ def test_reset_platform_success(client, fake_docker, fake_resolver, test_state):
     resp = client.post("/platforms/platform-c/reset")
     assert resp.status_code == 200
     assert resp.json()["status"] == "RUNNING"
-    assert fake_resolver.resolver_url == "http://res-i"
+    assert fake_resolver.register_calls == []
     
     # DB container should have a new ID in our fake world (rebuild_db logic)
     # Our rebuild_db in platform.py calls client.run_container which generates id-dpp-platform-c-db

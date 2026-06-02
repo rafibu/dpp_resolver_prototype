@@ -6,8 +6,8 @@ schema set and the issuer-to-platform registry (Definition 6, Definition 10).
 This client is used by the Factory to wire the federated state (Definition 7)
 at startup and when new platforms are spawned.
 """
-import structlog
 import httpx
+import structlog
 
 from ..core.state import PlatformRecord
 
@@ -55,13 +55,13 @@ class ResolverClient:
         )
 
     async def register_platform(self, platform: PlatformRecord) -> None:
-        """Call POST /admin/platforms on the Resolver to execute the registerIssuer operation.
+        """Call POST /admin/platforms/register to execute registerIssuer.
 
         Adds an entry to the resolver registry (Definition 10) mapping the platform's
-        issuer to its resolution URL. If the issuer is already registered this acts as
-        the migrate operation, updating the routing entry.
+        issuer to its resolution URL and declared subject types. Existing issuers are
+        rejected by the Resolver; callers must use migrate_platform for migrations.
         """
-        url = f"{self._base_url}/admin/platforms"
+        url = f"{self._base_url}/admin/platforms/register"
         body = {
             "platform": platform.platform_id,
             # Internal Docker URL template: other platform containers follow the resolver
@@ -79,13 +79,46 @@ class ResolverClient:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(url, json=body)
 
-        if response.status_code in (200, 201):
+        if response.status_code == 201:
             logger.info("resolver_registration_ok", platform_id=platform.platform_id)
             return
 
         raise RuntimeError(
             f"Resolver rejected registration of '{platform.platform_id}': "
-            f"HTTP {response.status_code} — {response.text}"
+            f"HTTP {response.status_code} - {response.text}"
+        )
+
+    async def migrate_platform(self, issuer_id: str, target_platform: PlatformRecord) -> None:
+        """Call POST /admin/platforms/{issuerId}/migrate to execute migrate.
+
+        Moves an already registered issuer to the target platform's resolution URL.
+        The Resolver preserves the issuer's existing subject type set during migration.
+        """
+        url = f"{self._base_url}/admin/platforms/{issuer_id}/migrate"
+        body = {
+            "platform": target_platform.platform_id,
+            "new_resolution_url": f"{target_platform.internal_url.rstrip('/')}/dpps/{{dppId}}",
+        }
+        logger.info(
+            "resolver_migrating_platform",
+            issuer_id=issuer_id,
+            target_platform_id=target_platform.platform_id,
+            url=url,
+        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json=body)
+
+        if response.status_code == 200:
+            logger.info(
+                "resolver_migration_ok",
+                issuer_id=issuer_id,
+                target_platform_id=target_platform.platform_id,
+            )
+            return
+
+        raise RuntimeError(
+            f"Resolver rejected migration of issuer '{issuer_id}' to "
+            f"'{target_platform.platform_id}': HTTP {response.status_code} - {response.text}"
         )
 
     async def get_platform(self, platform_id: str) -> dict | None:
