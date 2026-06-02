@@ -1,0 +1,44 @@
+<section class="detail-container">
+  <header class="detail-header">
+    <div>
+      <p class="eyebrow">Resolver</p>
+      <div class="title-row">
+        <h1>Federation Resolver</h1>
+        @if (resolver()) {
+          <mat-chip [ngClass]="resolver()?.status?.toLowerCase()">
+            {{ resolver()?.status }}
+          </mat-chip>
+        }
+      </div>
+      <p class="subtitle">
+        <mat-icon>hub</mat-icon>
+        {{ resolver()?.external_url || 'No resolver discovered' }}
+      </p>
+    </div>
+  </header>
+
+  <nav mat-tab-nav-bar [tabPanel]="tabPanel" class="tabs">
+    <a
+      mat-tab-link
+      routerLink="subject-types"
+      routerLinkActive
+      #typesActive="routerLinkActive"
+      [active]="typesActive.isActive"
+    >
+      Subject Types
+    </a>
+    <a
+      mat-tab-link
+      routerLink="logs"
+      routerLinkActive
+      #logsActive="routerLinkActive"
+      [active]="logsActive.isActive"
+    >
+      Logs
+    </a>
+  </nav>
+
+  <mat-tab-nav-panel #tabPanel class="tab-content">
+    <router-outlet />
+  </mat-tab-nav-panel>
+</section>

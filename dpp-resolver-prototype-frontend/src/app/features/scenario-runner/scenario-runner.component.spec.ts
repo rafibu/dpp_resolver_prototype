@@ -1,15 +1,15 @@
-import { TestBed } from '@angular/core/testing';
-import { ScenarioRunnerComponent } from './scenario-runner.component';
-import { FactoryService } from '../../core/factory.service';
-import { of } from 'rxjs';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {TestBed} from '@angular/core/testing';
+import {ScenarioRunnerComponent} from './scenario-runner.component';
+import {FactoryService} from '../../core/factory.service';
+import {of} from 'rxjs';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 describe('ScenarioRunnerComponent', () => {
   let factoryServiceSpy: any;
 
   beforeEach(async () => {
     factoryServiceSpy = {
-      runScenario: vi.fn().mockReturnValue(of({})),
+      runScenario: vi.fn().mockReturnValue(of({ scenario_id: 's1', status: 'passed', steps: [], report_md: '# Report' })),
       getScenarioStatus: vi.fn().mockReturnValue(of({ status: 'passed', steps: [], report_md: '# Report' }))
     };
 

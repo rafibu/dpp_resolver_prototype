@@ -6,21 +6,6 @@
 <mat-dialog-content class="dialog-content">
   <div class="form-grid">
     <mat-form-field appearance="outline">
-      <mat-label>DPP ID</mat-label>
-      <input
-        matInput
-        [ngModel]="dppId()"
-        (ngModelChange)="dppId.set($event)"
-        [disabled]="isSubmitting()"
-        autocomplete="off"
-      >
-      <mat-hint>Prefix: {{ data.issuerId }}</mat-hint>
-      @if (dppIdInvalid()) {
-        <mat-error>DPP ID must start with {{ data.issuerId }}.</mat-error>
-      }
-    </mat-form-field>
-
-    <mat-form-field appearance="outline">
       <mat-label>Subject Type</mat-label>
       <mat-select
         [value]="selectedSubjectType()"

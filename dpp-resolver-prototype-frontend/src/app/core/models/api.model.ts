@@ -57,6 +57,26 @@ export interface SchemaInfo {
   major: number;
   minor: number;
   schema: unknown;
+  published_at?: string;
+}
+
+export interface PublishSchemaRequest {
+  subject_type: string;
+  major_version: number;
+  minor_version: number;
+  schema_document: unknown;
+}
+
+export interface SubjectTypeInfo {
+  name: string;
+  description?: string;
+}
+
+export interface ResolverPlatformMapping {
+  platform: string;
+  issuer_id: string;
+  resolution_url: string;
+  subject_types: string[];
 }
 
 export interface LogLine {
@@ -84,3 +104,5 @@ export interface ScenarioResult {
   scenario_id: string;
   report_md: string;
 }
+
+export type ScenarioId = 's1' | 's2' | 's3';

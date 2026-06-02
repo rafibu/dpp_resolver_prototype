@@ -7,108 +7,73 @@
   </header>
 
   <div class="scenarios-grid">
-    <mat-card appearance="outlined" class="scenario-card" [class.running]="isRunning('s1')">
-      <mat-card-header>
-        <mat-icon mat-card-avatar>cloud_off</mat-icon>
-        <mat-card-title>S1: Offline Interpretability</mat-card-title>
-        <mat-card-subtitle>Resolver interpretation after issuer platform outage</mat-card-subtitle>
-      </mat-card-header>
+    @for (scenario of scenarios; track scenario.id) {
+      <mat-card appearance="outlined" class="scenario-card" [class.running]="isRunning(scenario.id)">
+        <mat-card-header>
+          <mat-icon mat-card-avatar>{{ scenario.icon }}</mat-icon>
+          <mat-card-title>{{ scenario.title }}</mat-card-title>
+          <mat-card-subtitle>{{ scenario.subtitle }}</mat-card-subtitle>
+        </mat-card-header>
 
-      <mat-card-actions align="end">
-        <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario('s1')">
-          <mat-icon>play_arrow</mat-icon>
-          {{ isRunning('s1') ? 'Running' : 'Run' }}
-        </button>
-      </mat-card-actions>
-
-      @if (isRunning('s1')) {
-        <mat-progress-bar mode="indeterminate" />
-      }
-
-      @if (errors().s1) {
-        <div class="inline-error">
-          <mat-icon>error</mat-icon>
-          <span>{{ errors().s1 }}</span>
-        </div>
-      }
-
-      @if (s1Status()) {
-        <mat-chip class="status-chip" [ngClass]="s1Status()?.status">{{ s1Status()?.status }}</mat-chip>
-        <mat-list>
-          @for (step of s1Status()?.steps; track step.name) {
-            <mat-list-item [ngClass]="step.status">
-              <mat-icon matListItemIcon>{{ getStepIcon(step.status) }}</mat-icon>
-              <span matListItemTitle>{{ step.name }}</span>
-              @if (step.error) {
-                <span matListItemLine>{{ step.error }}</span>
-              }
-            </mat-list-item>
+        <mat-card-actions align="end">
+          @if (statusFor(scenario.id)) {
+            <button mat-icon-button type="button" matTooltip="Copy status" (click)="copyStatus(scenario.id)">
+              <mat-icon>content_copy</mat-icon>
+            </button>
           }
-        </mat-list>
-      }
-
-      @if (s1Report()) {
-        <div class="report-header">
-          <h2>Validation Report</h2>
-          <button mat-stroked-button type="button" (click)="downloadReport('s1')">
-            <mat-icon>download</mat-icon>
-            Markdown
+          <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario(scenario.id)">
+            <mat-icon>play_arrow</mat-icon>
+            {{ isRunning(scenario.id) ? 'Running' : 'Run' }}
           </button>
-        </div>
-        <div class="markdown-body" [innerHTML]="s1Report()"></div>
-      }
-    </mat-card>
+        </mat-card-actions>
 
-    <mat-card appearance="outlined" class="scenario-card" [class.running]="isRunning('s2')">
-      <mat-card-header>
-        <mat-icon mat-card-avatar>schema</mat-icon>
-        <mat-card-title>S2: Independent Schema Evolution</mat-card-title>
-        <mat-card-subtitle>Schema update handling without platform intervention</mat-card-subtitle>
-      </mat-card-header>
+        @if (isRunning(scenario.id)) {
+          <mat-progress-bar mode="indeterminate" />
+        }
 
-      <mat-card-actions align="end">
-        <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario('s2')">
-          <mat-icon>play_arrow</mat-icon>
-          {{ isRunning('s2') ? 'Running' : 'Run' }}
-        </button>
-      </mat-card-actions>
+        @if (errorFor(scenario.id)) {
+          <div class="inline-error">
+            <mat-icon>error</mat-icon>
+            <span>{{ errorFor(scenario.id) }}</span>
+          </div>
+        }
 
-      @if (isRunning('s2')) {
-        <mat-progress-bar mode="indeterminate" />
-      }
+        @if (statusFor(scenario.id); as status) {
+          <mat-chip class="status-chip" [ngClass]="status.status">{{ status.status }}</mat-chip>
+          <mat-list>
+            @for (step of status.steps; track step.name) {
+              <mat-list-item [ngClass]="step.status">
+                <mat-icon matListItemIcon>{{ getStepIcon(step.status) }}</mat-icon>
+                <span matListItemTitle>{{ step.name }}</span>
+                @if (step.error) {
+                  <span matListItemLine>{{ step.error }}</span>
+                }
+              </mat-list-item>
+            }
+          </mat-list>
 
-      @if (errors().s2) {
-        <div class="inline-error">
-          <mat-icon>error</mat-icon>
-          <span>{{ errors().s2 }}</span>
-        </div>
-      }
+          <div class="status-panel">
+            <div class="report-header compact">
+              <h2>Status</h2>
+              <button mat-icon-button type="button" matTooltip="Copy status" (click)="copyStatus(scenario.id)">
+                <mat-icon>content_copy</mat-icon>
+              </button>
+            </div>
+            <pre>{{ statusText(scenario.id) }}</pre>
+          </div>
+        }
 
-      @if (s2Status()) {
-        <mat-chip class="status-chip" [ngClass]="s2Status()?.status">{{ s2Status()?.status }}</mat-chip>
-        <mat-list>
-          @for (step of s2Status()?.steps; track step.name) {
-            <mat-list-item [ngClass]="step.status">
-              <mat-icon matListItemIcon>{{ getStepIcon(step.status) }}</mat-icon>
-              <span matListItemTitle>{{ step.name }}</span>
-              @if (step.error) {
-                <span matListItemLine>{{ step.error }}</span>
-              }
-            </mat-list-item>
-          }
-        </mat-list>
-      }
-
-      @if (s2Report()) {
-        <div class="report-header">
-          <h2>Validation Report</h2>
-          <button mat-stroked-button type="button" (click)="downloadReport('s2')">
-            <mat-icon>download</mat-icon>
-            Markdown
-          </button>
-        </div>
-        <div class="markdown-body" [innerHTML]="s2Report()"></div>
-      }
-    </mat-card>
+        @if (reportFor(scenario.id)) {
+          <div class="report-header">
+            <h2>Validation Report</h2>
+            <button mat-stroked-button type="button" (click)="downloadReport(scenario.id)">
+              <mat-icon>download</mat-icon>
+              Markdown
+            </button>
+          </div>
+          <div class="markdown-body" [innerHTML]="reportFor(scenario.id)"></div>
+        }
+      </mat-card>
+    }
   </div>
 </section>

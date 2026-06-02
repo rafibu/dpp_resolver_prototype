@@ -16,6 +16,7 @@ describe('LogViewerComponent', () => {
     paramsSubject = new BehaviorSubject(convertToParamMap({ id: 'p1' }));
 
     factoryServiceSpy = {
+      getResolverLogs: vi.fn().mockReturnValue(of([])),
       getPlatformLogs: vi.fn().mockReturnValue(of([
         { timestamp: '2026-01-01T10:00:00Z', level: 'INFO', message: 'Started' },
         { timestamp: '2026-01-01T10:00:01Z', level: 'ERROR', message: 'Failed' }
@@ -38,6 +39,7 @@ describe('LogViewerComponent', () => {
         {
           provide: ActivatedRoute,
           useValue: {
+            snapshot: { data: {} },
             parent: { paramMap: paramsSubject.asObservable() }
           }
         }

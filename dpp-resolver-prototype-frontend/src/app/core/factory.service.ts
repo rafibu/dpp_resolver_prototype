@@ -2,7 +2,7 @@ import {inject, Injectable} from '@angular/core';
 import {HttpClient, HttpParams} from '@angular/common/http';
 import {Observable} from 'rxjs';
 import {environment} from '../../environments/environment';
-import {LogLine, ScenarioStatus, SpawnSpec} from './models/api.model';
+import {LogLine, ScenarioId, ScenarioStatus, SpawnSpec} from './models/api.model';
 import {PlatformInfo} from './models/federation.model';
 
 @Injectable({
@@ -45,11 +45,16 @@ export class FactoryService {
     return this.http.get<LogLine[]>(`${this.factoryUrl}/platforms/${id}/logs`, { params });
   }
 
-  runScenario(id: 's1' | 's2'): Observable<ScenarioStatus> {
+  getResolverLogs(lines: number = 200): Observable<LogLine[]> {
+    const params = new HttpParams().set('lines', lines.toString());
+    return this.http.get<LogLine[]>(`${this.factoryUrl}/resolver/logs`, { params });
+  }
+
+  runScenario(id: ScenarioId): Observable<ScenarioStatus> {
     return this.http.post<ScenarioStatus>(`${this.factoryUrl}/scenarios/${id}`, {});
   }
 
-  getScenarioStatus(id: 's1' | 's2'): Observable<ScenarioStatus> {
+  getScenarioStatus(id: ScenarioId): Observable<ScenarioStatus> {
     return this.http.get<ScenarioStatus>(`${this.factoryUrl}/scenarios/${id}/status`);
   }
 }

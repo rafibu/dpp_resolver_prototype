@@ -1,20 +1,27 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatChipsModule } from '@angular/material/chips';
-import { MatIconModule } from '@angular/material/icon';
-import { MatListModule } from '@angular/material/list';
-import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { interval, startWith, Subscription, switchMap, takeUntil, takeWhile, timer } from 'rxjs';
-import { marked } from 'marked';
-import { FactoryService } from '../../core/factory.service';
-import { ScenarioStatus } from '../../core/models/api.model';
-import { ToastService } from '../../core/toast.service';
-import { toErrorMessage } from '../../core/http-error.utils';
+import {Component, DestroyRef, inject, signal} from '@angular/core';
+import {CommonModule} from '@angular/common';
+import {Clipboard} from '@angular/cdk/clipboard';
+import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
+import {MatButtonModule} from '@angular/material/button';
+import {MatCardModule} from '@angular/material/card';
+import {MatChipsModule} from '@angular/material/chips';
+import {MatIconModule} from '@angular/material/icon';
+import {MatListModule} from '@angular/material/list';
+import {MatProgressBarModule} from '@angular/material/progress-bar';
+import {MatTooltipModule} from '@angular/material/tooltip';
+import {interval, startWith, Subscription, switchMap, takeUntil, takeWhile, timer} from 'rxjs';
+import {marked} from 'marked';
+import {FactoryService} from '../../core/factory.service';
+import {ScenarioId, ScenarioStatus} from '../../core/models/api.model';
+import {ToastService} from '../../core/toast.service';
+import {toErrorMessage} from '../../core/http-error.utils';
 
-type ScenarioId = 's1' | 's2';
+interface ScenarioDefinition {
+  id: ScenarioId;
+  icon: string;
+  title: string;
+  subtitle: string;
+}
 
 @Component({
   selector: 'app-scenario-runner',
@@ -26,23 +33,43 @@ type ScenarioId = 's1' | 's2';
     MatChipsModule,
     MatIconModule,
     MatListModule,
-    MatProgressBarModule
+    MatProgressBarModule,
+    MatTooltipModule
   ],
   templateUrl: './scenario-runner.component.html',
   styleUrl: './scenario-runner.component.scss'
 })
 export class ScenarioRunnerComponent {
   private factoryService = inject(FactoryService);
+  private clipboard = inject(Clipboard);
   private sanitizer = inject(DomSanitizer);
   private toastService = inject(ToastService);
   private destroyRef = inject(DestroyRef);
 
-  public s1Status = signal<ScenarioStatus | null>(null);
-  public s2Status = signal<ScenarioStatus | null>(null);
-  public s1Report = signal<SafeHtml | null>(null);
-  public s2Report = signal<SafeHtml | null>(null);
+  public scenarios: ScenarioDefinition[] = [
+    {
+      id: 's1',
+      icon: 'cloud_off',
+      title: 'S1: Offline Validation',
+      subtitle: 'Previously resolved references remain inspectable while a platform is unavailable'
+    },
+    {
+      id: 's2',
+      icon: 'schema',
+      title: 'S2: Schema Evolution',
+      subtitle: 'Historical revisions stay bound to their original schema version'
+    },
+    {
+      id: 's3',
+      icon: 'account_tree',
+      title: 'S3: Cycle Rejection',
+      subtitle: 'The resolver rejects schema-level hard-reference cycles before issuance'
+    }
+  ];
+  public statuses = signal<Record<ScenarioId, ScenarioStatus | null>>({ s1: null, s2: null, s3: null });
+  public reports = signal<Record<ScenarioId, SafeHtml | null>>({ s1: null, s2: null, s3: null });
   public runningScenario = signal<ScenarioId | null>(null);
-  public errors = signal<Record<ScenarioId, string | null>>({ s1: null, s2: null });
+  public errors = signal<Record<ScenarioId, string | null>>({ s1: null, s2: null, s3: null });
   private pollSubscription?: Subscription;
 
   constructor() {
@@ -59,7 +86,12 @@ export class ScenarioRunnerComponent {
     this.factoryService.runScenario(id).subscribe({
       next: status => {
         this.setStatus(id, status);
-        this.startPolling(id);
+        if (status.status === 'pending' || status.status === 'running') {
+          this.startPolling(id);
+        } else {
+          this.runningScenario.set(null);
+          this.renderReport(id, status.report_md);
+        }
       },
       error: err => {
         this.runningScenario.set(null);
@@ -69,7 +101,7 @@ export class ScenarioRunnerComponent {
   }
 
   public downloadReport(id: ScenarioId): void {
-    const status = id === 's1' ? this.s1Status() : this.s2Status();
+    const status = this.statusFor(id);
     if (!status?.report_md) {
       return;
     }
@@ -83,6 +115,18 @@ export class ScenarioRunnerComponent {
     window.URL.revokeObjectURL(url);
   }
 
+  public copyStatus(id: ScenarioId): void {
+    const status = this.statusFor(id);
+    if (!status) {
+      return;
+    }
+    if (this.clipboard.copy(this.statusText(id))) {
+      this.toastService.success(`${id.toUpperCase()} status copied`);
+    } else {
+      this.toastService.error(`Could not copy ${id.toUpperCase()} status`);
+    }
+  }
+
   public getStepIcon(status: string): string {
     switch (status) {
       case 'passed': return 'check_circle';
@@ -94,6 +138,23 @@ export class ScenarioRunnerComponent {
 
   public isRunning(id: ScenarioId): boolean {
     return this.runningScenario() === id;
+  }
+
+  public statusFor(id: ScenarioId): ScenarioStatus | null {
+    return this.statuses()[id];
+  }
+
+  public reportFor(id: ScenarioId): SafeHtml | null {
+    return this.reports()[id];
+  }
+
+  public errorFor(id: ScenarioId): string | null {
+    return this.errors()[id];
+  }
+
+  public statusText(id: ScenarioId): string {
+    const status = this.statusFor(id);
+    return status ? JSON.stringify(status, null, 2) : '';
   }
 
   private startPolling(id: ScenarioId): void {
@@ -115,7 +176,7 @@ export class ScenarioRunnerComponent {
         this.setError(id, toErrorMessage(err, `Failed while polling ${id.toUpperCase()}`));
       },
       complete: () => {
-        const status = id === 's1' ? this.s1Status() : this.s2Status();
+        const status = this.statusFor(id);
         if (status?.status === 'pending' || status?.status === 'running') {
           this.runningScenario.set(null);
           this.setError(id, 'Scenario is still pending after 120 seconds. The Factory accepted the request but did not publish a final status.');
@@ -137,19 +198,11 @@ export class ScenarioRunnerComponent {
   }
 
   private setStatus(id: ScenarioId, status: ScenarioStatus | null): void {
-    if (id === 's1') {
-      this.s1Status.set(status);
-    } else {
-      this.s2Status.set(status);
-    }
+    this.statuses.update(statuses => ({ ...statuses, [id]: status }));
   }
 
   private setReport(id: ScenarioId, report: SafeHtml | null): void {
-    if (id === 's1') {
-      this.s1Report.set(report);
-    } else {
-      this.s2Report.set(report);
-    }
+    this.reports.update(reports => ({ ...reports, [id]: report }));
   }
 
   private setError(id: ScenarioId, message: string | null): void {

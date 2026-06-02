@@ -10,8 +10,6 @@ import {MatListModule} from '@angular/material/list';
 import {MatProgressBarModule} from '@angular/material/progress-bar';
 import {MatSelectModule} from '@angular/material/select';
 import {MonacoEditorModule} from 'ngx-monaco-editor-v2';
-import Ajv, {AnySchema, ErrorObject} from 'ajv';
-import addFormats from 'ajv-formats';
 import {finalize, take} from 'rxjs';
 import {PlatformService} from '../../../core/platform.service';
 import {ResolverService} from '../../../core/resolver.service';
@@ -19,6 +17,12 @@ import {FederationService} from '../../../core/federation.service';
 import {ToastService} from '../../../core/toast.service';
 import {SchemaInfo} from '../../../core/models/api.model';
 import {toErrorMessage} from '../../../core/http-error.utils';
+import {createEmptyPayloadFromSchema} from '../../../core/utils/json-schema-skeleton.utils';
+import {
+  createJsonSchemaValidator,
+  JsonValidationIssue,
+  validateJsonPayload
+} from '../../../core/utils/json-schema-validator.utils';
 
 export interface CreateDppDialogData {
   platformId: string;
@@ -26,8 +30,6 @@ export interface CreateDppDialogData {
   issuerId: string;
   subjectTypes: string[];
 }
-
-type ValidationIssue = Pick<ErrorObject, 'instancePath' | 'message' | 'params'>;
 
 @Component({
   selector: 'app-create-dpp-modal',
@@ -56,29 +58,31 @@ export class CreateDppModalComponent {
   private dialogRef = inject(MatDialogRef<CreateDppModalComponent, boolean>);
   public data = inject<CreateDppDialogData>(MAT_DIALOG_DATA);
 
-  public dppId = signal(`${this.data.issuerId}-`);
   public selectedSubjectType = signal(this.data.subjectTypes[0] || '');
   public schemas = signal<SchemaInfo[]>([]);
   public selectedSchema = signal<SchemaInfo | null>(null);
   public schemaLoading = signal(false);
   public schemaError = signal<string | null>(null);
   public isSubmitting = signal(false);
-  public editorOptions = { theme: 'vs-light', language: 'json', readOnly: false, minimap: { enabled: false } };
+  public editorOptions = {
+    theme: 'vs-light',
+    language: 'json',
+    readOnly: false,
+    minimap: { enabled: false },
+    automaticLayout: true,
+    scrollBeyondLastLine: false
+  };
   public code = signal<string>('{\n  \n}');
-  public validationErrors = signal<ValidationIssue[]>([]);
-  public dppIdInvalid = computed(() => !!this.dppId() && !this.dppId().startsWith(this.data.issuerId));
+  public validationErrors = signal<JsonValidationIssue[]>([]);
   public canSubmit = computed(() =>
     !this.isSubmitting() &&
-    !!this.dppId() &&
-    !this.dppIdInvalid() &&
     !!this.selectedSchema() &&
     this.validationErrors().length === 0
   );
 
-  private ajv = new Ajv();
+  private ajv = createJsonSchemaValidator();
 
   constructor() {
-    addFormats(this.ajv);
     this.loadSchemas();
   }
 
@@ -114,7 +118,6 @@ export class CreateDppModalComponent {
       const payload = JSON.parse(this.code());
       this.isSubmitting.set(true);
       this.platformService.issueDpp(this.data.platformUrl, {
-        dpp_id: this.dppId() || undefined,
         schema_version: {
           subject_type: schema.subject_type,
           major_version: schema.major,
@@ -125,8 +128,8 @@ export class CreateDppModalComponent {
         take(1),
         finalize(() => this.isSubmitting.set(false))
       ).subscribe({
-        next: () => {
-          this.toastService.success(`DPP ${this.dppId()} issued successfully`);
+        next: revision => {
+          this.toastService.success(`DPP ${revision.dpp_id} issued successfully`);
           this.dialogRef.close(true);
         },
         error: err => {
@@ -178,31 +181,14 @@ export class CreateDppModalComponent {
 
     try {
       const payload = JSON.parse(this.code());
-      const validate = this.ajv.compile(schema.schema as AnySchema);
-      const valid = validate(payload);
-      this.validationErrors.set(valid ? [] : (validate.errors || []).map(error => ({
-        instancePath: error.instancePath,
-        message: error.message,
-        params: error.params
-      })));
+      this.validationErrors.set(validateJsonPayload(this.ajv, schema.schema, payload));
     } catch {
       this.validationErrors.set([{ instancePath: '', message: 'Invalid JSON', params: {} }]);
     }
   }
 
   private createPayloadSkeleton(schema: SchemaInfo): Record<string, unknown> {
-    const skeleton: Record<string, unknown> = {
-      manufacturer: 'Example Corp',
-      model: 'Model-X',
-      serial_number: 'SN-12345',
-      recycled_content: 10
-    };
-
-    const document = schema.schema as { properties?: Record<string, unknown> } | null;
-    if (document?.properties && 'dependencies' in document.properties) {
-      skeleton['dependencies'] = [];
-    }
-
-    return skeleton;
+    const skeleton = createEmptyPayloadFromSchema(schema.schema);
+    return skeleton && typeof skeleton === 'object' && !Array.isArray(skeleton) ? skeleton as Record<string, unknown> : {};
   }
 }

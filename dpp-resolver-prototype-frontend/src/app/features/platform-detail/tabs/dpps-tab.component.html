@@ -77,7 +77,19 @@
     <mat-expansion-panel class="revision-panel" [expanded]="true">
       <mat-expansion-panel-header>
         <mat-panel-title>Revision History</mat-panel-title>
-        <mat-panel-description>{{ expandedDpp() }}</mat-panel-description>
+        <mat-panel-description>
+          <span>{{ expandedDpp() }}</span>
+          <button
+            mat-icon-button
+            type="button"
+            matTooltip="Add revision"
+            [routerLink]="['/platforms', platformId(), 'dpps', expandedDpp()]"
+            [queryParams]="{ mode: 'revise' }"
+            (click)="$event.stopPropagation()"
+          >
+            <mat-icon>add</mat-icon>
+          </button>
+        </mat-panel-description>
       </mat-expansion-panel-header>
 
       @if (loadingDetail()) {

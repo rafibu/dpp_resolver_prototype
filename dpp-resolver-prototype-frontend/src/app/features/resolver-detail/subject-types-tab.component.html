@@ -1,0 +1,133 @@
+<section class="subject-types-page">
+  <div class="subject-list">
+    <div class="section-heading">
+      <div>
+        <h2>Subject Types</h2>
+        <p>{{ subjectTypes().length }} registered</p>
+      </div>
+    </div>
+
+    @if (loading()) {
+      <mat-progress-bar mode="indeterminate" />
+    }
+
+    @if (error()) {
+      <div class="inline-error">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+      </div>
+    }
+
+    <mat-selection-list [multiple]="false">
+      @for (subject of subjectTypes(); track subject.name) {
+        <mat-list-option
+          [selected]="selectedSubjectType() === subject.name"
+          (click)="selectSubjectType(subject.name)"
+        >
+          <mat-icon matListItemIcon>category</mat-icon>
+          <span matListItemTitle>{{ subject.name }}</span>
+          @if (subject.description) {
+            <span matListItemLine>{{ subject.description }}</span>
+          }
+        </mat-list-option>
+      } @empty {
+        <div class="empty-state">
+          <mat-icon>category</mat-icon>
+          <span>No subject types registered.</span>
+        </div>
+      }
+    </mat-selection-list>
+  </div>
+
+  <div class="subject-detail">
+    <div class="detail-toolbar">
+      <div>
+        <h2>{{ selectedSubjectType() || 'Select a subject type' }}</h2>
+        <p>{{ mappings().length }} platform(s), {{ schemas().length }} schema version(s)</p>
+      </div>
+      <button mat-flat-button color="primary" type="button" [disabled]="!selectedSubjectType()" (click)="openNewSchema()">
+        <mat-icon>add</mat-icon>
+        New Schema
+      </button>
+    </div>
+
+    @if (detailLoading()) {
+      <mat-progress-bar mode="indeterminate" />
+    }
+
+    @if (detailError()) {
+      <div class="inline-error">
+        <mat-icon>error</mat-icon>
+        <span>{{ detailError() }}</span>
+      </div>
+    }
+
+    <mat-card appearance="outlined">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>dns</mat-icon>
+        <mat-card-title>Supporting Platforms</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        @if (mappings().length === 0) {
+          <div class="empty-inline">No platform currently advertises this subject type.</div>
+        } @else {
+          <table mat-table [dataSource]="mappings()" class="mapping-table">
+            <ng-container matColumnDef="platform">
+              <th mat-header-cell *matHeaderCellDef>Platform</th>
+              <td mat-cell *matCellDef="let mapping">{{ mapping.platform }}</td>
+            </ng-container>
+            <ng-container matColumnDef="issuer">
+              <th mat-header-cell *matHeaderCellDef>Issuer</th>
+              <td mat-cell *matCellDef="let mapping">
+                <mat-chip>{{ mapping.issuer_id }}</mat-chip>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="resolution">
+              <th mat-header-cell *matHeaderCellDef>Resolution URL</th>
+              <td mat-cell *matCellDef="let mapping" class="resolution-cell" [matTooltip]="mapping.resolution_url">
+                {{ mapping.resolution_url }}
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="mappingColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: mappingColumns"></tr>
+          </table>
+        }
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card appearance="outlined">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>schema</mat-icon>
+        <mat-card-title>Schemas</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        @if (schemas().length === 0) {
+          <div class="empty-inline">No schema versions published yet.</div>
+        } @else {
+          <table mat-table [dataSource]="schemas()" class="schema-table">
+            <ng-container matColumnDef="version">
+              <th mat-header-cell *matHeaderCellDef>Version</th>
+              <td mat-cell *matCellDef="let schema">
+                <mat-chip>{{ schemaVersion(schema) }}</mat-chip>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="published">
+              <th mat-header-cell *matHeaderCellDef>Published</th>
+              <td mat-cell *matCellDef="let schema">{{ schema.published_at ? (schema.published_at | date:'medium') : '-' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef></th>
+              <td mat-cell *matCellDef="let schema" class="actions-cell">
+                <button mat-icon-button type="button" matTooltip="View schema" (click)="openSchema(schema)">
+                  <mat-icon>visibility</mat-icon>
+                </button>
+              </td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="schemaColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: schemaColumns"></tr>
+          </table>
+        }
+      </mat-card-content>
+    </mat-card>
+  </div>
+</section>

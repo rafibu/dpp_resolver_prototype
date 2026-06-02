@@ -42,6 +42,7 @@ export class LogViewerComponent {
   private toastService = inject(ToastService);
   private route = inject(ActivatedRoute);
   private destroyRef = inject(DestroyRef);
+  private source: 'platform' | 'resolver' = this.route.snapshot.data['logSource'] === 'resolver' ? 'resolver' : 'platform';
   private logViewport = viewChild<CdkVirtualScrollViewport>('logViewport');
   private unregisterPolling?: () => void;
 
@@ -64,18 +65,25 @@ export class LogViewerComponent {
   });
 
   constructor() {
-    this.route.parent?.paramMap.pipe(
-      map(params => params.get('id')),
-      distinctUntilChanged(),
-      takeUntilDestroyed(this.destroyRef)
-    ).subscribe(id => {
-      this.platformId.set(id);
+    if (this.source === 'resolver') {
+      this.platformId.set('resolver');
       this.logs.set([]);
       this.startPolling();
-      if (id) {
-        this.loadLogs(id);
-      }
-    });
+      this.loadLogs('resolver');
+    } else {
+      this.route.parent?.paramMap.pipe(
+        map(params => params.get('id')),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      ).subscribe(id => {
+        this.platformId.set(id);
+        this.logs.set([]);
+        this.startPolling();
+        if (id) {
+          this.loadLogs(id);
+        }
+      });
+    }
 
     effect(() => {
       const viewport = this.logViewport();
@@ -136,12 +144,15 @@ export class LogViewerComponent {
       this.loading.set(true);
     }
     this.error.set(null);
-    this.factoryService.getPlatformLogs(id).pipe(
+    const request = this.source === 'resolver'
+      ? this.factoryService.getResolverLogs()
+      : this.factoryService.getPlatformLogs(id);
+    request.pipe(
       take(1),
       finalize(() => this.loading.set(false))
     ).subscribe({
       next: logs => this.logs.set(logs),
-      error: err => this.error.set(toErrorMessage(err, `Failed to load logs for ${id}`))
+      error: err => this.error.set(toErrorMessage(err, `Failed to load logs for ${this.source === 'resolver' ? 'resolver' : id}`))
     });
   }
 }

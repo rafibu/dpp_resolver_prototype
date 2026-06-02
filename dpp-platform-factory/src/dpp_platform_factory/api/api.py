@@ -19,6 +19,7 @@ from .api_models import (
     SeedSchemasSummary,
 )
 from ..core.platform_service import PlatformService
+from ..core.scenario_service import SCENARIO_IDS, ScenarioService
 from ..core.schema_seed_service import SchemaSeedService
 from ..core.state import FactoryState, PlatformRecord
 from ..infrastructure.docker_client import DockerClient
@@ -83,6 +84,12 @@ def get_platform_service(docker: DockerClient = Depends(get_docker_client)) -> P
 
 def get_schema_seed_service() -> SchemaSeedService:
     return SchemaSeedService(state)
+
+def get_scenario_service(
+    platform_service: PlatformService = Depends(get_platform_service),
+    schema_seed_service: SchemaSeedService = Depends(get_schema_seed_service),
+) -> ScenarioService:
+    return ScenarioService(state, platform_service, schema_seed_service)
 
 def _to_platform_info(record: PlatformRecord) -> PlatformInfo:
     return PlatformInfo(
@@ -248,6 +255,40 @@ async def seed_schemas(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _parse_container_logs(raw_logs: bytes) -> List[LogLine]:
+    result: List[LogLine] = []
+    for raw_line in raw_logs.decode("utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+            ts = str(parsed.get("timestamp", parsed.get("time", parsed.get("ts", ""))))
+            level = str(parsed.get("level", parsed.get("severity", "INFO"))).upper()
+            msg = str(parsed.get("message", parsed.get("event", parsed.get("msg", line))))
+            extra = {k: v for k, v in parsed.items() if k not in ("timestamp", "time", "ts", "level", "severity", "message", "event", "msg")}
+            result.append(LogLine(timestamp=ts, level=level, message=msg, extra=extra))
+        except (json.JSONDecodeError, ValueError):
+            result.append(LogLine(timestamp="", level="INFO", message=line))
+    return result
+
+
+@app.get("/resolver/logs", response_model=List[LogLine])
+async def get_resolver_logs(
+    lines: int = 200,
+    docker: DockerClient = Depends(get_docker_client),
+):
+    resolver = await state.get_resolver()
+    if not resolver:
+        raise HTTPException(status_code=404, detail="Resolver not found")
+    try:
+        container = docker._client.containers.get(resolver.container_id)
+        raw_logs: bytes = container.logs(tail=lines, timestamps=False)
+        return _parse_container_logs(raw_logs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/platforms/{platform_id}/logs", response_model=List[LogLine])
 async def get_platform_logs(
     platform_id: str,
@@ -261,21 +302,7 @@ async def get_platform_logs(
     try:
         container = docker._client.containers.get(record.container_id)
         raw_logs: bytes = container.logs(tail=lines, timestamps=False)
-        result: List[LogLine] = []
-        for raw_line in raw_logs.decode("utf-8", errors="replace").splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                parsed = json.loads(line)
-                ts = str(parsed.get("timestamp", parsed.get("time", parsed.get("ts", ""))))
-                level = str(parsed.get("level", parsed.get("severity", "INFO"))).upper()
-                msg = str(parsed.get("message", parsed.get("event", parsed.get("msg", line))))
-                extra = {k: v for k, v in parsed.items() if k not in ("timestamp", "time", "ts", "level", "severity", "message", "event", "msg")}
-                result.append(LogLine(timestamp=ts, level=level, message=msg, extra=extra))
-            except (json.JSONDecodeError, ValueError):
-                result.append(LogLine(timestamp="", level="INFO", message=line))
-        return result
+        return _parse_container_logs(raw_logs)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -284,22 +311,27 @@ _scenario_states: Dict[str, ScenarioStatus] = {}
 
 
 @app.post("/scenarios/{scenario_id}", response_model=ScenarioStatus)
-async def run_scenario(scenario_id: str):
-    if scenario_id not in ("s1", "s2"):
+async def run_scenario(
+    scenario_id: str,
+    service: ScenarioService = Depends(get_scenario_service),
+):
+    if scenario_id not in SCENARIO_IDS:
         raise HTTPException(status_code=404, detail=f"Unknown scenario: {scenario_id}")
     status = ScenarioStatus(
         scenario_id=scenario_id,
-        status="pending",
+        status="running",
         steps=[],
         report_md=None,
     )
+    _scenario_states[scenario_id] = status
+    status = await service.run(scenario_id)
     _scenario_states[scenario_id] = status
     return status
 
 
 @app.get("/scenarios/{scenario_id}/status", response_model=ScenarioStatus)
 async def get_scenario_status(scenario_id: str):
-    if scenario_id not in ("s1", "s2"):
+    if scenario_id not in SCENARIO_IDS:
         raise HTTPException(status_code=404, detail=f"Unknown scenario: {scenario_id}")
     if scenario_id not in _scenario_states:
         return ScenarioStatus(

@@ -18,9 +18,11 @@ describe('DppEditorComponent', () => {
   let resolverServiceSpy: any;
   let toastServiceSpy: any;
   let paramsSubject: BehaviorSubject<any>;
+  let queryParamsSubject: BehaviorSubject<any>;
 
   beforeEach(async () => {
     paramsSubject = new BehaviorSubject(convertToParamMap({ id: 'p1', dppId: 'p1-dpp1' }));
+    queryParamsSubject = new BehaviorSubject(convertToParamMap({}));
 
     platformServiceSpy = {
       getDpp: vi.fn().mockReturnValue(of({
@@ -61,7 +63,7 @@ describe('DppEditorComponent', () => {
         { provide: ResolverService, useValue: resolverServiceSpy },
         { provide: ToastService, useValue: toastServiceSpy },
         provideRouter([]),
-        { provide: ActivatedRoute, useValue: { paramMap: paramsSubject.asObservable() } },
+        { provide: ActivatedRoute, useValue: { paramMap: paramsSubject.asObservable(), queryParamMap: queryParamsSubject.asObservable() } },
         provideMonacoEditor()
       ]
     }).compileComponents();

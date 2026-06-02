@@ -1,0 +1,62 @@
+<h2 mat-dialog-title>
+  <mat-icon>{{ data.mode === 'view' ? 'visibility' : 'add_circle' }}</mat-icon>
+  {{ title() }}
+</h2>
+
+<mat-dialog-content class="dialog-content">
+  @if (data.mode === 'create') {
+    <div class="version-grid">
+      <mat-form-field appearance="outline">
+        <mat-label>Major</mat-label>
+        <input
+          matInput
+          type="number"
+          min="1"
+          [ngModel]="major()"
+          (ngModelChange)="major.set(+$event); onVersionChange()"
+          [disabled]="isSubmitting()"
+        >
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Minor</mat-label>
+        <input
+          matInput
+          type="number"
+          min="0"
+          [ngModel]="minor()"
+          (ngModelChange)="minor.set(+$event); onVersionChange()"
+          [disabled]="isSubmitting()"
+        >
+      </mat-form-field>
+    </div>
+  }
+
+  @if (isSubmitting()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  @if (jsonError()) {
+    <div class="inline-error">
+      <mat-icon>error</mat-icon>
+      <span>{{ jsonError() }}</span>
+    </div>
+  }
+
+  <div class="monaco-wrapper">
+    <ngx-monaco-editor
+      [options]="editorOptions()"
+      [ngModel]="code()"
+      (ngModelChange)="onCodeChange($event)"
+    />
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button type="button" [disabled]="isSubmitting()" (click)="close()">Close</button>
+  @if (data.mode === 'create') {
+    <button mat-flat-button color="primary" type="button" [disabled]="!canPublish()" (click)="publish()">
+      <mat-icon>publish</mat-icon>
+      Publish
+    </button>
+  }
+</mat-dialog-actions>

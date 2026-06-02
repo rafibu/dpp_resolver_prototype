@@ -20,8 +20,8 @@
           Verify Hash
         </button>
         <button mat-flat-button color="primary" type="button" [disabled]="!currentRevision()" (click)="onRevise()">
-          <mat-icon>edit</mat-icon>
-          Revise
+          <mat-icon>add</mat-icon>
+          Add Revision
         </button>
       } @else {
         <button mat-button type="button" [disabled]="saving()" (click)="cancelEdit()">Cancel</button>

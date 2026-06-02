@@ -43,6 +43,14 @@ describe('API Services', () => {
       expect(req.request.method).toBe('GET');
       req.flush([]);
     });
+
+    it('should get resolver logs with query param', () => {
+      const service = TestBed.inject(FactoryService);
+      service.getResolverLogs(25).subscribe();
+      const req = httpMock.expectOne(`${environment.factoryUrl}/resolver/logs?lines=25`);
+      expect(req.request.method).toBe('GET');
+      req.flush([]);
+    });
   });
 
   describe('PlatformService', () => {
@@ -84,6 +92,19 @@ describe('API Services', () => {
       const req = httpMock.expectOne(`http://resolver/schemas/type1/1/0`);
       expect(req.request.method).toBe('GET');
       req.flush({ schemaDocument: {} });
+    });
+
+    it('should publish schema', () => {
+      const service = TestBed.inject(ResolverService);
+      service.publishSchema('http://resolver', {
+        subject_type: 'type1',
+        major_version: 2,
+        minor_version: 0,
+        schema_document: {}
+      }).subscribe();
+      const req = httpMock.expectOne(`http://resolver/schemas`);
+      expect(req.request.method).toBe('POST');
+      req.flush({ subjectType: 'type1', majorVersion: 2, minorVersion: 0, schemaDocument: {} });
     });
   });
 });

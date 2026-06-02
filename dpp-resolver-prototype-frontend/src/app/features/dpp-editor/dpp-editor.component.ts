@@ -10,9 +10,7 @@ import {MatIconModule} from '@angular/material/icon';
 import {MatListModule} from '@angular/material/list';
 import {MatProgressBarModule} from '@angular/material/progress-bar';
 import {MonacoEditorModule} from 'ngx-monaco-editor-v2';
-import Ajv, {AnySchema, ErrorObject} from 'ajv';
-import addFormats from 'ajv-formats';
-import {finalize, take} from 'rxjs';
+import {combineLatest, finalize, take} from 'rxjs';
 import {PlatformService} from '../../core/platform.service';
 import {FederationService} from '../../core/federation.service';
 import {ResolverService} from '../../core/resolver.service';
@@ -20,8 +18,11 @@ import {ToastService} from '../../core/toast.service';
 import {DppDetail, DppRevision} from '../../core/models/api.model';
 import {canonicalize, sha256} from '../../core/utils/crypto.utils';
 import {toErrorMessage} from '../../core/http-error.utils';
-
-type ValidationIssue = Pick<ErrorObject, 'instancePath' | 'message' | 'params'>;
+import {
+  createJsonSchemaValidator,
+  JsonValidationIssue,
+  validateJsonPayload
+} from '../../core/utils/json-schema-validator.utils';
 
 @Component({
   selector: 'app-dpp-editor',
@@ -53,28 +54,35 @@ export class DppEditorComponent {
   public platformId = signal<string | null>(null);
   public dppId = signal<string | null>(null);
   public version = signal<number | null>(null);
+  public mode = signal<string | null>(null);
   public dpp = signal<DppDetail | null>(null);
   public currentRevision = signal<DppRevision | null>(null);
-  public editorOptions = signal({ theme: 'vs-light', language: 'json', readOnly: true, minimap: { enabled: false } });
+  public editorOptions = signal({
+    theme: 'vs-light',
+    language: 'json',
+    readOnly: true,
+    minimap: { enabled: false },
+    automaticLayout: true,
+    scrollBeyondLastLine: false
+  });
   public code = signal<string>('');
   public isEditable = signal(false);
   public loading = signal(false);
   public saving = signal(false);
   public error = signal<string | null>(null);
-  public validationErrors = signal<ValidationIssue[]>([]);
+  public validationErrors = signal<JsonValidationIssue[]>([]);
   public hashVerification = signal<'success' | 'failure' | null>(null);
   public canSubmit = computed(() => this.isEditable() && !this.saving() && this.validationErrors().length === 0);
 
-  private ajv = new Ajv();
+  private ajv = createJsonSchemaValidator();
 
   constructor() {
-    addFormats(this.ajv);
-
-    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+    combineLatest([this.route.paramMap, this.route.queryParamMap]).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(([params, query]) => {
       this.platformId.set(params.get('id'));
       this.dppId.set(params.get('dppId'));
       const version = params.get('version');
       this.version.set(version ? Number(version) : null);
+      this.mode.set(query.get('mode'));
       this.loadData();
     });
   }
@@ -96,15 +104,13 @@ export class DppEditorComponent {
   }
 
   public onRevise(): void {
-    this.isEditable.set(true);
-    this.editorOptions.update(options => ({ ...options, readOnly: false }));
+    this.setEditable(true);
     this.validate();
   }
 
   public cancelEdit(): void {
     const revision = this.currentRevision();
-    this.isEditable.set(false);
-    this.editorOptions.update(options => ({ ...options, readOnly: true }));
+    this.setEditable(false);
     this.validationErrors.set([]);
     if (revision) {
       this.code.set(JSON.stringify(revision.payload, null, 2));
@@ -183,8 +189,10 @@ export class DppEditorComponent {
           this.code.set(JSON.stringify(revision.payload, null, 2));
           this.hashVerification.set(null);
           this.validationErrors.set([]);
-          this.isEditable.set(false);
-          this.editorOptions.update(options => ({ ...options, readOnly: true }));
+          this.setEditable(this.mode() === 'revise');
+          if (this.mode() === 'revise') {
+            this.validate();
+          }
         }
       },
       error: err => this.error.set(toErrorMessage(err, `Failed to load ${dId}`))
@@ -205,13 +213,7 @@ export class DppEditorComponent {
 
       this.resolverService.getSchema(resolverUrl, type, Number(major), Number(minor)).pipe(take(1)).subscribe({
         next: schema => {
-          const validate = this.ajv.compile(schema as AnySchema);
-          const valid = validate(payload);
-          this.validationErrors.set(valid ? [] : (validate.errors || []).map(error => ({
-            instancePath: error.instancePath,
-            message: error.message,
-            params: error.params
-          })));
+          this.validationErrors.set(validateJsonPayload(this.ajv, schema, payload));
         },
         error: err => this.validationErrors.set([{
           instancePath: '',
@@ -222,5 +224,10 @@ export class DppEditorComponent {
     } catch {
       this.validationErrors.set([{ instancePath: '', message: 'Invalid JSON', params: {} }]);
     }
+  }
+
+  private setEditable(isEditable: boolean): void {
+    this.isEditable.set(isEditable);
+    this.editorOptions.update(options => ({ ...options, readOnly: !isEditable }));
   }
 }

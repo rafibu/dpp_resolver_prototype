@@ -65,6 +65,13 @@
   border-radius: 8px;
 }
 
+mat-panel-description {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .empty-state {
   align-items: center;
   background: #f8fbfc;
