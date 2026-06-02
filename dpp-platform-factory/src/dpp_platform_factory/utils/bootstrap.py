@@ -6,8 +6,8 @@ Startup sequence:
    schema set and resolver registry (Definition 6, Definition 10).
 2. Register all subject types on the Resolver - required before schemas or platforms
    can reference them.
-3. Spawn each default DPP platform container and call registerIssuer
-   on the Resolver so that federated references to that issuer resolve correctly.
+3. Spawn each default DPP platform container and ensure its issuer mapping
+   exists on the Resolver so that federated references to that issuer resolve correctly.
 
 Failures during platform spawning are logged and recorded as ERROR in state; they do
 not abort startup. A partially-bootstrapped federation is still useful for debugging.
@@ -15,12 +15,12 @@ not abort startup. A partially-bootstrapped federation is still useful for debug
 import structlog
 
 from .config import FederationConfig
-from ..infrastructure.docker_client import DPP_NET, DockerClient
 from .orphans import handle_orphans
 from ..core.platform import PlatformSpec, spawn_platform
+from ..core.state import FactoryState, PlatformStatus
+from ..infrastructure.docker_client import DPP_NET, DockerClient
 from ..infrastructure.resolver import start_resolver
 from ..infrastructure.resolver_client import ResolverClient
-from ..core.state import FactoryState, PlatformStatus
 
 logger = structlog.get_logger()
 
@@ -64,7 +64,7 @@ async def bootstrap(
                 host_port=pconfig.port,
             )
             record = await spawn_platform(client, network.name, resolver_record.internal_url, spec)
-            await resolver_client.register_platform(record)
+            await resolver_client.ensure_platform_mapping(record)
             await state.add_platform(record)
             logger.info("bootstrap_platform_ready", platform_id=pconfig.platform_id)
         except Exception as exc:

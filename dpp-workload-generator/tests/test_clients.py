@@ -129,8 +129,7 @@ async def test_resolver_publish_schema_idempotent(httpx_mock):
         # No POST registered — if one is made the test will fail
 
 @pytest.mark.asyncio
-async def test_ensure_platform_route_merges_and_preserves_url(httpx_mock, platform_info):
-    import json
+async def test_ensure_platform_route_adds_missing_subject_type(httpx_mock, platform_info):
     resolver_url = "http://resolver:8081"
     internal_template = "http://dpp-platform-a:8080/dpps/{dppId}"
     # Existing mapping registered by the Factory: one subject type, internal-URL template.
@@ -139,18 +138,18 @@ async def test_ensure_platform_route_merges_and_preserves_url(httpx_mock, platfo
         json=[{"platform": "platform-a", "issuer_id": "issuerA",
                "resolution_url": internal_template, "subject_types": ["pv_module"]}]
     )
-    httpx_mock.add_response(method="POST", url=f"{resolver_url}/admin/platforms", status_code=201)
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{resolver_url}/admin/platforms/issuerA/subject-types/link_1",
+        status_code=200,
+    )
 
     async with ResolverClient(resolver_url) as client:
         await client.ensure_platform_route(platform_info, "link_1")
 
     post = [r for r in httpx_mock.get_requests() if r.method == "POST"][-1]
-    body = json.loads(post.content)
-    # New subject type merged into the existing list, not replacing it.
-    assert sorted(body["subject_types"]) == ["link_1", "pv_module"]
-    # Factory-owned internal resolution_url preserved verbatim.
-    assert body["resolution_url"] == internal_template
-    assert body["issuer_id"] == "issuerA"
+    assert str(post.url) == f"{resolver_url}/admin/platforms/issuerA/subject-types/link_1"
+    assert post.content == b""
 
 
 @pytest.mark.asyncio

@@ -125,6 +125,45 @@ async def test_migrate_platform_raises_on_400(httpx_mock):
         await resolver.migrate_platform("issuerA", _make_platform("platform-b", "issuerB"))
 
 @pytest.mark.asyncio
+async def test_ensure_platform_mapping_registers_missing_issuer(httpx_mock):
+    resolver = ResolverClient("http://resolver:8080")
+    httpx_mock.add_response(url="http://resolver:8080/admin/platforms", status_code=200, json=[])
+    httpx_mock.add_response(url="http://resolver:8080/admin/platforms/register", status_code=201)
+
+    await resolver.ensure_platform_mapping(_make_platform())
+
+    requests = httpx_mock.get_requests()
+    assert str(requests[0].url) == "http://resolver:8080/admin/platforms"
+    assert str(requests[1].url) == "http://resolver:8080/admin/platforms/register"
+
+@pytest.mark.asyncio
+async def test_ensure_platform_mapping_skips_matching_existing_issuer(httpx_mock):
+    resolver = ResolverClient("http://resolver:8080")
+    httpx_mock.add_response(url="http://resolver:8080/admin/platforms", status_code=200, json=[{
+        "platform": "platform-a",
+        "issuer_id": "issuerA",
+        "resolution_url": "http://dpp-platform-a:8080/dpps/{dppId}",
+        "subject_types": ["pv_module"],
+    }])
+
+    await resolver.ensure_platform_mapping(_make_platform())
+
+    assert len(httpx_mock.get_requests()) == 1
+
+@pytest.mark.asyncio
+async def test_ensure_platform_mapping_rejects_conflicting_existing_issuer(httpx_mock):
+    resolver = ResolverClient("http://resolver:8080")
+    httpx_mock.add_response(url="http://resolver:8080/admin/platforms", status_code=200, json=[{
+        "platform": "platform-b",
+        "issuer_id": "issuerA",
+        "resolution_url": "http://dpp-platform-b:8080/dpps/{dppId}",
+        "subject_types": ["pv_module"],
+    }])
+
+    with pytest.raises(RuntimeError, match="refusing to overwrite"):
+        await resolver.ensure_platform_mapping(_make_platform())
+
+@pytest.mark.asyncio
 async def test_publish_schema_posts_correct_dto(httpx_mock):
     resolver = ResolverClient("http://resolver:8080")
     httpx_mock.add_response(url="http://resolver:8080/schemas", status_code=201)

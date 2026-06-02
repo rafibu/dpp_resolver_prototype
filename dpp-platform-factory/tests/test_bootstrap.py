@@ -61,7 +61,7 @@ async def test_bootstrap_success(mocker):
     # Mock ResolverClient
     mock_resolver_client = MagicMock()
     mock_resolver_client.ensure_subject_type = AsyncMock()
-    mock_resolver_client.register_platform = AsyncMock()
+    mock_resolver_client.ensure_platform_mapping = AsyncMock()
     mocker.patch("dpp_platform_factory.utils.bootstrap.ResolverClient", return_value=mock_resolver_client)
 
     mocker.patch("dpp_platform_factory.utils.bootstrap.handle_orphans", new_callable=AsyncMock)
@@ -71,7 +71,7 @@ async def test_bootstrap_success(mocker):
     assert state.resolver == mock_resolver_record
     assert "platform-a" in state.platforms
     assert state.platforms["platform-a"] == mock_platform_record
-    mock_resolver_client.register_platform.assert_called_once_with(mock_platform_record)
+    mock_resolver_client.ensure_platform_mapping.assert_called_once_with(mock_platform_record)
 
 @pytest.mark.asyncio
 async def test_bootstrap_platform_failure_continues(mocker):
@@ -134,7 +134,7 @@ async def test_bootstrap_platform_failure_continues(mocker):
     # Mock ResolverClient
     mock_resolver_client = MagicMock()
     mock_resolver_client.ensure_subject_type = AsyncMock()
-    mock_resolver_client.register_platform = AsyncMock()
+    mock_resolver_client.ensure_platform_mapping = AsyncMock()
     mocker.patch("dpp_platform_factory.utils.bootstrap.ResolverClient", return_value=mock_resolver_client)
 
     mocker.patch("dpp_platform_factory.utils.bootstrap.handle_orphans", new_callable=AsyncMock)
@@ -144,4 +144,4 @@ async def test_bootstrap_platform_failure_continues(mocker):
     assert state.resolver == mock_resolver_record
     assert state.platforms["platform-a"].status == PlatformStatus.ERROR
     assert state.platforms["platform-b"] == mock_platform_record_b
-    mock_resolver_client.register_platform.assert_called_once_with(mock_platform_record_b)
+    mock_resolver_client.ensure_platform_mapping.assert_called_once_with(mock_platform_record_b)

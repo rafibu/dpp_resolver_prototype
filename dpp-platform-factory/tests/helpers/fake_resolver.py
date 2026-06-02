@@ -42,6 +42,20 @@ class FakeResolverClient:
         source["platform"] = target_platform.platform_id
         source["resolution_url"] = f"{target_platform.internal_url.rstrip('/')}/dpps/{{dppId}}"
 
+    async def ensure_platform_mapping(self, platform: PlatformRecord):
+        existing = next((mapping for mapping in self.platforms.values() if mapping["issuer_id"] == platform.issuer_id), None)
+        expected_url = f"{platform.internal_url.rstrip('/')}/dpps/{{dppId}}"
+        if existing is None:
+            await self.register_platform(platform)
+            return
+        if (
+            existing["platform"] == platform.platform_id
+            and existing["resolution_url"] == expected_url
+            and set(existing["subject_types"]) == set(platform.subject_types)
+        ):
+            return
+        raise RuntimeError("Issuer already registered with a different mapping")
+
     async def get_platform(self, platform_id: str) -> Optional[dict]:
         return self.platforms.get(platform_id)
 

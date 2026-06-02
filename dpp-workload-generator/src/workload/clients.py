@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, Any, List, Dict
+from urllib.parse import quote
 
 from .federation import PlatformInfo
 
@@ -209,13 +210,11 @@ class ResolverClient(BaseClient):
         (link_*, parent, child, inverter) are therefore absent from that mapping, so the
         Resolver returns 404 when a hard reference to such a DPP is resolved.
 
-        This method merges the subject type into the issuer's existing mapping. The
-        POST /admin/platforms upsert replaces the whole mapping, so the full merged
-        subject-type list is re-sent along with the mapping's existing resolutionUrl, which is
-        owned by the Factory (it must point at the platform's internal Docker URL so other
-        platform containers can follow the resolver redirect during the I7 check). We never
-        rewrite resolutionUrl here; doing so would risk replacing the internal URL with a
-        host-only one and breaking container-to-container resolution.
+        This method extends the issuer's existing mapping through the Resolver's
+        dedicated subject-type support endpoint. It deliberately avoids register
+        and migrate: the issuer already exists, and its platform/resolution URL must
+        stay owned by the Factory so platform containers can follow redirects during
+        the I7 hard-resolvability check.
         """
         mappings = await self.list_platforms()
         entry = next((m for m in mappings if m.get("issuer_id") == platform.issuer_id), None)
@@ -232,15 +231,10 @@ class ResolverClient(BaseClient):
         subject_types = set(entry.get("subject_types", []))
         if subject_type in subject_types:
             return  # already routable, nothing to do
-        subject_types.add(subject_type)
 
-        body = {
-            "platform": entry.get("platform", platform.platform_id),
-            "issuer_id": platform.issuer_id,
-            "resolution_url": entry["resolution_url"],
-            "subject_types": sorted(subject_types),
-        }
-        await self._request("POST", "/admin/platforms", json=body)
+        issuer_id = quote(platform.issuer_id, safe="")
+        encoded_subject_type = quote(subject_type, safe="")
+        await self._request("POST", f"/admin/platforms/{issuer_id}/subject-types/{encoded_subject_type}")
 
     async def resolve(self, subject_type: str, dpp_id: str, version: int | None = None) -> str:
         """Return the resolver target without dereferencing Docker-internal redirects."""

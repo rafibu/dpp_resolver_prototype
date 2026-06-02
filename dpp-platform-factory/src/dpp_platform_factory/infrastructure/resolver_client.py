@@ -14,6 +14,10 @@ from ..core.state import PlatformRecord
 logger = structlog.get_logger()
 
 
+def _resolution_url(platform: PlatformRecord) -> str:
+    return f"{platform.internal_url.rstrip('/')}/dpps/{{dppId}}"
+
+
 class ResolverClient:
     def __init__(self, resolver_url: str) -> None:
         self._base_url = resolver_url.rstrip("/")
@@ -67,7 +71,7 @@ class ResolverClient:
             # Internal Docker URL template: other platform containers follow the resolver
             # redirect over the Docker network during the I7 hard-reference check, and the
             # Resolver expands {dppId} (and appends the revision) when building the redirect.
-            "resolution_url": f"{platform.internal_url.rstrip('/')}/dpps/{{dppId}}",
+            "resolution_url": _resolution_url(platform),
             "issuer_id": platform.issuer_id,
             "subject_types": platform.subject_types,
         }
@@ -97,7 +101,7 @@ class ResolverClient:
         url = f"{self._base_url}/admin/platforms/{issuer_id}/migrate"
         body = {
             "platform": target_platform.platform_id,
-            "new_resolution_url": f"{target_platform.internal_url.rstrip('/')}/dpps/{{dppId}}",
+            "new_resolution_url": _resolution_url(target_platform),
         }
         logger.info(
             "resolver_migrating_platform",
@@ -121,14 +125,58 @@ class ResolverClient:
             f"'{target_platform.platform_id}': HTTP {response.status_code} - {response.text}"
         )
 
-    async def get_platform(self, platform_id: str) -> dict | None:
+    async def ensure_platform_mapping(self, platform: PlatformRecord) -> None:
+        """Ensure bootstrap has an issuer mapping without treating startup as migrate.
+
+        Bootstrap may run against a resolver database that already contains the default
+        mappings. In that case the correct behavior is idempotent no-op, not a second
+        register call. If the existing issuer points somewhere else, fail loudly so
+        startup does not accidentally undo an intentional migration.
+        """
+        existing = await self.get_mapping_for_issuer(platform.issuer_id)
+        if existing is None:
+            await self.register_platform(platform)
+            return
+
+        existing_platform = existing.get("platform")
+        existing_url = existing.get("resolution_url") or existing.get("resolutionUrl")
+        existing_subject_types = set(existing.get("subject_types") or existing.get("subjectTypes") or [])
+        expected_subject_types = set(platform.subject_types)
+        expected_url = _resolution_url(platform)
+
+        if (
+            existing_platform == platform.platform_id
+            and existing_url == expected_url
+            and existing_subject_types == expected_subject_types
+        ):
+            logger.info(
+                "resolver_mapping_already_registered",
+                platform_id=platform.platform_id,
+                issuer_id=platform.issuer_id,
+            )
+            return
+
+        raise RuntimeError(
+            f"Resolver already has issuer '{platform.issuer_id}' mapped to "
+            f"'{existing_platform}' ({existing_url}); refusing to overwrite it during bootstrap"
+        )
+
+    async def get_mapping_for_issuer(self, issuer_id: str) -> dict | None:
+        mappings = await self.list_platform_mappings()
+        return next((
+            mapping for mapping in mappings
+            if (mapping.get("issuer_id") or mapping.get("issuerId")) == issuer_id
+        ), None)
+
+    async def list_platform_mappings(self) -> list[dict]:
         url = f"{self._base_url}/admin/platforms"
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)
-        if response.status_code == 404:
-            return None
         response.raise_for_status()
-        mappings: list[dict] = response.json()
+        return response.json()
+
+    async def get_platform(self, platform_id: str) -> dict | None:
+        mappings = await self.list_platform_mappings()
         return next((m for m in mappings if m.get("platform") == platform_id), None)
 
     async def publish_schema(
