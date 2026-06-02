@@ -1,6 +1,6 @@
 # Prototype Tech Stack
 
-Definitive technology decisions and operational specification for each artefact in the DPP prototype. Use this as the implementation reference.
+Definitive technology decisions and operational specification for each artefact in the DPP prototype. Use this as the implementation reference. This file reflects the technology stack as actually implemented.
 
 ## Cross-cutting decisions
 
@@ -41,7 +41,7 @@ The federation's discovery service and authoritative schema registry.
 | Framework          | Spring Boot 4.0 (latest patch)    |
 | Web layer          | Spring MVC, REST controllers      |
 | Persistence        | Spring Data JPA, Hibernate        |
-| Database           | PostgreSQL 18                     |
+| Database           | PostgreSQL 16                     |
 | Migrations         | Flyway                            |
 | Build              | Maven                             |
 | Logging            | SLF4J + Logback, JSON encoder     |
@@ -91,7 +91,7 @@ Spring Boot reference platform with relational persistence.
 | Framework              | Spring Boot 4.0                    |
 | Web layer              | Spring MVC                         |
 | Persistence            | Spring Data JPA, Hibernate         |
-| Database               | PostgreSQL 18                      |
+| Database               | PostgreSQL 16                      |
 | Migrations             | Flyway                             |
 | JSON Schema validation | networknt/json-schema-validator    |
 | JCS canonicalization   | erdtman/java-json-canonicalization |
@@ -297,21 +297,24 @@ Additional platforms spawned via `POST /platforms` get ports starting at 8084.
 
 ## Artefact 5: Workload Generator
 
-Drives synthetic load against the federation for Section 8.2 measurements.
+Drives the quantitative measurements (Section 8.3) and the three end-to-end scenarios (Section 8.4) against the live federation. The scenarios originally scoped as a standalone Interaction Platform are implemented here as the `workload scenario` subcommands, sharing the same federation discovery and HTTP client code as the measurement workloads.
 
 ### Stack
 
-| Layer                    | Choice                            |
-|--------------------------|-----------------------------------|
-| Language / Runtime       | Python 3.14                       |
-| Execution                | CLI script with subcommands       |
-| HTTP client              | httpx (async)                     |
-| Federation discovery     | Calls Factory's `GET /federation` |
-| Output                   | CSV files for raw measurements    |
-| Plotting (separate step) | matplotlib                        |
-| Package manager          | uv                                |
+| Layer                    | Choice                                       |
+|--------------------------|----------------------------------------------|
+| Language / Runtime       | Python 3.14                                  |
+| Execution                | Typer CLI with subcommands                   |
+| HTTP client              | httpx (async)                                |
+| Federation discovery     | Calls Factory's `GET /federation`            |
+| Measurement output       | CSV files for raw measurements               |
+| Scenario output          | Markdown reports per scenario, with outcomes |
+| Plotting (separate step) | matplotlib                                   |
+| Package manager          | uv                                           |
 
 ### Responsibilities
+
+Measurement and fixtures:
 
 - Generate DPPs with controllable hard-dependency depth
 - Generate DPPs with controllable fan-out
@@ -320,53 +323,39 @@ Drives synthetic load against the federation for Section 8.2 measurements.
 - Drive measurement runs: timing each operation, recording bytes
 - Write structured CSV output for analysis
 
+Scenarios (Section 8.4):
+
+- Set up the prerequisite federation state for each scenario via the Factory
+- Execute the scenario steps in order and capture expected vs observed outcome per step
+- Produce a structured Markdown report with a PASSED/FAILED verdict, suitable for inclusion in Section 8.4
+
 ### CLI subcommands
 
+Measurement and fixtures:
+
 - `workload generate-depth --depth N`
-- `workload generate-fanout --fanout N --root-platform P1`
+- `workload generate-fanout --fanout N`
 - `workload pv-scenario`
-- `workload measure --workload depth --range 1-10 --runs 5 --output results.csv`
+- `workload measure --workload depth|fanout|issue|resolve --range 1-10 --runs 5 --output results.csv`
 - `workload schema-evolution --revisions N --update-kind minor|major`
+
+Scenarios:
+
+- `workload scenario s1 --output-dir output/scenarios` offline validation after platform unavailability
+- `workload scenario s2 --output-dir output/scenarios` independent schema evolution
+- `workload scenario s3 --output-dir output/scenarios` schema-level cycle rejection
 
 The Workload Generator queries the Factory at startup to discover platform URLs. It does not need to be told manually where platforms are.
 
 ### Output format
 
-CSV with columns:
+Measurement CSV columns:
 
 ```
 run_id, workload_kind, parameter_value, operation, latency_ms, bytes_payload, bytes_index, success, error, warmup
 ```
 
-## Artefact 6: Interaction Platform
-
-Drives the three S1, S2, S3 scenarios end-to-end.
-
-### Stack
-
-| Layer              | Choice                                                        |
-|--------------------|---------------------------------------------------------------|
-| Language / Runtime | Python 3.14                                                   |
-| Execution          | CLI with three top-level commands, one per scenario           |
-| HTTP client        | httpx                                                         |
-| Factory client     | Calls Factory REST API for federation discovery and lifecycle |
-| Output             | Markdown reports per scenario, with timestamps and outcomes   |
-| Package manager    | uv                                                            |
-
-### Responsibilities
-
-- Set up the prerequisite federation state for each scenario via Factory
-- Execute the scenario steps in order
-- Capture expected vs observed outcome for each step
-- Produce a structured report suitable for inclusion in Section 8.4
-
-### Scenario commands
-
-- `scenario s1` offline interpretability
-- `scenario s2` independent schema evolution
-- `scenario s3` cycle prevention plus agreement pattern
-
-## Artefact 7: Frontend
+## Artefact 6: Frontend
 
 The federation observer, scenario driver, and DPP editor.
 
@@ -405,7 +394,7 @@ Keep list (minimum viable):
 - Per-platform DPP list and revision history view
 - Per-platform log viewer (reads from Docker logs via Factory proxy or a small backend)
 - Online/offline toggle per platform (calls Factory pause/resume)
-- Trigger-scenario buttons for S1, S2, S3 (calls Interaction Platform or invokes scenarios via Factory)
+- Trigger-scenario buttons for S1, S2, S3 (invokes scenarios via the Factory)
 - Raw JSON editor for DPP payloads with client-side schema validation
 - Display of platform state changes after operations
 
@@ -423,10 +412,10 @@ The Factory is the entry point. On startup, it brings up:
 - 1x Resolver + 1x Postgres (resolver-db)
 - 3x DPP-Platforms (per default federation config) + their respective databases (postgres or mongodb)
 
-Frontend, Workload Generator, and Interaction Platform are not spawned by the Factory:
+Frontend and Workload Generator are not spawned by the Factory:
 
 - Frontend runs as its own container (nginx), but is started separately via `docker compose up frontend` or run during development with `ng serve`. It discovers everything via the Factory.
-- Workload Generator and Interaction Platform are CLI tools, invoked from the developer's terminal.
+- Workload Generator (including the scenario subcommands) is a CLI tool, invoked from the developer's terminal.
 
 ### Network
 
@@ -439,12 +428,11 @@ Frontend, Workload Generator, and Interaction Platform are not spawned by the Fa
 
 | Artefact             | Language    | Framework            | Storage                   | Container?  | Spawned by Factory? |
 |----------------------|-------------|----------------------|---------------------------|-------------|---------------------|
-| Resolver             | Java 25     | Spring Boot 4        | Postgres 18               | Yes         | Yes                 |
-| DPP-Platform A       | Java 25     | Spring Boot 4        | Postgres 18               | Yes         | Yes                 |
+| Resolver             | Java 25     | Spring Boot 4        | Postgres 16               | Yes         | Yes                 |
+| DPP-Platform A       | Java 25     | Spring Boot 4        | Postgres 16               | Yes         | Yes                 |
 | DPP-Platform B       | Python 3.14 | FastAPI              | MongoDB 7 (PyMongo Async) | Yes         | Yes                 |
 | Factory              | Python 3.14 | FastAPI + Docker SDK | None (in-memory)          | Yes         | No (entry point)    |
-| Workload Generator   | Python 3.14 | CLI, httpx           | CSV output                | No (CLI)    | No                  |
-| Interaction Platform | Python 3.14 | CLI, httpx           | Markdown output           | No (CLI)    | No                  |
+| Workload Generator   | Python 3.14 | CLI, httpx           | CSV + Markdown output     | No (CLI)    | No                  |
 | Frontend             | TypeScript  | Angular 21           | None                      | Yes (nginx) | No                  |
 
 ## Version pinning notes
@@ -455,11 +443,11 @@ For reproducibility and supply-chain stability, pin minor versions in build file
 - **Spring Boot**: 4.0.x (latest patch at implementation time, 4.0.6 as of April 2026)
 - **Python**: 3.14.x (latest patch, 3.14.4 as of February 2026)
 - **PyMongo**: >= 4.9 (the version that introduced production-ready Async API)
-- **PostgreSQL**: 18 (current LTS)
+- **PostgreSQL**: 16 (`postgres:16` image)
 - **MongoDB**: 7 (current production)
 
 Lock file management:
 
-- Java: Gradle's lock files (`gradle.lockfile`)
+- Java: Maven (`pom.xml`), built via the bundled `mvnw` wrapper
 - Python: uv's `uv.lock`
 - TypeScript: npm or pnpm `package-lock.json` / `pnpm-lock.yaml`

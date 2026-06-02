@@ -1,168 +1,113 @@
 # DPP Resolver Prototype
 
-A complete prototype for a decentralized Digital Product Passport (DPP) resolution system.
+This repository is the reference prototype for a research paper on **federated Digital Product Passport (DPP) architecture**. It is the concrete realization of the formal data model (paper Section 4) and its transition system (Section 5): a federation of independently operated platforms that share no governance authority, tied together by a thin resolver that holds the authoritative schema set and an issuer-to-platform registry.
 
-## Project Structure
+The prototype exists to demonstrate three things the paper argues for:
 
-- `dpp_resolver/`: Centralized registry for DPP platform mappings and schemas. (Java/Spring Boot)
-- `generic_dpp_platform_java/`: Template for a DPP platform using Java and Spring Boot.
-- `generic_dpp_platform_python/`: Template for a DPP platform using Python and FastAPI.
-- `factory/`: Orchestration service to manage the lifecycle of the whole federation. (Python/FastAPI)
-- `workload-generator/`: CLI tool to generate synthetic workloads and measure system performance. (Python)
+- **Substrate-agnosticism.** The same operation semantics and federation protocol are implemented twice, on a relational stack (Java, Spring Boot, PostgreSQL) and a document stack (Python, FastAPI, MongoDB). Heterogeneity is the point, the two platforms are interoperable through the resolver.
+- **Invariant preservation.** The seven structural invariants of the model (I1 to I7: revision uniqueness, version monotonicity, schema explicitness, payload integrity, schema conformance, schema-graph acyclicity, hard resolvability) are enforced by the running code, not just on paper.
+- **Behavior in regulatory-relevant situations.** Three end-to-end scenarios exercise the federation: offline validation of cached hard-dependency closures (S1), independent schema evolution with historical revisions remaining valid (S2), and schema-level cycle rejection (S3).
 
-## Getting Started
+The prototype demonstrates architectural properties. It is not a production DPP platform, not a full implementation of EU ESPR requirements, and not a general-purpose benchmark suite. Authentication, access control, and transport security are deliberately out of scope, their absence does not affect the invariants the prototype verifies.
+
+## Modules
+
+| Module             | Folder                                                                          | What it is                                                                                                                                                                                                               | Details                                             |
+|--------------------|---------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|
+| Resolver           | [`dpp-resolver/`](dpp-resolver/README.md)                                       | Java 25, Spring Boot, PostgreSQL. The federation's authoritative schema registry and issuer-to-platform registry (Definitions 6 and 10). Enforces schema-graph acyclicity (I6).                                          | [README](dpp-resolver/README.md)                    |
+| DPP Platform A     | [`generic_dpp_platform_java/`](generic_dpp_platform_java/README.md)             | Java 25, Spring Boot, PostgreSQL. Reference platform on a relational substrate with JSON column support (hybrid relational-document pattern).                                                                            | [README](generic_dpp_platform_java/README.md)       |
+| DPP Platform B     | [`generic_dpp_platform_python/`](generic_dpp_platform_python/README.md)         | Python 3.14, FastAPI, MongoDB. Reference platform on a document substrate. Same REST contract as Platform A, invariants enforced in application code.                                                                    | [README](generic_dpp_platform_python/README.md)     |
+| Factory            | [`dpp-platform-factory/`](dpp-platform-factory/README.md)                       | Python 3.14, FastAPI + Docker SDK. Test-harness controller: spawns and manages the resolver and platform containers, seeds schemas, exposes `GET /federation` for topology discovery. Not part of the federation itself. | [README](dpp-platform-factory/README.md)            |
+| Workload Generator | [`dpp-workload-generator/`](dpp-workload-generator/README.md)                   | Python 3.14 CLI. Drives the quantitative measurements (Section 8.3) and runs the three end-to-end scenarios S1, S2, S3 (Section 8.4).                                                                                    | [README](dpp-workload-generator/README.md)          |
+| Frontend           | [`dpp-resolver-prototype-frontend/`](dpp-resolver-prototype-frontend/README.md) | TypeScript, Angular 21, SCSS. Federation observer, DPP browser and JSON editor, scenario runner.                                                                                                                         | [README](dpp-resolver-prototype-frontend/README.md) |
+
+The Interaction Platform described as a separate artefact in `tech_stack.md` is implemented as the `workload scenario` subcommands of the Workload Generator.
+
+## Formal model vs. implementation
+
+The formal model is deliberately abstract. The prototype makes concrete choices where the model leaves them open, and approximates where the model is undecidable. The differences below do not weaken any invariant.
+
+| Model concept                                                      | Implementation                                                                                                                                                                                                 |
+|--------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Hash function `H` (abstract, collision-resistant)                  | SHA-256 over JCS-canonicalized (RFC 8785) payload, always computed server-side, never accepted from a client (I4).                                                                                             |
+| Validator predicate `Val(s)` (any decidable predicate)             | JSON Schema Draft 2020-12 (`networknt/json-schema-validator` in Java, `jsonschema` in Python).                                                                                                                 |
+| Backward compatibility `⊑` (Definition 15, undecidable in general) | A sound but incomplete syntactic check over a restricted JSON Schema fragment. Conservative: it may force a publisher to declare a minor update as major, but never accepts an incompatible minor update.      |
+| Resolution function (Definition 11, returns a revision)            | Over HTTP: the Resolver returns a `302` redirect to the hosting platform, which then serves the revision. The Resolver never proxies payloads.                                                                 |
+| Reference extraction (Definition 12)                               | Schema-annotated fields. Reference fields carry an `x-dpp-reference` annotation; instance shape is `{"$ref": "...", "version": N?}`. Presence of `version` is a hard dependency, absence is a soft dependency. |
+| Revision tuple omits a timestamp                                   | Platforms additionally record a UTC ISO-8601 issuance time for audit only. Ordering still comes from version numbers (I2), not time.                                                                           |
+| Federated state over `N` generic platforms (Definition 7)          | Ships two heterogeneous reference platforms by default (A: PV modules, B: batteries) plus a third Java platform (inverters). More can be spawned on demand via the Factory.                                    |
+| Schema cache (Definition 5)                                        | Implemented with a TTL. The stored hash is re-verified on every cache read, so a tampered cache entry is rejected.                                                                                             |
+| Resolver, platforms only                                           | The Factory, Workload Generator, and Frontend are prototype scaffolding and observability. They are not part of the formal model.                                                                              |
+
+## Running the federation and the scenarios
 
 ### Prerequisites
 
-- Java 21
-- Python 3.12+
-- Docker & Docker Compose
+- **Docker** (Desktop or Engine) with Docker Compose. This is the only requirement to run the federation.
+- **Python 3.14+** to run the Workload Generator CLI (the scenarios).
+- **Node.js + npm** only if you want to run the Frontend in development mode rather than via Docker.
+- **Java 25 + Maven** only if you want to build the platform and resolver images locally rather than from a registry.
 
-### Quick Start with Factory
+### 1. Build the platform images
 
-The easiest way to run the whole system is using the Factory:
-
-```bash
-docker compose up factory
-```
-
-This will:
-1. Start the Factory.
-2. Bootstrap a DPP Resolver and its database.
-3. Spawn a set of default DPP platforms (Java and Python versions).
-4. Register them with the Resolver.
-
-The system is then accessible at:
-- Frontend UI: `http://localhost:4200`
-- Factory API: `http://localhost:8000`
-- Resolver API: `http://localhost:8080`
-- Default Platforms: Starting from `http://localhost:8081`
-
-## Frontend UI
-
-The Frontend is an Angular 21 single-page application that provides a visual dashboard for the federation.
-
-### Features
-
-- **Federation Map**: Interactive topology visualization using `ngx-graph`.
-- **Platform Management**: Lifecycle controls (pause, resume, reset, delete) and real-time logs.
-- **DPP Browser**: Inspect logical DPPs and their revision histories.
-- **JSON Editor**: Integrated Monaco editor with AJV schema validation for creating and revising DPPs.
-- **Scenario Runner**: Trigger and monitor automated research scenarios (S1, S2) with live Markdown reports.
-
-### Development
+The Factory does not build images, it expects them to exist. Build the three images once from the repository root:
 
 ```bash
-cd dpp-resolver-prototype-frontend
-npm install
-npm run start
-```
-The UI will be available at `http://localhost:4200`.
-
-### Production (Docker)
-
-The Frontend is included in the root `docker-compose.yml`.
-```bash
-docker compose up frontend
+docker build -t dpp-resolver:latest ./dpp-resolver
+docker build -t generic-dpp-platform-java:latest ./generic_dpp_platform_java
+docker build -t generic-dpp-platform-python:latest ./generic_dpp_platform_python
 ```
 
-## Factory Orchestration
+The database images (`postgres:16`, `mongo:7`) are pulled automatically.
 
-The `factory/` service provides a REST API to dynamically manage the federation.
+### 2. Start the Factory and Frontend
 
-- **Spawn new platforms**: `POST /platforms`
-- **Pause/Resume**: `POST /platforms/{id}/pause`
-- **Reset data**: `POST /platforms/{id}/reset`
-- **Teardown**: `DELETE /platforms/{id}`
-
-See [factory/README.md](factory/README.md) for more details.
-
-## Workload Generator
-
-The `workload-generator/` is a CLI tool designed to set up specific federation states and drive automated measurements.
-
-### Usage
+From the repository root:
 
 ```bash
-# Install dependencies
-cd workload-generator
-# Recommended: use uv
-uv pip install -e .
-
-# Run the tool
-workload --help
+docker compose up
 ```
 
-### Subcommands
+This starts the Factory (host port `8000`) and the Frontend (host port `4200`). On startup the Factory:
 
-- **`workload scenario s1`**: Offline Interpretability scenario. Demonstrates resolution from cache when a platform is unreachable.
-- **`workload scenario s2`**: Independent Schema Evolution scenario. Demonstrates major version updates and historical schema availability.
-- **`workload measure`**: Runs automated measurement cycles. Supports `depth`, `fanout`, `issue`, and `resolve` workloads.
-- **`workload generate-depth --depth N`**: Creates a hierarchical chain of DPPs of length N.
-- **`workload generate-fanout --fanout N`**: Creates a parent DPP with N child dependencies.
-- **`workload pv-scenario`**: Materializes the paper's running example (PV/Battery/Inverter).
-- **`workload schema-evolution`**: Measures the impact of minor (v1.1) and major (v2.0) schema updates.
+1. Brings up the Resolver and its PostgreSQL database (port `8080`).
+2. Spawns the default federation: Platform A / PV modules (port `8081`), Platform B / batteries (port `8082`), Platform C / inverters (port `8083`), each with its own database.
+3. Registers each platform with the Resolver and seeds the authoritative schema set.
 
-### Measurement Data
+The Factory mounts the Docker socket so it can manage sibling containers. To run the Factory alone without the Frontend, use `docker compose up factory`.
 
-Results are persisted as CSVs in `workload-generator/output/`.
+### 3. Open the Frontend
 
-### Scenario Reports
+Navigate to `http://localhost:4200`. The Frontend discovers the whole topology by calling `GET /federation` on the Factory, then talks to the Resolver and platforms directly for federation-level operations. It provides:
 
-The `workload scenario` commands produce narrative reports in Markdown format. These reports are stored in `workload-generator/output/scenarios/` (or via `WORKLOAD_OUTPUT_DIR` env var).
+- **Federation map** showing the Resolver, platforms, and their links.
+- **Per-platform DPP browser** with revision histories and a live log viewer.
+- **Online/offline toggle** per platform (drives the Factory pause/resume, used to simulate a platform becoming unreachable).
+- **JSON editor** (Monaco) for issuing and revising DPP payloads, with client-side schema validation.
+- **Scenario runner** for triggering S1, S2, and S3 and viewing their Markdown reports.
 
-Each report includes:
-- **Run ID and Timestamps**: Unique identifier for the run.
-- **Outcome**: Overall status (PASSED/FAILED).
-- **Step-by-step Logs**: Expected vs. observed behavior for each scenario step.
-- **Formal-model Verification**: Confirmation of invariants (e.g., I4, I5, I7) during the run.
+Polling at a 2-second interval keeps the views current, there are no websockets.
 
-These reports are suitable for inclusion in Section 8.4 of the paper.
+### 4. Run the three scenarios from the CLI
 
-| Column | Meaning | Unit |
-|--------|---------|------|
-| `latency_ms` | End-to-end operation time | milliseconds |
-| `bytes_payload` | JSON payload size | bytes |
-| `bytes_index` | DB storage overhead | bytes (0 if unsupported) |
-| `warmup` | Flag for initial non-recorded runs | boolean |
-
-### Visualizations
-
-Produce plots from CSV results:
-```bash
-python workload-generator/scripts/plot.py workload-generator/output/results.csv
-```
-
-### Limitations & Research Readiness
-
-- **`bytes_index`**: Currently defaults to `0`. Database introspection for exact storage overhead is not yet implemented at the platform level.
-- **`query` workload**: Stubbed as regulatory query endpoints (P-9) are not part of this implementation phase.
-- **Depth/Fan-out Ranges**: Recommended maximum depth is 15 and fan-out 50 for stable local runs.
-- **Docker Dependency**: E2E tests and live federation runs require a running Docker daemon. If Docker is unavailable, tests will skip cleanly.
-- **Federation Reset**: The `workload measure` command attempts to reset the federation via the Factory between runs. Ensure the Factory has sufficient permissions to manage containers.
-
-### E2E Testing
-
-To run the complete certification suite (requires Docker):
-```bash
-cd workload-generator
-pytest tests/e2e -m e2e
-```
-
-## Testing
-
-The project includes unit, integration, and E2E tests for the Factory.
+With the federation running, install and run the Workload Generator. From the repository root:
 
 ```bash
-# Run unit and integration tests
-py -3.14 -m pytest factory/tests
-
-# Run E2E tests (requires Docker)
-py -3.14 -m pytest factory/tests/e2e -m e2e
+cd dpp-workload-generator
+pip install -e .          # or: uv pip install -e .
 ```
 
-## Documentation
+Then run each scenario. They discover the live topology through the Factory, so no URLs need to be supplied:
 
-- [Task List](factory/factory_implementation_tasks.md)
-- [Implementation Log](IMPLEMENTATION_LOG.md)
-- [Tech Stack](tech_stack.md)
+```bash
+workload scenario s1 --output-dir output/scenarios   # offline validation after platform unavailability
+workload scenario s2 --output-dir output/scenarios   # independent schema evolution
+workload scenario s3 --output-dir output/scenarios   # schema-level cycle rejection
+```
+
+Each command writes a Markdown report with per-step expected-vs-observed outcomes and a PASSED/FAILED verdict, suitable for inclusion in Section 8.4 of the paper. The same CLI also drives the quantitative measurements (`workload measure ...`); see the [Workload Generator README](dpp-workload-generator/README.md) for the full command set.
+
+## Further documentation
+
+- [Tech Stack](tech_stack.md) — definitive technology decisions per module.
+- Per-module READMEs linked in the table above.

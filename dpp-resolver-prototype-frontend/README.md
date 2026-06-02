@@ -1,59 +1,38 @@
-# Frontend
+# DPP Resolver Prototype Frontend
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.9.
+Simple Angular frontend for operating and inspecting the Resolver Prototype federation.
+This is more a convenience tool for testing and debugging the Resolver Prototype federation.
 
-## Development server
+## Functionality
 
-To start a local development server, run:
+- Live federation overview with resolver and platform status.
+- Platform management: spawn, pause, resume, reset, delete, and inspect logs.
+- DPP platform detail views with DPP lists, revision history, JSON viewing, creation, and revision editing.
+- Resolver detail view with subject types, supporting platforms, schemas, schema viewing/editing, and resolver logs.
+- Scenario runner for S1, S2, and S3 with copyable status and rendered reports.
+- Visual error and status feedback for failed backend calls.
 
-```bash
-ng serve
-```
+## Start Locally
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+The frontend expects the Factory API at `http://localhost:8000`.
 
 ```bash
-ng generate --help
+npm install
+npm start
 ```
 
-## Building
+Open `http://localhost:4200`.
 
-To build the project run:
+## Useful Commands
 
 ```bash
-ng build
+npm run build
+npm test
+npm run e2e
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+To run it through Docker from the repository root:
 
 ```bash
-ng test
+docker compose up -d --build frontend
 ```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
