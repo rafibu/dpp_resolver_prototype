@@ -40,8 +40,8 @@ implemented in this resolver.
 | Paper operation         | Meaning                                                                             | Java implementation                                                                  |
 |-------------------------|-------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
 | **publishSchema**       | Add a new schema artefact to the authoritative set, enforcing I6 and compatibility. | `POST /schemas` handled by `DppSchemaController`, `DppSchemaService.save(...)`       |
-| **registerIssuer**      | Add a new issuer-to-platform mapping to the resolver registry.                      | `POST /admin/platforms` (upsert: new issuer = register) via `PlatformController`     |
-| **migrate**             | Update an existing issuer's platform mapping in the resolver registry.              | `POST /admin/platforms` (upsert: existing issuer = migrate) via `PlatformController` |
+| **registerIssuer**      | Add a new issuer-to-platform mapping to the resolver registry.                      | `POST /admin/platforms/register` via `PlatformController`                            |
+| **migrate**             | Update an existing issuer's platform mapping in the resolver registry.              | `POST /admin/platforms/{issuerId}/migrate` via `PlatformController`                  |
 | **resolve** (read-only) | Look up the hosting platform for a federated reference and return a redirect URL.   | `GET /{subjectType}/{dppId}[/{revision}]` via `UrlResolverController`                |
 
 ## Implementation overview
@@ -152,15 +152,16 @@ may itself contain `-` (for example when it is a UUID).
 
 ### `PlatformController`
 
-Exposes the `registerIssuer` and `migrate` operations via a
-single upsert endpoint. A `POST /admin/platforms` request creates a registry entry if the issuer
-is new, or updates it if the issuer is already registered.
+Exposes the `registerIssuer` and `migrate` operations via separate command endpoints.
+Registration creates a new issuer entry; migration updates the platform and resolution URL for
+an existing issuer while preserving that issuer's subject types.
 
-| Method | Path                    | Paper operation or concept                 | Purpose                                           |
-|--------|-------------------------|--------------------------------------------|---------------------------------------------------|
-| `GET`  | `/admin/platforms`      | Resolver registry (Definition 10)          | Lists all issuer-to-platform mappings.            |
-| `GET`  | `/admin/platforms/{st}` | Resolver registry filtered by subject type | Lists mappings for a given subject type.          |
-| `POST` | `/admin/platforms`      | **registerIssuer** or **migrate**          | Creates or updates an issuer-to-platform mapping. |
+| Method | Path                                  | Paper operation or concept                 | Purpose                                           |
+|--------|---------------------------------------|--------------------------------------------|---------------------------------------------------|
+| `GET`  | `/admin/platforms`                    | Resolver registry (Definition 10)          | Lists all issuer-to-platform mappings.            |
+| `GET`  | `/admin/platforms/{st}`               | Resolver registry filtered by subject type | Lists mappings for a given subject type.          |
+| `POST` | `/admin/platforms/register`           | **registerIssuer**                         | Creates a new issuer-to-platform mapping.         |
+| `POST` | `/admin/platforms/{issuerId}/migrate` | **migrate**                                | Moves an existing issuer to a known platform.     |
 
 ### `DppSchemaController`
 
@@ -301,13 +302,13 @@ curl -X POST http://localhost:8080/admin/subject-types \
   -H "Content-Type: application/json" \
   -d '{"name": "battery", "description": "EV battery passport"}'
 
-curl -X POST http://localhost:8080/admin/platforms \
+curl -X POST http://localhost:8080/admin/platforms/register \
   -H "Content-Type: application/json" \
   -d '{
     "platform": "Platform A",
-    "issuerId": "issuerA",
-    "resolutionUrl": "http://platform-a:8081/dpps/{dppId}",
-    "subjectTypes": ["battery"]
+    "issuer_id": "issuerA",
+    "resolution_url": "http://platform-a:8081/dpps/{dppId}",
+    "subject_types": ["battery"]
   }'
 ```
 

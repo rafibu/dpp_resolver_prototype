@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
+ * DTO used to register a new issuer-to-platform mapping.
  *
  * @author rbu on 20.04.2026
  */

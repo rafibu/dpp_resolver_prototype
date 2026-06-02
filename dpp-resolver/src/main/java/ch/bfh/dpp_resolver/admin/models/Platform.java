@@ -10,8 +10,9 @@ import java.util.List;
  * One entry in the resolver registry (Definition 10 of the formal model).
  *
  * <p>Maps an issuer identifier ({@link #abbreviation}) to the URL template of the platform
- * that currently hosts its DPPs. Created by the {@code registerIssuer} operation and
- * updated by {@code migrate}, both via {@code POST /admin/platforms}.</p>
+ * that currently hosts its DPPs. Created by the {@code registerIssuer} operation
+ * via {@code POST /admin/platforms/register} and updated by {@code migrate} via
+ * {@code POST /admin/platforms/{issuerId}/migrate}.</p>
  *
  * @see ch.bfh.dpp_resolver.admin.controllers.PlatformController
  */
