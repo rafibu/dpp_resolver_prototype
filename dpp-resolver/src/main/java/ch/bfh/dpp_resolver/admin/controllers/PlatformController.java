@@ -17,7 +17,9 @@ import java.util.NoSuchElementException;
  * <p>Exposes separate HTTP endpoints for the {@code registerIssuer} and
  * {@code migrate} operations. Registering creates a new issuer-to-platform
  * registry entry; migrating updates the hosting platform for an existing issuer
- * without changing the issuer's declared subject types.</p>
+ * without changing the issuer's declared subject types.
+ * Adding subject-type support extends an existing issuer mapping without
+ * registering or migrating it.</p>
  *
  * <p>Query endpoints return the current state of the registry for monitoring and
  * federation discovery by the Factory and Frontend components.</p>
@@ -97,7 +99,7 @@ public class PlatformController {
      * which prevents migration from accidentally creating a new issuer or platform
      * mapping.</p>
      *
-     * @param issuerId the issuerId to migrate
+     * @param issuerId   the issuerId to migrate
      * @param requestDTO the target platform name and new resolution URL
      * @return the updated registry entry with HTTP 200
      */
@@ -108,6 +110,33 @@ public class PlatformController {
             return ResponseEntity.ok(platformMappingService.migrateIssuer(issuerId, requestDTO));
         } catch (NoSuchElementException e) {
             log.error("Migration failed for issuerId: {}, error: {}", issuerId, e.getMessage());
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    /**
+     * Adds subject-type support to an existing issuer mapping.
+     *
+     * <p>This endpoint extends the issuer's declared subject-type set while
+     * preserving its platform name and resolution URL. It is intentionally
+     * separate from {@code registerIssuer} and {@code migrate}: it cannot create a
+     * new issuer mapping and cannot move an issuer to another platform.</p>
+     *
+     * @param issuerId    the existing issuer mapping to extend
+     * @param subjectType the existing subject type to add to the issuer mapping
+     * @return the updated registry entry with HTTP 200
+     */
+    @PostMapping("/{issuerId}/subject-types/{subjectType}")
+    public ResponseEntity<PlatformMappingDTO> addSubjectTypeSupport(
+            @PathVariable String issuerId,
+            @PathVariable String subjectType
+    ) {
+        log.info("Add subject type support: issuerId={}, subjectType={}", issuerId, subjectType);
+        try {
+            return ResponseEntity.ok(platformMappingService.addSubjectTypeSupport(issuerId, subjectType));
+        } catch (NoSuchElementException e) {
+            log.error("Adding subject type support failed for issuerId: {}, subjectType: {}, error: {}",
+                    issuerId, subjectType, e.getMessage());
             throw new IllegalArgumentException(e);
         }
     }

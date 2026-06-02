@@ -120,6 +120,74 @@ class PlatformControllerTest extends ControllerTest {
     }
 
     @Test
+    void addSubjectTypeSupport_shouldAppendWithoutChangingExistingMapping() throws Exception {
+        postResponseAsObject("/admin/subject-types", gson.toJson(new SubjectTypeDTO("S1", "Subject 1")), SubjectTypeDTO.class);
+        postResponseAsObject("/admin/subject-types", gson.toJson(new SubjectTypeDTO("S2", "Subject 2")), SubjectTypeDTO.class);
+
+        PlatformMappingDTO original = PlatformMappingDTO.builder()
+                .subjectTypes(List.of("S1"))
+                .platform("Platform A")
+                .issuerId("platA")
+                .resolutionUrl("https://platform-a.example/dpps/{dppId}")
+                .build();
+        postResponseAsObject("/admin/platforms/register", gson.toJson(original), PlatformMappingDTO.class);
+
+        PlatformMappingDTO updated = postOkResponseAsObject("/admin/platforms/platA/subject-types/S2", "", PlatformMappingDTO.class);
+
+        assertEquals("platA", updated.getIssuerId());
+        assertEquals("Platform A", updated.getPlatform());
+        assertEquals("https://platform-a.example/dpps/{dppId}", updated.getResolutionUrl());
+        assertTrue(updated.getSubjectTypes().contains("S1"));
+        assertTrue(updated.getSubjectTypes().contains("S2"));
+
+        PlatformMappingDTO[] s1Mappings = getResponseAsObject("/admin/platforms/S1", PlatformMappingDTO[].class);
+        assertEquals(1, s1Mappings.length);
+        assertEquals("platA", s1Mappings[0].getIssuerId());
+
+        PlatformMappingDTO[] s2Mappings = getResponseAsObject("/admin/platforms/S2", PlatformMappingDTO[].class);
+        assertEquals(1, s2Mappings.length);
+        assertEquals("platA", s2Mappings[0].getIssuerId());
+    }
+
+    @Test
+    void addSubjectTypeSupport_shouldBeIdempotent() throws Exception {
+        postResponseAsObject("/admin/subject-types", gson.toJson(new SubjectTypeDTO("S1", "Subject 1")), SubjectTypeDTO.class);
+
+        PlatformMappingDTO original = PlatformMappingDTO.builder()
+                .subjectTypes(List.of("S1"))
+                .platform("Platform A")
+                .issuerId("platA")
+                .resolutionUrl("https://platform-a.example/dpps/{dppId}")
+                .build();
+        postResponseAsObject("/admin/platforms/register", gson.toJson(original), PlatformMappingDTO.class);
+
+        postOkResponseAsObject("/admin/platforms/platA/subject-types/S1", "", PlatformMappingDTO.class);
+        PlatformMappingDTO updated = postOkResponseAsObject("/admin/platforms/platA/subject-types/S1", "", PlatformMappingDTO.class);
+
+        assertEquals(1L, updated.getSubjectTypes().stream().filter("S1"::equals).count());
+    }
+
+    @Test
+    void addSubjectTypeSupport_shouldRejectUnknownIssuerOrSubjectType() throws Exception {
+        postResponseAsObject("/admin/subject-types", gson.toJson(new SubjectTypeDTO("S1", "Subject 1")), SubjectTypeDTO.class);
+
+        PlatformMappingDTO original = PlatformMappingDTO.builder()
+                .subjectTypes(List.of("S1"))
+                .platform("Platform A")
+                .issuerId("platA")
+                .resolutionUrl("https://platform-a.example/dpps/{dppId}")
+                .build();
+        postResponseAsObject("/admin/platforms/register", gson.toJson(original), PlatformMappingDTO.class);
+
+        postErrorStatusCode("/admin/platforms/unknown/subject-types/S1", HttpStatus.BAD_REQUEST);
+        postErrorStatusCode("/admin/platforms/platA/subject-types/S2", HttpStatus.BAD_REQUEST);
+
+        PlatformMappingDTO[] all = getResponseAsObject("/admin/platforms", PlatformMappingDTO[].class);
+        assertEquals(1, all.length);
+        assertEquals(List.of("S1"), all[0].getSubjectTypes());
+    }
+
+    @Test
     void registerIssuer_shouldRejectExistingIssuer_withoutChangingMapping() throws Exception {
         postResponseAsObject("/admin/subject-types", gson.toJson(new SubjectTypeDTO("S1", "Subject 1")), SubjectTypeDTO.class);
         postResponseAsObject("/admin/subject-types", gson.toJson(new SubjectTypeDTO("S2", "Subject 2")), SubjectTypeDTO.class);

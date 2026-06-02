@@ -16,13 +16,15 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 
 /**
- * Implements the {@code registerIssuer} and {@code migrate} resolver operations.
+ * Implements resolver registry command operations.
  *
  * <p>The resolver registry (Definition 10) maps issuer identifiers to hosting
  * platforms. This service persists and retrieves those mappings through separate
  * command methods: {@link #registerIssuer(PlatformMappingDTO)} creates a new
- * issuer entry, while {@link #migrateIssuer(String, PlatformMigrationRequestDTO)}
- * moves an existing issuer entry to a different hosting platform.</p>
+ * issuer entry, {@link #migrateIssuer(String, PlatformMigrationRequestDTO)}
+ * moves an existing issuer entry to a different hosting platform, and
+ * {@link #addSubjectTypeSupport(String, String)} extends the subject-type set of
+ * an already registered issuer.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -86,6 +88,43 @@ public class PlatformMappingService {
         Platform platform = existing.get();
         platform.setResolutionUrl(requestDTO.getNewResolutionUrl());
         platform.setPlatformName(requestDTO.getPlatform());
+        return toDTO(platformRepository.save(platform));
+    }
+
+    /**
+     * Adds one subject type to an existing issuer mapping.
+     *
+     * <p>This is a registry-maintenance command for prototype workload generation:
+     * Existing subject types on the issuer are preserved,
+     * so the command is monotonic and idempotent.</p>
+     *
+     * @param issuerId the existing issuer mapping to extend
+     * @param subjectTypeName the existing subject type to add
+     * @return the updated issuer mapping
+     */
+    @Transactional
+    public PlatformMappingDTO addSubjectTypeSupport(String issuerId, String subjectTypeName) {
+        Platform platform = platformRepository.findByAbbreviation(issuerId)
+                .orElseThrow(() -> new NoSuchElementException("Issuer not registered, use register if it should be added"));
+        SubjectType subjectType = subjectTypeRepository.findByName(subjectTypeName)
+                .orElseThrow(() -> new NoSuchElementException("Subject type not registered, create it before adding platform support"));
+
+        if (platform.getSubjectTypes() == null) {
+            platform.setSubjectTypes(new ArrayList<>());
+        }
+
+        boolean alreadySupported = platform.getSubjectTypes().stream()
+                .anyMatch(existing -> existing.getName().equals(subjectTypeName));
+        if (!alreadySupported) {
+            platform.getSubjectTypes().add(subjectType);
+        }
+
+        boolean inverseAlreadyLinked = subjectType.getPlatforms().stream()
+                .anyMatch(existing -> existing.getAbbreviation().equals(issuerId));
+        if (!inverseAlreadyLinked) {
+            subjectType.getPlatforms().add(platform);
+        }
+
         return toDTO(platformRepository.save(platform));
     }
 
