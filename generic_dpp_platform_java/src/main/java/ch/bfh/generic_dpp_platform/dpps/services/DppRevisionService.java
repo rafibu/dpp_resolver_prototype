@@ -16,6 +16,7 @@ import ch.bfh.generic_dpp_platform.schemas.connectors.ResolverConnector;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
 import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -70,6 +71,8 @@ public class DppRevisionService {
      * </p>
      */
     private static final String DPP_ID_ISSUER_SEPARATOR = "-";
+    private static final int DIRECT_REVISION_RESOLUTION_DEPTH = 1;
+    private static final int MAX_CLOSURE_DEPTH = 10;
 
     @Transactional(readOnly = true)
     public List<DppSummaryDTO> listAllDpps() {
@@ -128,7 +131,10 @@ public class DppRevisionService {
      * <p>
      * If {@code version} is null, the method returns the current revision, defined as the revision with the
      * highest version number. If {@code version} is present, the method returns exactly that immutable revision.
-     * This endpoint is used both by local clients and by other platforms after resolver indirection.
+     * This method preserves the direct revision response contract: callers receive only the requested revision,
+     * not the transitive hard-reference closure. It still routes through the shared resolution logic with
+     * {@code maxDepth = 1}; callers that need the bounded closure should use
+     * {@link #getDppRevisionClosure(String, Integer, Integer)}.
      * </p>
      *
      * @param dppId   the issuer-qualified DPP identifier
@@ -139,6 +145,75 @@ public class DppRevisionService {
      */
     @Transactional(readOnly = true)
     public DppRevisionResponseDTO getDppRevision(String dppId, Integer version) {
+        return resolveDppRevision(
+                dppId,
+                version,
+                DppRevisionResolutionOptions.direct()
+        ).rootRevision();
+    }
+
+    /**
+     * Returns a bounded hard-reference closure rooted at a specific revision of a locally hosted DPP.
+     * <p>
+     * Closure resolution returns the root revision plus unique hard-reference dependencies reached by recursively
+     * traversing payload references up to {@code maxDepth}. A depth of {@code 1} includes only direct hard
+     * references; a depth of {@code 2} also includes hard references of those directly referenced revisions.
+     * Soft references are not traversed. The traversal is intended for validation, audit, offline caching, and
+     * benchmark scenarios where clients need a deterministic bounded dependency set.
+     * </p>
+     *
+     * @param dppId    the issuer-qualified DPP identifier
+     * @param version  the concrete revision version
+     * @param maxDepth positive traversal depth, bounded to {@value #MAX_CLOSURE_DEPTH}
+     * @return the root revision and the resolved hard-reference closure entries
+     * @throws IllegalArgumentException        if {@code dppId} is null or {@code maxDepth} is invalid
+     * @throws NoSuchElementException          if the root DPP or revision does not exist locally
+     * @throws DppReferenceResolutionException if a hard reference in the bounded closure cannot be resolved
+     */
+    @Transactional
+    public DppRevisionClosureResponseDTO getDppRevisionClosure(String dppId, Integer version, Integer maxDepth) {
+        DppRevisionResolutionOptions options = DppRevisionResolutionOptions.closure(maxDepth);
+        return resolveDppRevision(dppId, version, options).toClosureDTO();
+    }
+
+    private DppRevisionResolutionResult resolveDppRevision(String dppId,
+                                                          Integer version,
+                                                          DppRevisionResolutionOptions options) {
+        DppRevisionResponseDTO rootRevision = loadStoredDppRevision(dppId, version);
+
+        if (!options.expandClosure()) {
+            return new DppRevisionResolutionResult(rootRevision, List.of());
+        }
+
+        LinkedHashMap<RevisionKey, DppRevisionResponseDTO> resolvedRevisions = new LinkedHashMap<>();
+        Set<RevisionKey> visited = new HashSet<>();
+        Deque<TraversalItem> queue = new ArrayDeque<>();
+
+        visited.add(RevisionKey.from(rootRevision));
+        queue.addLast(new TraversalItem(rootRevision, 0));
+
+        while (!queue.isEmpty()) {
+            TraversalItem current = queue.removeFirst();
+            if (current.depth() >= options.maxDepth()) {
+                continue;
+            }
+
+            for (DppReference ref : extractSortedHardReferences(current.revision())) {
+                RevisionKey key = RevisionKey.from(ref);
+                if (!visited.add(key)) {
+                    continue;
+                }
+
+                DppRevisionResponseDTO resolved = resolveHardReference(ref);
+                resolvedRevisions.put(key, resolved);
+                queue.addLast(new TraversalItem(resolved, current.depth() + 1));
+            }
+        }
+
+        return new DppRevisionResolutionResult(rootRevision, List.copyOf(resolvedRevisions.values()));
+    }
+
+    private DppRevisionResponseDTO loadStoredDppRevision(String dppId, Integer version) {
         if (dppId == null) {
             throw new IllegalArgumentException("DPP id must not be null");
         }
@@ -156,6 +231,17 @@ public class DppRevisionService {
         DppRevision exactMatch = dppRevisionRepository.findById(new DppRevisionId(version, dppId))
                 .orElseThrow(() -> new NoSuchElementException("Revision %d not found for DPP ID: %s".formatted(version, dppId)));
         return toDTO(exactMatch);
+    }
+
+    private List<DppReference> extractSortedHardReferences(DppRevisionResponseDTO revision) {
+        return referenceExtractor.extractReferences(objectMapper.valueToTree(revision.getDppPayload())).stream()
+                .filter(ref -> ref.type() == DppReference.DependencyType.HARD)
+                .sorted(Comparator
+                        .comparing(DppReference::subjectType, Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(DppReference::dppId, Comparator.nullsFirst(String::compareTo))
+                        .thenComparing(DppReference::version, Comparator.nullsFirst(Integer::compareTo))
+                        .thenComparing(DppReference::jsonPath, Comparator.nullsFirst(String::compareTo)))
+                .toList();
     }
 
     /**
@@ -272,7 +358,7 @@ public class DppRevisionService {
          */
         for (DppReference ref : references) {
             if (ref.type() == DppReference.DependencyType.HARD) {
-                resolveAndCacheHardReference(ref);
+                resolveHardReference(ref);
             }
         }
 
@@ -292,35 +378,39 @@ public class DppRevisionService {
     }
 
     /**
-     * Verifies that a hard reference resolves to an existing concrete revision.
+     * Resolves a hard reference to an existing concrete revision and caches external results.
      * <p>
      * Local references are checked directly against this platform's revision repository. External references are
      * first looked up in the local reference cache. If absent, the resolver is used to locate and fetch the target
      * revision from the currently hosting platform; the fetched revision is then cached locally.
      * </p>
      * <p>
-     * This method operationalizes invariant I7 for hard references. It is not used for soft references.
+     * This method operationalizes invariant I7 for hard references and is shared by revision creation and bounded
+     * closure traversal. It is not used for soft references.
      * </p>
      *
      * @param ref the hard reference to resolve
+     * @return the resolved revision DTO
      * @throws DppReferenceResolutionException if the target revision cannot be found locally, resolved through
      *                                         the resolver, fetched from the target platform, or cached
      */
-    private void resolveAndCacheHardReference(DppReference ref) {
+    private DppRevisionResponseDTO resolveHardReference(DppReference ref) {
         String issuerId = getIssuerId();
         // Check if local
         if (isDppIdOwnedByIssuer(ref.dppId(), issuerId)) {
-            if (!dppRevisionRepository.existsById(new DppRevisionId(ref.version(), ref.dppId()))) {
-                throw new DppReferenceResolutionException("Local hard reference not found: " + ref.originalRef(), ref.originalRef());
-            }
-            return;
+            DppRevision revision = dppRevisionRepository.findById(new DppRevisionId(ref.version(), ref.dppId()))
+                    .orElseThrow(() -> new DppReferenceResolutionException(
+                            "Local hard reference not found: " + ref.originalRef(),
+                            ref.originalRef()
+                    ));
+            return toDTO(revision);
         }
 
         // Check cache
         Optional<ReferencedDppRevision> cached = cacheService.getCachedRevision(ref.dppId(), ref.version());
         if (cached.isPresent()) {
             log.info("Using cached revision for hard reference: {}", ref.originalRef());
-            return;
+            return toDTO(cached.get());
         }
 
         // Resolve via Resolver
@@ -340,18 +430,28 @@ public class DppRevisionService {
             throw new DppReferenceResolutionException("Resolver returned null for " + ref.originalRef(), ref.originalRef());
         }
 
-        // Cache it
+        cacheResolvedExternalRevision(ref, resolved);
+        return resolved;
+    }
+
+    private void cacheResolvedExternalRevision(DppReference ref, DppRevisionResponseDTO resolved) {
         ReferencedDppRevision external = ReferencedDppRevision.builder()
                 .id(new ReferencedDppRevisionId(ref.dppId(), ref.version()))
                 .subjectType(ref.subjectType())
                 .schemaSubjectType(resolved.getSchemaVersion().getSubjectType())
                 .schemaMajorVersion(resolved.getSchemaVersion().getMajorVersion())
                 .schemaMinorVersion(resolved.getSchemaVersion().getMinorVersion())
-                .dppDocument((Map<String, Object>) resolved.getDppPayload())
+                .dppDocument(toPayloadMap(resolved.getDppPayload()))
                 .hashedDocument(DppUtil.hexToHash(resolved.getPayloadHash()))
+                .createdAt(resolved.getCreatedAt() != null ? resolved.getCreatedAt().toInstant() : null)
                 .fetchedAt(Instant.now())
                 .build();
         cacheService.cacheRevision(external);
+    }
+
+    private Map<String, Object> toPayloadMap(Object payload) {
+        return objectMapper.convertValue(payload, new TypeReference<>() {
+        });
     }
 
     /**
@@ -470,6 +570,21 @@ public class DppRevisionService {
                 .build();
     }
 
+    private static DppRevisionResponseDTO toDTO(ReferencedDppRevision dppRevision) {
+        return DppRevisionResponseDTO.builder()
+                .dppId(dppRevision.getDppId())
+                .version(dppRevision.getDppVersion())
+                .schemaVersion(DppRevisionSchemaDTO.builder()
+                        .subjectType(dppRevision.getSchemaSubjectType())
+                        .majorVersion(dppRevision.getSchemaMajorVersion())
+                        .minorVersion(dppRevision.getSchemaMinorVersion())
+                        .build())
+                .dppPayload(dppRevision.getDppDocument())
+                .payloadHash(DppUtil.hashToHex(dppRevision.getHashedDocument()))
+                .createdAt(dppRevision.getCreatedAt() != null ? Date.from(dppRevision.getCreatedAt()) : null)
+                .build();
+    }
+
     private static DppRevisionSchemaDTO toSchemaDTO(DppSchema schema) {
         return DppRevisionSchemaDTO.builder()
                 .subjectType(schema.getSubjectType().getName())
@@ -496,6 +611,45 @@ public class DppRevisionService {
                     "DPP ID must start with issuer ID followed by '%s': %s%s"
                             .formatted(DPP_ID_ISSUER_SEPARATOR, issuerId, DPP_ID_ISSUER_SEPARATOR)
             );
+        }
+    }
+
+    private record DppRevisionResolutionOptions(int maxDepth, boolean expandClosure) {
+        private static DppRevisionResolutionOptions direct() {
+            return new DppRevisionResolutionOptions(DIRECT_REVISION_RESOLUTION_DEPTH, false);
+        }
+
+        private static DppRevisionResolutionOptions closure(Integer maxDepth) {
+            if (maxDepth == null) {
+                maxDepth = MAX_CLOSURE_DEPTH;
+            }
+            if (maxDepth < 1 || maxDepth > MAX_CLOSURE_DEPTH) {
+                throw new IllegalArgumentException("maxDepth must be between 1 and " + MAX_CLOSURE_DEPTH);
+            }
+            return new DppRevisionResolutionOptions(maxDepth, true);
+        }
+    }
+
+    private record DppRevisionResolutionResult(DppRevisionResponseDTO rootRevision,
+                                               List<DppRevisionResponseDTO> resolvedRevisions) {
+        private DppRevisionClosureResponseDTO toClosureDTO() {
+            return DppRevisionClosureResponseDTO.builder()
+                    .rootRevision(rootRevision)
+                    .resolvedRevisions(resolvedRevisions)
+                    .build();
+        }
+    }
+
+    private record TraversalItem(DppRevisionResponseDTO revision, int depth) {
+    }
+
+    private record RevisionKey(String dppId, Integer version) {
+        private static RevisionKey from(DppRevisionResponseDTO revision) {
+            return new RevisionKey(revision.getDppId(), revision.getVersion());
+        }
+
+        private static RevisionKey from(DppReference ref) {
+            return new RevisionKey(ref.dppId(), ref.version());
         }
     }
 }

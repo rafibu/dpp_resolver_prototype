@@ -1,9 +1,6 @@
 package ch.bfh.generic_dpp_platform.dpps.controllers;
 
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppDetailDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionRequestDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionResponseDTO;
-import ch.bfh.generic_dpp_platform.dpps.dtos.DppSummaryDTO;
+import ch.bfh.generic_dpp_platform.dpps.dtos.*;
 import ch.bfh.generic_dpp_platform.dpps.services.DppRevisionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,21 +48,51 @@ public class DppController {
     }
 
     /**
-     * Returns a specific immutable revision of a locally hosted DPP.
+     * Returns a specific immutable revision of a locally hosted DPP using the direct revision response contract.
      * <p>
      * This endpoint is the concrete platform endpoint that another platform fetches after resolving a hard
      * reference through the resolver.
      * </p>
      *
-     * @param dpp_id           the issuer-qualified DPP identifier
-     * @param revision_version the concrete revision version
+     * @param dppId           the issuer-qualified DPP identifier
+     * @param revisionVersion the concrete revision version
      * @return the requested revision
      */
     @GetMapping("/{dpp_id}/{revision_version}")
-    public ResponseEntity<DppRevisionResponseDTO> getDppRevision(@PathVariable String dpp_id,
-                                                                 @PathVariable Integer revision_version) {
-        log.info("Retrieving exact DPP revision for dpp_id: {} and revision_version: {}", dpp_id, revision_version);
-        DppRevisionResponseDTO response = dppRevisionService.getDppRevision(dpp_id, revision_version);
+    public ResponseEntity<DppRevisionResponseDTO> getDppRevision(@PathVariable(name = "dpp_id") String dppId,
+                                                                 @PathVariable(name = "revision_version") Integer revisionVersion) {
+        log.info("Retrieving exact DPP revision for dpp_id: {} and revision_version: {}", dppId, revisionVersion);
+        DppRevisionResponseDTO response = dppRevisionService.getDppRevision(dppId, revisionVersion);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Returns a bounded recursive hard-reference closure rooted at a specific immutable revision.
+     * <p>
+     * The response contains the root revision and the unique hard-reference revisions reached up to
+     * {@code maxDepth}. A depth of {@code 1} resolves only direct hard references of the root revision, a depth of
+     * {@code 2} also resolves hard references of those directly referenced revisions. Soft references are not
+     * traversed.
+     * As this is not part of the actual formal model, it is implemented to showcase why we only resolve depth of one.
+     * As for a fan-out of f and a depth of d we would have O(f^d) for the full closure
+     * </p>
+     *
+     * @param dppId           the issuer-qualified DPP identifier
+     * @param revisionVersion the concrete revision version
+     * @param maxDepth         positive traversal depth, currently bounded by the service to a reasonable limit
+     * @return the root revision and resolved closure entries
+     */
+    @GetMapping("/{dpp_id}/{revision_version}/closure")
+    public ResponseEntity<DppRevisionClosureResponseDTO> getDppRevisionClosure(@PathVariable(name = "dpp_id") String dppId,
+                                                                               @PathVariable(name = "revision_version") Integer revisionVersion,
+                                                                               @RequestParam(required = false, name = "max_depth") Integer maxDepth) {
+        log.info(
+                "Retrieving DPP revision closure for dpp_id: {}, revision_version: {}, maxDepth: {}",
+                dppId,
+                revisionVersion,
+                maxDepth
+        );
+        DppRevisionClosureResponseDTO response = dppRevisionService.getDppRevisionClosure(dppId, revisionVersion, maxDepth);
         return ResponseEntity.ok(response);
     }
 
@@ -91,15 +118,15 @@ public class DppController {
      * This endpoint implements the platform-side {@code revise} operation from the transition system.
      * </p>
      *
-     * @param dpp_id         the issuer-qualified DPP identifier
+     * @param dppId         the issuer-qualified DPP identifier
      * @param dppRevisionDTO request containing the payload, schema version, and optional next version
      * @return the created revision
      */
     @PostMapping("/{dpp_id}/revise")
-    public ResponseEntity<DppRevisionResponseDTO> reviseExistingDpp(@PathVariable String dpp_id,
+    public ResponseEntity<DppRevisionResponseDTO> reviseExistingDpp(@PathVariable(name = "dpp_id") String dppId,
                                                                     @RequestBody DppRevisionRequestDTO dppRevisionDTO) {
-        log.info("Creating a new DPP revision for existing DPP {}", dpp_id);
-        DppRevisionResponseDTO createdRevision = dppRevisionService.reviseExistingDpp(dpp_id, dppRevisionDTO);
+        log.info("Creating a new DPP revision for existing DPP {}", dppId);
+        DppRevisionResponseDTO createdRevision = dppRevisionService.reviseExistingDpp(dppId, dppRevisionDTO);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdRevision);
     }
 }
