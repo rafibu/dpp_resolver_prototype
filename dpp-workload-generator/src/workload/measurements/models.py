@@ -16,6 +16,8 @@ class ResolveFanoutConfig:
     timeout_seconds: float
     seed: str | None
     verbose_errors: bool
+    max_resolved_depth: int | None = None
+    payload_entries: int = 4
     verbose: bool = False
 
 
@@ -69,6 +71,7 @@ class ResolveMeasurementSummary:
 
     fanout: int
     depth: int
+    max_resolved_depth: int | None
     platform_count: int
     total_revisions: int
     samples: int
@@ -87,4 +90,5 @@ class ResolveMeasurementSummary:
     created_platforms: int = 0
     subject_types: int = 0
     root_revision: str | None = None
+    payload_entries: int = 4
     error_details: tuple[ResolveCallError, ...] = field(default_factory=tuple)

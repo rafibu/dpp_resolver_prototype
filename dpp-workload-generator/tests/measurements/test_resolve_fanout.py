@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from workload.clients import DppResponse
 from workload.federation import FederationOverview, PlatformInfo, PlatformStatus, ResolverInfo
 from workload.measurements.models import ResolveFanoutConfig
-from workload.measurements.resolve_fanout import run_resolve_fanout_benchmark
+from workload.measurements.resolve_fanout import effective_max_resolved_depth, run_resolve_fanout_benchmark
 
 
 def _factory_platform(index: int) -> PlatformInfo:
@@ -78,6 +78,7 @@ class FakeResolverClient:
         self.schemas: list[str] = []
         self.routes: list[tuple[str, str]] = []
         self.resolve_calls = 0
+        self.closure_calls: list[tuple[str, str, int | None, int, str | None]] = []
         self.closed = False
 
     async def ensure_subject_type(self, subject_type: str) -> None:
@@ -102,6 +103,25 @@ class FakeResolverClient:
         request = httpx.Request("GET", f"{self.base_url}/{subject_type}/{dpp_id}/{version}")
         return httpx.Response(200, content=f'{{"dpp_id":"{dpp_id}"}}', request=request)
 
+    async def resolve_revision_closure(
+        self,
+        subject_type: str,
+        dpp_id: str,
+        *,
+        version: int,
+        max_depth: int,
+        redirect_base_url: str | None = None,
+    ) -> httpx.Response:
+        self.resolve_calls += 1
+        self.closure_calls.append((subject_type, dpp_id, version, max_depth, redirect_base_url))
+        if self.resolve_calls in self.fail_on_calls:
+            raise RuntimeError("resolver exploded")
+        request = httpx.Request(
+            "GET",
+            f"{redirect_base_url}/dpps/{dpp_id}/{version}/closure?max_depth={max_depth}",
+        )
+        return httpx.Response(200, content=f'{{"dpp_id":"{dpp_id}"}}', request=request)
+
     async def close(self) -> None:
         self.closed = True
 
@@ -111,6 +131,7 @@ class PublishedRevision:
     platform_id: str
     dpp_id: str
     dependency_count: int
+    payload_entry_count: int
 
 
 class FakePlatformState:
@@ -140,6 +161,7 @@ class FakePlatformClient:
                 platform_id=self.platform.platform_id,
                 dpp_id=spec.dpp_id,
                 dependency_count=len(dependencies),
+                payload_entry_count=len(spec.dpp_payload),
             )
         )
         return DppResponse(
@@ -160,6 +182,49 @@ def _timer(values: list[int]):
     return lambda: next(iterator)
 
 
+def _config(**overrides) -> ResolveFanoutConfig:
+    values = {
+        "factory_url": "http://factory",
+        "fanout": 1,
+        "depth": 2,
+        "platform_count": 2,
+        "samples": 1,
+        "warmup": 0,
+        "timeout_seconds": 30.0,
+        "seed": "config",
+        "verbose_errors": False,
+    }
+    values.update(overrides)
+    return ResolveFanoutConfig(**values)
+
+
+def test_default_max_resolved_depth_equals_generated_depth():
+    assert effective_max_resolved_depth(_config(depth=4, max_resolved_depth=None)) == 4
+
+
+def test_explicit_max_resolved_depth_is_accepted():
+    assert effective_max_resolved_depth(_config(depth=4, max_resolved_depth=1)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_resolved_depth", [0, -1])
+async def test_invalid_max_resolved_depth_is_rejected(max_resolved_depth: int):
+    with pytest.raises(ValueError, match="max-resolved-depth must be >= 1"):
+        await run_resolve_fanout_benchmark(_config(depth=4, max_resolved_depth=max_resolved_depth))
+
+
+@pytest.mark.asyncio
+async def test_invalid_payload_entries_is_rejected():
+    with pytest.raises(ValueError, match="payload-entries must be >= 1"):
+        await run_resolve_fanout_benchmark(_config(payload_entries=0))
+
+
+@pytest.mark.asyncio
+async def test_max_resolved_depth_above_generated_depth_is_rejected():
+    with pytest.raises(ValueError, match="max-resolved-depth must not exceed depth"):
+        await run_resolve_fanout_benchmark(_config(depth=2, max_resolved_depth=3))
+
+
 @pytest.mark.asyncio
 async def test_resolve_fanout_orchestration_small_tree():
     fed = FakeFederationClient(platform_count=2)
@@ -169,13 +234,15 @@ async def test_resolve_fanout_orchestration_small_tree():
     config = ResolveFanoutConfig(
         factory_url="http://factory",
         fanout=1,
-        depth=1,
+        depth=2,
         platform_count=2,
         samples=2,
         warmup=1,
         timeout_seconds=30.0,
         seed="small",
         verbose_errors=False,
+        max_resolved_depth=2,
+        payload_entries=3,
     )
 
     summary = await run_resolve_fanout_benchmark(
@@ -189,14 +256,18 @@ async def test_resolve_fanout_orchestration_small_tree():
 
     assert fed.created == []
     assert len(resolver.subject_types) == 2
-    assert len(platform_state.published) == 2
+    assert len(platform_state.published) == 3
+    assert all(published.payload_entry_count == 3 for published in platform_state.published)
     assert "root" not in platform_state.published[0].dpp_id
-    assert platform_state.published[1].dpp_id.endswith("root")
+    assert platform_state.published[-1].dpp_id.endswith("root")
     assert resolver.resolve_calls == 3
+    assert [call[3] for call in resolver.closure_calls] == [2, 2, 2]
     assert summary.successful_calls == 2
     assert summary.errors == 0
     assert summary.median_ms == 25.0
-    assert sum(advance for _, advance in progress_events) == 10
+    assert summary.max_resolved_depth == 2
+    assert summary.payload_entries == 3
+    assert sum(advance for _, advance in progress_events) == 11
     assert progress_events[-1] == ("Measured resolve calls 2/2", 1)
 
 
@@ -215,6 +286,7 @@ async def test_resolve_fanout_creates_missing_platform():
         timeout_seconds=30.0,
         seed="grow",
         verbose_errors=False,
+        max_resolved_depth=1,
     )
 
     summary = await run_resolve_fanout_benchmark(
@@ -233,6 +305,7 @@ async def test_resolve_fanout_creates_missing_platform():
     assert summary.created_platforms == 1
     assert summary.total_revisions == 3
     assert summary.successful_calls == 1
+    assert resolver.closure_calls[0][3] == 1
 
 
 @pytest.mark.asyncio
@@ -251,6 +324,7 @@ async def test_resolve_fanout_skips_old_hyphenated_benchmark_issuers():
         timeout_seconds=30.0,
         seed="skip-bad",
         verbose_errors=False,
+        max_resolved_depth=1,
     )
 
     summary = await run_resolve_fanout_benchmark(
@@ -283,6 +357,7 @@ async def test_resolve_fanout_keeps_stats_when_measured_call_fails():
         timeout_seconds=30.0,
         seed="errors",
         verbose_errors=False,
+        max_resolved_depth=1,
     )
 
     summary = await run_resolve_fanout_benchmark(
@@ -298,3 +373,33 @@ async def test_resolve_fanout_keeps_stats_when_measured_call_fails():
     assert summary.median_ms == 10.0
     assert summary.error_details[0].sample == 2
     assert "resolver exploded" in summary.error_details[0].message
+
+
+@pytest.mark.asyncio
+async def test_verbose_mode_groups_closure_resolution_calls(capsys):
+    fed = FakeFederationClient(platform_count=2)
+    resolver = FakeResolverClient("http://resolver")
+    platform_state = FakePlatformState()
+    config = _config(
+        fanout=1,
+        depth=1,
+        platform_count=2,
+        samples=1,
+        warmup=0,
+        seed="verbose",
+        verbose=True,
+        max_resolved_depth=1,
+    )
+
+    await run_resolve_fanout_benchmark(
+        config,
+        federation_client=fed,
+        resolver_client_factory=lambda url: resolver,
+        platform_client_factory=lambda platform: FakePlatformClient(platform, platform_state),
+        timer_ns=_timer([0, 10_000_000]),
+    )
+
+    output = capsys.readouterr().out
+    assert "=== closure sample 1/1" in output
+    assert "max_depth=1" in output
+    assert "=== closure sample 1/1 completed: 10.00 ms ===" in output

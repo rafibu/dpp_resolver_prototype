@@ -104,12 +104,14 @@ workload measure resolve-fanout \
   --factory-url http://localhost:8000 \
   --fanout 2 \
   --depth 3 \
+  --max-resolved-depth 3 \
+  --payload-entries 4 \
   --platforms 4 \
   --samples 100 \
   --warmup 20
 ```
 
-The command discovers the Resolver and current platforms from the Factory, creates missing benchmark platforms if fewer than `--platforms` are running, registers benchmark subject types and resolver routes, publishes the generated DPP revisions leaf-first, then performs sequential warmup and measured resolve calls for the root revision.
+The command discovers the Resolver and current platforms from the Factory, creates missing benchmark platforms if fewer than `--platforms` are running, registers benchmark subject types and resolver routes, publishes the generated DPP revisions leaf-first, then performs sequential warmup and measured closure calls for the root revision.
 
 The number of revisions is the number of nodes in the generated full reference tree:
 
@@ -131,22 +133,38 @@ total revisions = (fanout^(depth + 1) - 1) / (fanout - 1)
 
 For `fanout = 1`, the tree is a chain and creates `depth + 1` revisions.
 
+The generated tree depth and resolved closure depth are separate controls. `--depth` controls how deep the generated hard-reference tree is. `--max-resolved-depth` controls how far the platform `/closure` endpoint traverses that tree during measurement. If `--max-resolved-depth` is omitted, it defaults to the generated `--depth`.
+
+`--payload-entries` controls the target number of top-level entries in each generated DPP payload. For non-leaf DPPs, the `dependencies` array counts as one entry and the remaining entries are deterministic benchmark data fields. For leaf DPPs, all entries are benchmark data fields.
+
+Examples:
+
+```bash
+# Generate a depth-4 tree and resolve the full closure
+workload measure resolve-fanout --fanout 2 --depth 4
+
+# Generate a depth-4 tree, but resolve only direct hard references from the root
+workload measure resolve-fanout --fanout 2 --depth 4 --max-resolved-depth 1
+```
+
 Useful options:
 
-| Option             | Default                 | Description                                                       |
-|--------------------|-------------------------|-------------------------------------------------------------------|
-| `--factory-url`    | `http://localhost:8000` | URL of the running Factory                                        |
-| `--fanout`         | `2`                     | Number of hard references per non-leaf node                       |
-| `--depth`          | `2`                     | Number of reference levels below the root                         |
-| `--platforms`      | `4`                     | Number of running DPP platforms to use or create                  |
-| `--samples`        | `100`                   | Measured resolve calls included in the statistics                 |
-| `--warmup`         | `20`                    | Resolve calls run before measurement and excluded from statistics |
-| `--timeout`        | `30`                    | HTTP timeout in seconds                                           |
-| `--seed`           | generated timestamp     | Deterministic run ID for DPP IDs and subject types                |
-| `-v`, `--verbose`  | `false`                 | Show individual API calls instead of the progress bar             |
-| `--verbose-errors` | `false`                 | Print fuller error payloads when setup or resolve calls fail      |
+| Option                 | Default                 | Description                                                       |
+|------------------------|-------------------------|-------------------------------------------------------------------|
+| `--factory-url`        | `http://localhost:8000` | URL of the running Factory                                        |
+| `--fanout`             | `2`                     | Number of hard references per non-leaf node                       |
+| `--depth`              | `2`                     | Number of reference levels below the root                         |
+| `--max-resolved-depth` | generated depth         | Maximum closure depth sent as `max_depth` to the platform         |
+| `--payload-entries`    | `4`                     | Target number of top-level entries in each generated DPP payload  |
+| `--platforms`          | `4`                     | Number of running DPP platforms to use or create                  |
+| `--samples`            | `100`                   | Measured resolve calls included in the statistics                 |
+| `--warmup`             | `20`                    | Resolve calls run before measurement and excluded from statistics |
+| `--timeout`            | `30`                    | HTTP timeout in seconds                                           |
+| `--seed`               | generated timestamp     | Deterministic run ID for DPP IDs and subject types                |
+| `-v`, `--verbose`      | `false`                 | Show individual API calls instead of the progress bar             |
+| `--verbose-errors`     | `false`                 | Print fuller error payloads when setup or resolve calls fail      |
 
-By default, the benchmark hides individual API request logs and shows a progress bar for setup, publication, warmup calls, and measured calls. Use `-v` or `--verbose` to show individual calls instead. The benchmark prints only a concise CLI summary and does not write CSV files.
+By default, the benchmark hides individual API request logs and shows a progress bar for setup, publication, warmup calls, and measured calls. Use `-v` or `--verbose` to show individual calls instead. In verbose mode, each measured closure resolution is wrapped in a marker such as `=== closure sample 14/100 ... ===`, so the API calls that follow can be attributed to that specific closure request. The benchmark prints only a concise CLI summary and does not write CSV files.
 
 Example output:
 
@@ -156,7 +174,9 @@ Resolve fan-out benchmark
 Configuration
   Factory URL:       http://localhost:8000
   Fan-out:           2
-  Depth:             3
+  Generated depth:   3
+  Max resolved depth:3
+  Payload entries:   4
   Required platforms:4
   Total revisions:   15
   Warmup calls:      20
@@ -168,6 +188,8 @@ Setup
   Created platforms: 2
   Subject types:     4
   Root revision:     issuerA-bench-resolve-20260604123000-f2-d3-root
+  Max resolved depth:3
+  Payload entries:   4
 
 Result
   Successful calls:  100 / 100

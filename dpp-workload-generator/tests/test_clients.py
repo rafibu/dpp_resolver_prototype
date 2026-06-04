@@ -214,6 +214,38 @@ async def test_resolver_resolve_revision_rewrites_internal_redirect(httpx_mock):
         "http://platform-a:8082/dpps/issuerA-pv-001/1",
     ]
 
+
+@pytest.mark.asyncio
+async def test_resolver_resolve_revision_closure_uses_max_depth_query(httpx_mock):
+    resolver_url = "http://resolver:8081"
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{resolver_url}/pv_module/issuerA-pv-001/1",
+        status_code=302,
+        headers={"Location": "http://dpp-platform-a:8080/dpps/issuerA-pv-001/1"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="http://platform-a:8082/dpps/issuerA-pv-001/1/closure?max_depth=2",
+        status_code=200,
+        json={"root": {"dpp_id": "issuerA-pv-001"}, "closure": []},
+    )
+
+    async with ResolverClient(resolver_url) as client:
+        response = await client.resolve_revision_closure(
+            "pv_module",
+            "issuerA-pv-001",
+            version=1,
+            max_depth=2,
+            redirect_base_url="http://platform-a:8082",
+        )
+
+    assert response.json()["root"]["dpp_id"] == "issuerA-pv-001"
+    assert [str(request.url) for request in httpx_mock.get_requests()] == [
+        f"{resolver_url}/pv_module/issuerA-pv-001/1",
+        "http://platform-a:8082/dpps/issuerA-pv-001/1/closure?max_depth=2",
+    ]
+
 @pytest.mark.asyncio
 async def test_retry_on_timeout(httpx_mock, platform_info):
     import httpx

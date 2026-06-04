@@ -16,8 +16,7 @@ from workload.clients import (
     ResolverClient,
 )
 from workload.federation import FederationClient, PlatformStatus
-from workload.payloads import ReferenceSpec, build_dpp_revision_payload
-from workload.schemas.generator import generate_schema
+from workload.payloads import ReferenceSpec
 
 from .errors import BenchmarkSetupError, ResolveBenchmarkError
 from .graph import generate_resolve_tree, reference_count
@@ -46,6 +45,7 @@ async def run_resolve_fanout_benchmark(
     """Run the resolve fan-out benchmark and return summary statistics."""
     _validate_config(config)
     run_id = _run_id(config)
+    max_resolved_depth = effective_max_resolved_depth(config)
     total_revisions = 1 + reference_count(config.fanout, config.depth)
 
     owns_federation_client = federation_client is None
@@ -65,6 +65,7 @@ async def run_resolve_fanout_benchmark(
             resolver=resolver_client,
             platforms=platforms,
             run_id=run_id,
+            payload_entries=config.payload_entries,
             platform_client_factory=platform_client_factory,
             progress_callback=progress_callback,
         )
@@ -80,21 +81,47 @@ async def run_resolve_fanout_benchmark(
         await _publish_revisions(
             nodes=nodes,
             platforms=platforms,
-            run_id=run_id,
-            fanout=config.fanout,
-            depth=config.depth,
+            payload_entries=config.payload_entries,
             platform_client_factory=platform_client_factory,
             progress_callback=progress_callback,
         )
 
         for warmup_index in range(config.warmup):
+            _print_verbose_resolve_start(
+                config,
+                phase="warmup",
+                index=warmup_index + 1,
+                total=config.warmup,
+                root=root,
+                max_resolved_depth=max_resolved_depth,
+            )
             try:
-                await _resolve_once(resolver_client, root, platform_by_id[root.platform_id], timer_ns)
+                latency_ms = await _resolve_once(
+                    resolver_client,
+                    root,
+                    platform_by_id[root.platform_id],
+                    max_resolved_depth,
+                    timer_ns,
+                )
+                _print_verbose_resolve_end(
+                    config,
+                    phase="warmup",
+                    index=warmup_index + 1,
+                    total=config.warmup,
+                    latency_ms=latency_ms,
+                )
                 _report_progress(
                     progress_callback,
                     f"Warmup resolve calls {warmup_index + 1}/{config.warmup}",
                 )
             except Exception as exc:
+                _print_verbose_resolve_error(
+                    config,
+                    phase="warmup",
+                    index=warmup_index + 1,
+                    total=config.warmup,
+                    message=_error_message(exc, config.verbose_errors),
+                )
                 raise ResolveBenchmarkError(
                     f"Warmup resolve call {warmup_index + 1} failed: {_error_message(exc, config.verbose_errors)}"
                 ) from exc
@@ -102,13 +129,43 @@ async def run_resolve_fanout_benchmark(
         latencies_ms: list[float] = []
         errors: list[ResolveCallError] = []
         for sample in range(1, config.samples + 1):
+            _print_verbose_resolve_start(
+                config,
+                phase="sample",
+                index=sample,
+                total=config.samples,
+                root=root,
+                max_resolved_depth=max_resolved_depth,
+            )
             try:
-                latencies_ms.append(await _resolve_once(resolver_client, root, platform_by_id[root.platform_id], timer_ns))
+                latency_ms = await _resolve_once(
+                    resolver_client,
+                    root,
+                    platform_by_id[root.platform_id],
+                    max_resolved_depth,
+                    timer_ns,
+                )
+                latencies_ms.append(latency_ms)
+                _print_verbose_resolve_end(
+                    config,
+                    phase="sample",
+                    index=sample,
+                    total=config.samples,
+                    latency_ms=latency_ms,
+                )
             except Exception as exc:
+                message = _error_message(exc, config.verbose_errors)
+                _print_verbose_resolve_error(
+                    config,
+                    phase="sample",
+                    index=sample,
+                    total=config.samples,
+                    message=message,
+                )
                 errors.append(
                     ResolveCallError(
                         sample=sample,
-                        message=_error_message(exc, config.verbose_errors),
+                        message=message,
                     )
                 )
             finally:
@@ -118,8 +175,10 @@ async def run_resolve_fanout_benchmark(
         return ResolveMeasurementSummary(
             fanout=config.fanout,
             depth=config.depth,
+            max_resolved_depth=max_resolved_depth,
             platform_count=config.platform_count,
             total_revisions=total_revisions,
+            payload_entries=config.payload_entries,
             samples=config.samples,
             warmup=config.warmup,
             successful_calls=len(latencies_ms),
@@ -158,6 +217,18 @@ def _validate_config(config: ResolveFanoutConfig) -> None:
         raise ValueError("warmup must be >= 0")
     if config.timeout_seconds <= 0:
         raise ValueError("timeout must be > 0")
+    if config.payload_entries < 1:
+        raise ValueError("payload-entries must be >= 1")
+    max_resolved_depth = effective_max_resolved_depth(config)
+    if max_resolved_depth < 1:
+        raise ValueError("max-resolved-depth must be >= 1")
+    if max_resolved_depth > config.depth:
+        raise ValueError("max-resolved-depth must not exceed depth")
+
+
+def effective_max_resolved_depth(config: ResolveFanoutConfig) -> int:
+    """Return the resolved closure depth, defaulting to the generated tree depth."""
+    return config.depth if config.max_resolved_depth is None else config.max_resolved_depth
 
 
 def _run_id(config: ResolveFanoutConfig) -> str:
@@ -263,6 +334,7 @@ async def _ensure_subject_types(
     resolver: ResolverClient,
     platforms: Sequence[PlatformInfo],
     run_id: str,
+    payload_entries: int,
     platform_client_factory: Callable[[PlatformInfo], PlatformClient],
     progress_callback: ProgressCallback | None,
 ) -> tuple[str, ...]:
@@ -271,7 +343,12 @@ async def _ensure_subject_types(
         subject_type = f"bench-resolve-{run_id}-type-{index}"
         subject_types.append(subject_type)
         await resolver.ensure_subject_type(subject_type)
-        await resolver.publish_schema(subject_type, 1, 0, generate_schema(subject_type, with_dependencies=True))
+        await resolver.publish_schema(
+            subject_type,
+            1,
+            0,
+            _generate_benchmark_schema(subject_type, payload_entries=payload_entries),
+        )
         await resolver.ensure_platform_route(platform, subject_type)
         async with platform_client_factory(platform) as platform_client:
             await platform_client.ensure_subject_type(subject_type)
@@ -283,9 +360,7 @@ async def _publish_revisions(
     *,
     nodes: Sequence[BenchmarkNode],
     platforms: Sequence[PlatformInfo],
-    run_id: str,
-    fanout: int,
-    depth: int,
+    payload_entries: int,
     platform_client_factory: Callable[[PlatformInfo], PlatformClient],
     progress_callback: ProgressCallback | None,
 ) -> tuple[DppResponse, ...]:
@@ -304,12 +379,12 @@ async def _publish_revisions(
             )
             for child_id in node.children
         ]
-        payload = build_dpp_revision_payload(
+        payload = _build_benchmark_payload(
             node_id=node.node_id,
             issuer_id=node.issuer_id,
             subject_type=node.subject_type,
             hard_references=references,
-            seed=f"{run_id}:{fanout}:{depth}:{node.node_id}",
+            payload_entries=payload_entries,
         )
         spec = IssueDppSpec(
             dpp_id=node.node_id,
@@ -334,17 +409,69 @@ async def _publish_revisions(
     return tuple(responses)
 
 
+def _generate_benchmark_schema(subject_type: str, *, payload_entries: int) -> dict:
+    properties = {
+        f"payload_entry_{index:03d}": {"type": "string"}
+        for index in range(payload_entries)
+    }
+    properties["dependencies"] = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "$ref": {"type": "string", "pattern": "^[^/]+/[^/]+(?:/\\d+)?$"},
+                "version": {"type": "integer", "minimum": 1},
+            },
+            "required": ["$ref"],
+            "additionalProperties": False,
+        },
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": f"https://dpp.example.org/schemas/{subject_type}",
+        "title": f"Benchmark DPP Schema for {subject_type}",
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+
+
+def _build_benchmark_payload(
+    *,
+    node_id: str,
+    issuer_id: str,
+    subject_type: str,
+    hard_references: Sequence[ReferenceSpec],
+    payload_entries: int,
+) -> dict:
+    data_entry_count = payload_entries if not hard_references else payload_entries - 1
+    payload = {
+        f"payload_entry_{index:03d}": f"{issuer_id}:{subject_type}:{node_id}:{index:03d}"
+        for index in range(data_entry_count)
+    }
+    if hard_references:
+        payload["dependencies"] = []
+        for reference in hard_references:
+            entry: dict[str, Any] = {"$ref": f"{reference.subject_type}/{reference.dpp_id}"}
+            if reference.version is not None:
+                entry["version"] = reference.version
+            payload["dependencies"].append(entry)
+    return payload
+
+
 async def _resolve_once(
     resolver: ResolverClient,
     root: BenchmarkNode,
     root_platform: PlatformInfo,
+    max_resolved_depth: int,
     timer_ns: Callable[[], int],
 ) -> float:
     start_ns = timer_ns()
-    response = await resolver.resolve_revision(
+    response = await resolver.resolve_revision_closure(
         root.subject_type,
         root.node_id,
         version=1,
+        max_depth=max_resolved_depth,
         redirect_base_url=root_platform.external_url,
     )
     end_ns = timer_ns()
@@ -353,6 +480,52 @@ async def _resolve_once(
     if root.node_id.encode("utf-8") not in body:
         raise ResolveBenchmarkError(f"Resolve response did not contain root revision {root.node_id}.")
     return (end_ns - start_ns) / 1_000_000
+
+
+def _print_verbose_resolve_start(
+    config: ResolveFanoutConfig,
+    *,
+    phase: str,
+    index: int,
+    total: int,
+    root: BenchmarkNode,
+    max_resolved_depth: int,
+) -> None:
+    if config.verbose:
+        print(
+            "\n"
+            f"=== closure {phase} {index}/{total} "
+            f"root={root.subject_type}/{root.node_id}/1 "
+            f"max_depth={max_resolved_depth} ===",
+            flush=True,
+        )
+
+
+def _print_verbose_resolve_end(
+    config: ResolveFanoutConfig,
+    *,
+    phase: str,
+    index: int,
+    total: int,
+    latency_ms: float,
+) -> None:
+    if config.verbose:
+        print(
+            f"=== closure {phase} {index}/{total} completed: {latency_ms:.2f} ms ===",
+            flush=True,
+        )
+
+
+def _print_verbose_resolve_error(
+    config: ResolveFanoutConfig,
+    *,
+    phase: str,
+    index: int,
+    total: int,
+    message: str,
+) -> None:
+    if config.verbose:
+        print(f"=== closure {phase} {index}/{total} failed: {message} ===", flush=True)
 
 
 def _error_message(exc: Exception, verbose: bool) -> str:

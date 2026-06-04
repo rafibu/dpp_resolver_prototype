@@ -279,3 +279,27 @@ class ResolverClient(BaseClient):
 
         path = f"/{subject_type}/{dpp_id}" if version is None else f"/{subject_type}/{dpp_id}/{version}"
         return await self._request("GET", path, follow_redirects=True)
+
+    async def resolve_revision_closure(
+        self,
+        subject_type: str,
+        dpp_id: str,
+        *,
+        version: int,
+        max_depth: int,
+        redirect_base_url: str,
+    ) -> httpx.Response:
+        """Resolve a DPP and fetch its bounded platform closure response."""
+        if max_depth < 1:
+            raise ValueError("max_depth must be >= 1")
+
+        target_url = await self.resolve(subject_type, dpp_id, version)
+        parsed_target = urlparse(target_url)
+        fetch_url = f"{redirect_base_url.rstrip('/')}{parsed_target.path.rstrip('/')}/closure"
+        response = await self._client.get(
+            fetch_url,
+            params={"max_depth": max_depth},
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        return response
