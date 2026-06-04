@@ -1,6 +1,5 @@
-from datetime import datetime
-
 import pytest
+from datetime import datetime
 from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppNotFoundError, \
     SchemaValidationError, CycleDetectedError
 from workload.federation import PlatformInfo, PlatformStatus
@@ -183,6 +182,37 @@ async def test_resolver_resolve(httpx_mock):
         url = await client.resolve("pv_module", "issuerA-pv-001")
         assert url == "http://platform-a:8082/dpps/issuerA-pv-001"
         assert len(httpx_mock.get_requests()) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolver_resolve_revision_rewrites_internal_redirect(httpx_mock):
+    resolver_url = "http://resolver:8081"
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{resolver_url}/pv_module/issuerA-pv-001/1",
+        status_code=302,
+        headers={"Location": "http://dpp-platform-a:8080/dpps/issuerA-pv-001/1"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="http://platform-a:8082/dpps/issuerA-pv-001/1",
+        status_code=200,
+        json={"dpp_id": "issuerA-pv-001"},
+    )
+
+    async with ResolverClient(resolver_url) as client:
+        response = await client.resolve_revision(
+            "pv_module",
+            "issuerA-pv-001",
+            version=1,
+            redirect_base_url="http://platform-a:8082",
+        )
+
+    assert response.json() == {"dpp_id": "issuerA-pv-001"}
+    assert [str(request.url) for request in httpx_mock.get_requests()] == [
+        f"{resolver_url}/pv_module/issuerA-pv-001/1",
+        "http://platform-a:8082/dpps/issuerA-pv-001/1",
+    ]
 
 @pytest.mark.asyncio
 async def test_retry_on_timeout(httpx_mock, platform_info):

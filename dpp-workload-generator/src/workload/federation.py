@@ -31,8 +31,8 @@ class FederationOverview(BaseModel):
     platforms: List[PlatformInfo]
 
 class FederationClient:
-    def __init__(self):
-        self._client = httpx.AsyncClient(timeout=10.0)
+    def __init__(self, timeout: float = 10.0):
+        self._client = httpx.AsyncClient(timeout=timeout)
         self._overview: Optional[FederationOverview] = None
 
     async def discover(self, factory_url: str) -> FederationOverview:
@@ -52,6 +52,49 @@ class FederationClient:
         except Exception as e:
             logger.error("factory_discovery_failed", error=str(e), factory_url=factory_url)
             raise
+
+    async def refresh(self, factory_url: str) -> FederationOverview:
+        """Refresh and return the federation overview from Factory."""
+        self._overview = None
+        return await self.discover(factory_url)
+
+    async def get_state(self, factory_url: str) -> FederationOverview:
+        """Return the current federation state."""
+        return await self.refresh(factory_url)
+
+    async def list_platforms(self, factory_url: str) -> List[PlatformInfo]:
+        """Return all platforms known to the Factory."""
+        overview = await self.refresh(factory_url)
+        return overview.platforms
+
+    async def get_resolver_url(self, factory_url: str) -> str:
+        """Return the Resolver external URL from Factory state."""
+        overview = await self.discover(factory_url)
+        if not overview.resolver:
+            raise RuntimeError("No resolver info available in federation.")
+        return overview.resolver.external_url
+
+    async def create_platform(
+        self,
+        factory_url: str,
+        *,
+        stack: str,
+        issuer_id: str,
+        subject_types: List[str],
+    ) -> PlatformInfo:
+        """Create a new DPP platform through the Factory API."""
+        logger.info("factory_create_platform", stack=stack, issuer_id=issuer_id)
+        response = await self._client.post(
+            f"{factory_url.rstrip('/')}/platforms",
+            json={
+                "stack": stack,
+                "issuer_id": issuer_id,
+                "subject_types": list(subject_types),
+            },
+        )
+        response.raise_for_status()
+        self._overview = None
+        return PlatformInfo.model_validate(response.json())
 
     async def find_platform_for_subject_type(self, subject_type: str) -> PlatformInfo:
         """Find a platform that handles the given subject type."""

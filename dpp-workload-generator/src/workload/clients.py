@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, Any, List, Dict
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from .federation import PlatformInfo
 
@@ -104,7 +104,7 @@ class PlatformClient(BaseClient):
         super().__init__(platform.external_url)
         self.platform_info = platform
 
-    async def _register_subject_type(self, subject_type: str) -> None:
+    async def ensure_subject_type(self, subject_type: str) -> None:
         """Register a subject type on this platform.
 
         Platforms lose their subject type DB records after a Factory reset if the platform
@@ -118,6 +118,9 @@ class PlatformClient(BaseClient):
             })
         except (WorkloadError, ConflictError):
             pass  # already registered
+
+    async def _register_subject_type(self, subject_type: str) -> None:
+        await self.ensure_subject_type(subject_type)
 
     async def issue_dpp(self, spec: IssueDppSpec) -> DppResponse:
         for attempt in range(3):
@@ -255,3 +258,24 @@ class ResolverClient(BaseClient):
             return response.headers.get("location", str(response.url))
         response.raise_for_status()
         return str(response.url)
+
+    async def resolve_revision(
+        self,
+        subject_type: str,
+        dpp_id: str,
+        version: int | None = None,
+        redirect_base_url: str | None = None,
+    ) -> httpx.Response:
+        """Resolve a DPP and return the fully fetched platform response."""
+        if redirect_base_url is not None:
+            target_url = await self.resolve(subject_type, dpp_id, version)
+            parsed_target = urlparse(target_url)
+            fetch_url = f"{redirect_base_url.rstrip('/')}{parsed_target.path}"
+            if parsed_target.query:
+                fetch_url = f"{fetch_url}?{parsed_target.query}"
+            response = await self._client.get(fetch_url, follow_redirects=True)
+            response.raise_for_status()
+            return response
+
+        path = f"/{subject_type}/{dpp_id}" if version is None else f"/{subject_type}/{dpp_id}/{version}"
+        return await self._request("GET", path, follow_redirects=True)

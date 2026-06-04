@@ -1,7 +1,8 @@
+import hashlib
 import random
 import structlog
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Sequence
 
 logger = structlog.get_logger(__name__)
 
@@ -14,6 +15,24 @@ def generate_dpp_id(issuer: str, subject_type: str, sequence: int) -> str:
     """Return IDs like issuerA-pv-001."""
     st_short = subject_type.split("_")[0][:2] if "_" in subject_type else subject_type[:2]
     return f"{issuer}-{st_short}-{sequence:03d}"
+
+
+def build_dpp_revision_payload(
+    *,
+    node_id: str,
+    issuer_id: str,
+    subject_type: str,
+    hard_references: Sequence[ReferenceSpec],
+    seed: str | int | None = None,
+) -> dict:
+    """Build a deterministic ordinary DPP revision payload with hard references."""
+    seed_material = seed if seed is not None else f"{issuer_id}:{subject_type}:{node_id}"
+    if isinstance(seed_material, str):
+        digest = hashlib.sha256(seed_material.encode("utf-8")).digest()
+        seed_value = int.from_bytes(digest[:8], "big")
+    else:
+        seed_value = seed_material
+    return generate_valid_payload({}, dependencies=list(hard_references), seed=seed_value)
 
 def generate_seed_payload(subject_type: str, seed: Optional[int] = None,
                           hard_refs: Optional[Dict[str, ReferenceSpec]] = None) -> dict:

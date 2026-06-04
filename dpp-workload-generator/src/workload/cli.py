@@ -9,6 +9,7 @@ from typing import Optional, List
 from .clients import ResolverClient, PlatformClient, IssueDppSpec, DppSchemaVersion
 from .federation import FederationClient
 from .measurement import MeasurementRecorder, measure_operation
+from .measurements.cli import build_measure_app
 from .payloads import generate_valid_payload
 from .scenarios.depth import generate_depth_chain
 from .scenarios.fanout import generate_fanout as _fanout_scenario
@@ -28,19 +29,6 @@ def callback():
     DPP Workload Generator CLI
     """
     pass
-
-@app.command()
-def measure(
-    workload: str = typer.Option(..., "--workload", help="Workload kind: depth, fanout, issue, resolve, query"),
-    range_str: str = typer.Option("1-10", "--range", help="Parameter range (e.g. 1-10)"),
-    runs: int = typer.Option(5, "--runs", help="Number of measurement runs per value"),
-    warmup_runs: int = typer.Option(1, "--warmup-runs", help="Number of warmup runs (not recorded)"),
-    output: Optional[str] = typer.Option(None, "--output", help="Output path for CSV"),
-    seed: int = typer.Option(42, "--seed", help="Random seed"),
-    factory_url: str = typer.Option("http://localhost:8000", "--factory-url", help="Factory URL")
-):
-    """Run a parameterized measurement."""
-    asyncio.run(_run_measure(workload, range_str, runs, warmup_runs, output, seed, factory_url))
 
 async def _resolve_recursive(resolver: ResolverClient, subject_type: str, dpp_id: str, version: Optional[int] = None):
     """Helper for depth traversal."""
@@ -149,6 +137,9 @@ async def _run_measure(workload: str, range_str: str, runs: int, warmup_runs: in
     
     csv_path = recorder.end_run()
     typer.echo(f"Results written to {csv_path}")
+
+
+app.add_typer(build_measure_app(_run_measure), name="measure")
 
 @app.command()
 def generate_depth(

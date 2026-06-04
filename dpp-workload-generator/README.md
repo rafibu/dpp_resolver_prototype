@@ -12,6 +12,7 @@ It is not part of the federated DPP ecosystem. It is a measurement harness that 
 | Generates DPPs with controllable fan-out                           | Section 8.3.3: per-fan-out constant factors   |
 | Materializes the PV/battery/inverter running example               | Sections 4-5 running example                  |
 | Measures issuance and resolution latency; writes CSV               | Section 8.3: prototype measurements           |
+| Benchmarks resolver fan-out/depth latency; prints CLI summary      | Section 8.3.3: closure resolution cost O(f^d) |
 | Runs scenario S1: offline validation after platform unavailability | Section 8.4.1                                 |
 | Runs scenario S2: independent schema evolution                     | Section 8.4.2                                 |
 | Runs scenario S3: schema-level cycle rejection (Invariant I6)      | Section 8.4.3                                 |
@@ -26,6 +27,11 @@ src/workload/
   clients.py          -- ResolverClient, PlatformClient (typed HTTP clients)
   federation.py       -- FederationClient (Factory discovery + lifecycle)
   measurement.py      -- MeasurementRecorder, measure_operation context manager
+  measurements/       -- summary-oriented benchmark mechanisms
+    cli.py            -- measurement command group
+    graph.py          -- deterministic resolve tree generation
+    resolve_fanout.py -- resolver fan-out/depth benchmark
+    stats.py          -- latency statistics
   payloads.py         -- generate_valid_payload, generate_dpp_id
   schemas/
     generator.py      -- generate_schema (JSON Schema 2020-12 with x-dpp-reference support)
@@ -81,6 +87,98 @@ workload measure --workload resolve --range 1-1 --runs 10
 # Measure schema evolution impact
 workload schema-evolution --revisions 5 --update-kind minor
 workload schema-evolution --revisions 5 --update-kind major
+```
+
+### Resolve fan-out benchmark
+
+The resolve fan-out benchmark measures how long one Resolver takes to resolve a single root DPP revision whose payload contains hard references arranged as a deterministic tree across multiple DPP platforms. It answers:
+
+```
+What is the median resolve latency, in milliseconds, for fan-out f and depth d?
+```
+
+Run it after the Factory is already running:
+
+```bash
+workload measure resolve-fanout \
+  --factory-url http://localhost:8000 \
+  --fanout 2 \
+  --depth 3 \
+  --platforms 4 \
+  --samples 100 \
+  --warmup 20
+```
+
+The command discovers the Resolver and current platforms from the Factory, creates missing benchmark platforms if fewer than `--platforms` are running, registers benchmark subject types and resolver routes, publishes the generated DPP revisions leaf-first, then performs sequential warmup and measured resolve calls for the root revision.
+
+The number of revisions is the number of nodes in the generated full reference tree:
+
+```text
+total revisions = 1 + fanout + fanout^2 + ... + fanout^depth
+```
+
+The root is level `0`; `depth` is the number of reference levels below the root. For example, `--fanout 4 --depth 4` creates:
+
+```text
+1 + 4 + 16 + 64 + 256 = 341 revisions
+```
+
+For `fanout > 1`, this is equivalent to:
+
+```text
+total revisions = (fanout^(depth + 1) - 1) / (fanout - 1)
+```
+
+For `fanout = 1`, the tree is a chain and creates `depth + 1` revisions.
+
+Useful options:
+
+| Option             | Default                 | Description                                                       |
+|--------------------|-------------------------|-------------------------------------------------------------------|
+| `--factory-url`    | `http://localhost:8000` | URL of the running Factory                                        |
+| `--fanout`         | `2`                     | Number of hard references per non-leaf node                       |
+| `--depth`          | `2`                     | Number of reference levels below the root                         |
+| `--platforms`      | `4`                     | Number of running DPP platforms to use or create                  |
+| `--samples`        | `100`                   | Measured resolve calls included in the statistics                 |
+| `--warmup`         | `20`                    | Resolve calls run before measurement and excluded from statistics |
+| `--timeout`        | `30`                    | HTTP timeout in seconds                                           |
+| `--seed`           | generated timestamp     | Deterministic run ID for DPP IDs and subject types                |
+| `-v`, `--verbose`  | `false`                 | Show individual API calls instead of the progress bar             |
+| `--verbose-errors` | `false`                 | Print fuller error payloads when setup or resolve calls fail      |
+
+By default, the benchmark hides individual API request logs and shows a progress bar for setup, publication, warmup calls, and measured calls. Use `-v` or `--verbose` to show individual calls instead. The benchmark prints only a concise CLI summary and does not write CSV files.
+
+Example output:
+
+```text
+Resolve fan-out benchmark
+
+Configuration
+  Factory URL:       http://localhost:8000
+  Fan-out:           2
+  Depth:             3
+  Required platforms:4
+  Total revisions:   15
+  Warmup calls:      20
+  Samples:           100
+
+Setup
+  Resolver:          http://localhost:8080
+  Existing platforms:2
+  Created platforms: 2
+  Subject types:     4
+  Root revision:     issuerA-bench-resolve-20260604123000-f2-d3-root
+
+Result
+  Successful calls:  100 / 100
+  Errors:            0
+  Median:            41.73 ms
+  Mean:              43.18 ms
+  Min:               35.22 ms
+  Max:               82.90 ms
+  P90:               55.13 ms
+  P95:               61.49 ms
+  P99:               80.21 ms
 ```
 
 ### Fixture generation
