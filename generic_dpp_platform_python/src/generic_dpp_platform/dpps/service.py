@@ -1,13 +1,12 @@
-import uuid
-from datetime import UTC, datetime
-
 import structlog
+import uuid
+from collections import deque
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from motor.motor_asyncio import AsyncIOMotorClientSession, AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 from pymongo.errors import OperationFailure
 
-from ..admin import service as admin_service
-from ..schemas.resolver_connector import cache_schema, resolve_dpp_revision
 from . import cache_service
 from .exceptions import (
     DppAlreadyExistsException,
@@ -18,6 +17,7 @@ from .exceptions import (
 from .models import (
     DependencyType,
     DppDetailDTO,
+    DppRevisionClosureResponseDTO,
     DppRevisionRequestDTO,
     DppRevisionResponseDTO,
     DppRevisionSchemaDTO,
@@ -26,11 +26,21 @@ from .models import (
 )
 from .reference_extractor import extract_references
 from .utils import hash_document, hash_to_hex, validate_dpp_document
+from ..admin import service as admin_service
+from ..schemas.resolver_connector import cache_schema, resolve_dpp_revision
 
 logger = structlog.get_logger()
 
 DPP_ID_ISSUER_SEPARATOR = "-"
 _TRANSACTION_RETRY_LIMIT = 5
+_DIRECT_REVISION_RESOLUTION_DEPTH = 1
+_MAX_CLOSURE_DEPTH = 10
+
+
+@dataclass(frozen=True)
+class _RevisionResolutionResult:
+    root_revision: DppRevisionResponseDTO
+    resolved_revisions: list[DppRevisionResponseDTO]
 
 
 async def list_all_dpps(db: AsyncIOMotorDatabase) -> list[DppSummaryDTO]:
@@ -96,6 +106,94 @@ async def get_dpp_revision(
         dpp_id: str,
         version: int | None,
 ) -> DppRevisionResponseDTO:
+    """Return the requested revision while preserving the direct response contract.
+
+    Direct revision retrieval routes through the shared resolution helper with a depth of
+    one, but it returns only the root revision. It does not expose the bounded recursive
+    hard-reference closure; callers that need that should use ``get_dpp_revision_closure``.
+    """
+    result = await _resolve_dpp_revision(
+        db=db,
+        dpp_id=dpp_id,
+        version=version,
+        max_depth=_DIRECT_REVISION_RESOLUTION_DEPTH,
+        expand_closure=False,
+    )
+    return result.root_revision
+
+
+async def get_dpp_revision_closure(
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
+        version: int,
+        max_depth: int,
+) -> DppRevisionClosureResponseDTO:
+    """Return a bounded recursive hard-reference closure rooted at one revision.
+
+    Closure resolution returns the root revision and each unique hard-reference revision
+    reached by recursively traversing payload references up to ``max_depth``. A depth of
+    one resolves only direct hard references of the root revision; a depth of two also
+    resolves hard references of those directly referenced revisions. Soft references are
+    never traversed. The traversal is bounded for validation, audit, offline caching, and
+    benchmark scenarios.
+    """
+    _validate_max_depth(max_depth)
+    result = await _resolve_dpp_revision(
+        db=db,
+        dpp_id=dpp_id,
+        version=version,
+        max_depth=max_depth,
+        expand_closure=True,
+    )
+    return DppRevisionClosureResponseDTO(
+        root_revision=result.root_revision,
+        resolved_revisions=result.resolved_revisions,
+    )
+
+
+async def _resolve_dpp_revision(
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
+        version: int | None,
+        max_depth: int,
+        expand_closure: bool,
+) -> _RevisionResolutionResult:
+    root_revision = await _load_dpp_revision(db, dpp_id, version)
+
+    if not expand_closure:
+        return _RevisionResolutionResult(root_revision=root_revision, resolved_revisions=[])
+
+    issuer_id = await _get_issuer_id(db)
+    resolved_revisions: dict[tuple[str, int], DppRevisionResponseDTO] = {}
+    visited: set[tuple[str, int]] = {(root_revision.dpp_id, root_revision.version)}
+    queue = deque([(root_revision, 0)])
+
+    while queue:
+        revision, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+
+        for ref in _extract_sorted_hard_references(revision):
+            key = (ref.dpp_id, ref.version)
+            if key in visited:
+                continue
+
+            visited.add(key)
+            resolved = await _resolve_and_cache_hard_reference(db, ref, issuer_id)
+            resolved_revisions[key] = resolved
+            queue.append((resolved, depth + 1))
+
+    return _RevisionResolutionResult(
+        root_revision=root_revision,
+        resolved_revisions=list(resolved_revisions.values()),
+    )
+
+
+async def _load_dpp_revision(
+        db: AsyncIOMotorDatabase,
+        dpp_id: str,
+        version: int | None,
+) -> DppRevisionResponseDTO:
     if not dpp_id:
         raise ValueError("DPP id must not be empty")
 
@@ -118,6 +216,27 @@ async def get_dpp_revision(
         raise NotFoundException(f"Revision not found: {dpp_id}/{version}")
 
     return _doc_to_response(doc)
+
+
+def _validate_max_depth(max_depth: int) -> None:
+    if max_depth < 1 or max_depth > _MAX_CLOSURE_DEPTH:
+        raise ValueError(f"max_depth must be between 1 and {_MAX_CLOSURE_DEPTH}")
+
+
+def _extract_sorted_hard_references(revision: DppRevisionResponseDTO):
+    return sorted(
+        (
+            ref
+            for ref in extract_references(revision.dpp_payload)
+            if ref.dependency_type == DependencyType.HARD
+        ),
+        key=lambda ref: (
+            ref.subject_type or "",
+            ref.dpp_id or "",
+            ref.version or 0,
+            ref.json_path or "",
+        ),
+    )
 
 
 async def create_new_dpp(
@@ -435,15 +554,16 @@ async def _resolve_and_cache_hard_reference(
         db: AsyncIOMotorDatabase,
         ref,
         issuer_id: str,
-) -> None:
-    """Resolve one hard reference as required by I7.
+) -> DppRevisionResponseDTO:
+    """Resolve one hard reference as required by I7 and return the target revision.
 
     A hard reference names a concrete revision. The platform must verify that this target exists
-    before committing the new revision.
+    before committing the new revision. Closure traversal reuses this helper so unresolved
+    references fail with the same platform conventions as issue/revise.
 
     Resolution strategy:
 
-    1. If the target DPP ID belongs to this issuer, check the local revision collection.
+    1. If the target DPP ID belongs to this issuer, load it from the local revision collection.
     2. Otherwise, check the external revision cache.
     3. If absent from the cache, use resolver-based resolution (Definition 11) to fetch the target
        revision from its current hosting platform.
@@ -452,19 +572,19 @@ async def _resolve_and_cache_hard_reference(
     Soft references are never passed to this helper.
     """
     if _is_dpp_id_owned_by_issuer(ref.dpp_id, issuer_id):
-        exists = await db.dpp_revisions.find_one(
-            {"dpp_id": ref.dpp_id, "dpp_version": ref.version}
+        doc = await db.dpp_revisions.find_one(
+            {"dpp_id": ref.dpp_id, "dpp_version": ref.version}, {"_id": 0}
         )
-        if not exists:
+        if not doc:
             raise DppReferenceResolutionException(
                 f"{ref.subject_type}/{ref.dpp_id}/{ref.version}"
             )
-        return
+        return _doc_to_response(doc)
 
     cached = await cache_service.get_cached_revision(db, ref.dpp_id, ref.version)
     if cached:
         logger.info("using_cached_revision_for_hard_reference", ref=ref.original_ref)
-        return
+        return _cached_doc_to_response(cached)
 
     logger.info("resolving_external_hard_reference", ref=ref.original_ref)
 
@@ -487,6 +607,7 @@ async def _resolve_and_cache_hard_reference(
         "fetched_at": datetime.now(UTC),
     }
     await cache_service.cache_revision(db, revision_to_cache)
+    return response
 
 
 async def _get_issuer_id(db: AsyncIOMotorDatabase) -> str:
@@ -551,6 +672,21 @@ def _doc_to_response(doc: dict) -> DppRevisionResponseDTO:
             subject_type=schema["subject_type"],
             major_version=schema["major_version"],
             minor_version=schema["minor_version"],
+        ),
+        dpp_payload=doc["dpp_document"],
+        payload_hash=doc["hashed_document"],
+        created_at=doc["created_at"],
+    )
+
+
+def _cached_doc_to_response(doc: dict) -> DppRevisionResponseDTO:
+    return DppRevisionResponseDTO(
+        dpp_id=doc["dpp_id"],
+        version=doc["dpp_version"],
+        schema_version=DppRevisionSchemaDTO(
+            subject_type=doc["schema_subject_type"],
+            major_version=doc["schema_major_version"],
+            minor_version=doc["schema_minor_version"],
         ),
         dpp_payload=doc["dpp_document"],
         payload_hash=doc["hashed_document"],

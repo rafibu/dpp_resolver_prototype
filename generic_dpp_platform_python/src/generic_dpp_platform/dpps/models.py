@@ -51,6 +51,11 @@ class DppRevisionResponseDTO(BaseModel):
     created_at: datetime
 
 
+class DppRevisionClosureResponseDTO(BaseModel):
+    root_revision: DppRevisionResponseDTO
+    resolved_revisions: list[DppRevisionResponseDTO]
+
+
 class DppRevisionSummary(BaseModel):
     version: int
     schema_ref: str

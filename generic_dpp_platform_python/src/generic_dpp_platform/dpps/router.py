@@ -12,12 +12,13 @@ The write endpoints implement the platform-side transition operations:
 Paper references: Definitions 1, 2, 11; Invariants I1, I2, I3, I4, I5, I7.
 """
 import structlog
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from . import service as dpp_service
 from .models import (
     DppDetailDTO,
+    DppRevisionClosureResponseDTO,
     DppRevisionRequestDTO,
     DppRevisionResponseDTO,
     DppSummaryDTO,
@@ -57,10 +58,10 @@ async def get_specific_revision(
         revision_version: int,
         db: AsyncIOMotorDatabase = Depends(get_database),
 ) -> DppRevisionResponseDTO:
-    """Return a specific immutable revision of a locally hosted DPP.
+    """Return a specific immutable revision using the direct response contract.
 
     This endpoint is the concrete platform target that another platform fetches after
-    resolving a hard reference through the resolver (Definition 11: Resolution).
+    resolving a hard reference through the resolver (Definition 11: Resolution). 
 
     Args:
         dpp_id: the issuer-qualified DPP identifier
@@ -68,6 +69,35 @@ async def get_specific_revision(
     """
     logger.info("get_specific_revision", dpp_id=dpp_id, version=revision_version)
     return await dpp_service.get_dpp_revision(db, dpp_id, revision_version)
+
+
+@router.get("/{dpp_id}/{revision_version}/closure", response_model=DppRevisionClosureResponseDTO)
+async def get_revision_closure(
+        dpp_id: str,
+        revision_version: int,
+        max_depth: int = Query(..., ge=1, le=10),
+        db: AsyncIOMotorDatabase = Depends(get_database),
+) -> DppRevisionClosureResponseDTO:
+    """Return a bounded recursive hard-reference closure rooted at one revision.
+
+    The response contains the root revision and unique hard-reference revisions reached
+    up to ``max_depth``. ``max_depth=1`` resolves only direct hard references of the root;
+    ``max_depth=2`` also resolves hard references of those direct dependencies. Soft
+    references are not traversed. This endpoint is intended for validation, audit,
+    offline caching, and benchmark scenarios.
+
+    Args:
+        dpp_id: the issuer-qualified DPP identifier
+        revision_version: the concrete root revision version
+        max_depth: positive traversal depth, bounded to the same limit as the Java platform
+    """
+    logger.info(
+        "get_revision_closure",
+        dpp_id=dpp_id,
+        version=revision_version,
+        max_depth=max_depth,
+    )
+    return await dpp_service.get_dpp_revision_closure(db, dpp_id, revision_version, max_depth)
 
 
 @router.post("/issue", response_model=DppRevisionResponseDTO, status_code=status.HTTP_201_CREATED)

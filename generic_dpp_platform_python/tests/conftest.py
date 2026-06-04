@@ -1,10 +1,10 @@
-import time
-from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
-
+import asyncio
 import pymongo
 import pytest
 import pytest_asyncio
+import time
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from httpx import ASGITransport, AsyncClient
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from testcontainers.core.container import DockerContainer
@@ -95,6 +95,8 @@ def mongodb_container():
 @pytest_asyncio.fixture
 async def test_db(mongodb_container: ReplicaSetMongoDbContainer) -> AsyncGenerator[AsyncIOMotorDatabase, None]:
     client: AsyncIOMotorClient = AsyncIOMotorClient(mongodb_container.get_connection_url())
+    await _wait_for_writable_primary(client)
+
     db: AsyncIOMotorDatabase = client["test_dpp_platform"]
 
     await db.subject_types.create_index("name", unique=True)
@@ -124,6 +126,24 @@ async def test_db(mongodb_container: ReplicaSetMongoDbContainer) -> AsyncGenerat
 
     await client.drop_database("test_dpp_platform")
     client.close()
+
+
+async def _wait_for_writable_primary(client: AsyncIOMotorClient, timeout_seconds: float = 30.0) -> None:
+    """Wait until the async Mongo client sees the single-node replica set as writable."""
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            hello = await client.admin.command("hello")
+            if hello.get("isWritablePrimary") or hello.get("ismaster"):
+                return
+        except Exception as exc:
+            last_error = exc
+
+        await asyncio.sleep(0.2)
+
+    raise TimeoutError("Timed out waiting for MongoDB writable primary") from last_error
 
 
 @pytest_asyncio.fixture
