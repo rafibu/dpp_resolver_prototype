@@ -1,12 +1,11 @@
-import time
-from typing import Any
-
 import docker
 import docker.errors
 import httpx
 import structlog
+import time
 from docker.models.containers import Container
 from docker.models.networks import Network
+from typing import Any
 
 logger = structlog.get_logger()
 
@@ -110,6 +109,23 @@ class DockerClient:
         )
         container.remove(v=remove_volumes)
         logger.info("docker_container_removed", name=container.name)
+
+    def remove_volume(self, name: str) -> bool:
+        """Remove a named Docker volume if it exists.
+
+        Docker's container.remove(v=True) only removes anonymous volumes. The Factory
+        uses deterministic named DB volumes, so they must be removed explicitly.
+        """
+        try:
+            volume = self._client.volumes.get(name)
+        except docker.errors.NotFound:
+            logger.info("docker_volume_not_found", name=name)
+            return False
+
+        logger.info("docker_volume_removing", name=name)
+        volume.remove(force=True)
+        logger.info("docker_volume_removed", name=name)
+        return True
 
     def stop_and_remove_by_id(self, container_id: str, remove_volumes: bool = False) -> None:
         """Stop and remove container by ID."""

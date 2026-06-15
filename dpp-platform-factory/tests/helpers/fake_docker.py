@@ -1,6 +1,7 @@
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-import time
+
 
 @dataclass
 class FakeContainer:
@@ -42,6 +43,7 @@ class FakeDockerClient:
     def __init__(self):
         self.containers_list: Dict[str, FakeContainer] = {}
         self.networks_list: Dict[str, FakeNetwork] = {}
+        self.volumes_list: Dict[str, bool] = {}
         self.fail_run_on: Optional[str] = None
         self.fail_wait_healthy_on: Optional[str] = None
 
@@ -65,6 +67,9 @@ class FakeDockerClient:
     def run_container(self, image, name, env, ports, volumes, network, labels, command=None) -> FakeContainer:
         if self.fail_run_on == name:
             raise RuntimeError(f"Simulated failure for {name}")
+
+        for volume_name in volumes:
+            self.volumes_list[volume_name] = True
         
         container = FakeContainer(
             id=f"id-{name}",
@@ -83,6 +88,9 @@ class FakeDockerClient:
     def remove_container(self, container: FakeContainer, remove_volumes=False):
         if container.name in self.containers_list:
             del self.containers_list[container.name]
+
+    def remove_volume(self, name: str) -> bool:
+        return self.volumes_list.pop(name, None) is not None
 
     def start_container(self, container: FakeContainer):
         container.start()

@@ -1,9 +1,12 @@
-import os
 import asyncio
-import structlog
 import docker.errors
-from ..infrastructure.docker_client import DockerClient, DPP_NET
+import os
+import structlog
+
+from ..core.platform import platform_db_volume_name
 from ..core.state import FactoryState
+from ..infrastructure.docker_client import DockerClient, DPP_NET
+from ..infrastructure.resolver import RESOLVER_DB_VOLUME
 
 logger = structlog.get_logger()
 
@@ -74,7 +77,13 @@ async def shutdown(client: DockerClient, state: FactoryState) -> None:
             except Exception as exc:
                 logger.warning("shutdown_resolver_db_failed", error=str(exc))
 
-    # 5. Remove dpp-net network if no other containers are using it
+    # 5. Remove named DB volumes explicitly. container.remove(v=True) does not
+    volume_names = [platform_db_volume_name(record.platform_id) for record in platform_records]
+    if state.resolver:
+        volume_names.append(RESOLVER_DB_VOLUME)
+    _remove_db_volumes(client, volume_names)
+
+    # 6. Remove dpp-net network if no other containers are using it
     try:
         network = client._client.networks.get(DPP_NET)
         # Check if any containers are still attached
@@ -90,3 +99,11 @@ async def shutdown(client: DockerClient, state: FactoryState) -> None:
         logger.warning("shutdown_network_removal_failed", error=str(exc))
 
     logger.info("shutdown_complete")
+
+
+def _remove_db_volumes(client: DockerClient, volume_names: list[str]) -> None:
+    for volume_name in dict.fromkeys(volume_names):
+        try:
+            client.remove_volume(volume_name)
+        except Exception as exc:
+            logger.warning("shutdown_volume_failed", volume=volume_name, error=str(exc))

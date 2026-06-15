@@ -1,13 +1,13 @@
 """Unit tests for platform lifecycle (mocked Docker)."""
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from dpp_platform_factory.core.platform import (
     PlatformSpec,
     _database_url,
     _db_env_and_mount,
     _platform_labels,
+    platform_db_volume_name,
     spawn_platform,
     teardown_platform,
 )
@@ -161,6 +161,10 @@ def test_platform_labels_contain_all_metadata():
     assert labels["dpp-factory-issuer-id"] == "issuerA"
     assert "pv_module" in labels["dpp-factory-subject-types"]
     assert labels["dpp-factory-host-port"] == "8081"
+
+
+def test_platform_db_volume_name_matches_spawned_db_volume():
+    assert platform_db_volume_name("platform-a") == "dpp-platform-a-db-data"
 
 
 # ---------------------------------------------------------------------------

@@ -1,10 +1,10 @@
-from unittest.mock import MagicMock, call, patch
-
 import docker.errors
 import httpx
 import pytest
+from unittest.mock import MagicMock, call, patch
 
 from dpp_platform_factory.infrastructure.docker_client import MANAGED_BY_LABEL, DockerClient, _LABEL_KEY, _LABEL_VALUE
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -233,6 +233,25 @@ def test_remove_container_with_volumes(client: DockerClient):
     client.remove_container(container, remove_volumes=True)
 
     container.remove.assert_called_once_with(v=True)
+
+
+def test_remove_volume_removes_existing_named_volume(client: DockerClient, sdk: MagicMock):
+    volume = MagicMock()
+    sdk.volumes.get.return_value = volume
+
+    removed = client.remove_volume("dpp-resolver-db-data")
+
+    assert removed is True
+    sdk.volumes.get.assert_called_once_with("dpp-resolver-db-data")
+    volume.remove.assert_called_once_with(force=True)
+
+
+def test_remove_volume_ignores_missing_named_volume(client: DockerClient, sdk: MagicMock):
+    sdk.volumes.get.side_effect = docker.errors.NotFound("missing")
+
+    removed = client.remove_volume("dpp-resolver-db-data")
+
+    assert removed is False
 
 
 # ---------------------------------------------------------------------------

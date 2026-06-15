@@ -1,10 +1,13 @@
 import os
-import sys
 import structlog
-from docker.models.containers import Container
-from ..infrastructure.docker_client import DockerClient, MANAGED_BY_LABEL
-from ..core.state import FactoryState, ResolverRecord, PlatformRecord, PlatformStatus
+import sys
 from datetime import datetime, UTC
+from docker.models.containers import Container
+
+from ..core.platform import platform_db_volume_name
+from ..core.state import FactoryState, ResolverRecord, PlatformRecord, PlatformStatus
+from ..infrastructure.docker_client import DockerClient
+from ..infrastructure.resolver import RESOLVER_DB_VOLUME
 
 logger = structlog.get_logger()
 
@@ -49,10 +52,22 @@ async def shutdown_orphans(client: DockerClient, containers: list[Container]) ->
     clean state on the next Factory run. Without remove_volumes=True, Docker keeps
     the named volume and Flyway finds stale migration history on the next startup.
     """
+    db_volume_names = [
+        volume_name
+        for container in containers
+        if (volume_name := _db_volume_name_for_container(container)) is not None
+    ]
+
     for container in containers:
         logger.info("orphan_shutdown", name=container.name)
         client.stop_container(container)
         client.remove_container(container, remove_volumes=True)
+
+    for volume_name in dict.fromkeys(db_volume_names):
+        try:
+            client.remove_volume(volume_name)
+        except Exception as exc:
+            logger.warning("orphan_volume_removal_failed", volume=volume_name, error=str(exc))
 
 async def reuse_orphans(client: DockerClient, containers: list[Container]) -> FactoryState:
     """Reconstruct FactoryState from container labels and inspect data."""
@@ -126,6 +141,18 @@ async def reuse_orphans(client: DockerClient, containers: list[Container]) -> Fa
         await state.add_platform(record)
         
     return state
+
+
+def _db_volume_name_for_container(container: Container) -> str | None:
+    labels = getattr(container, "labels", {}) or {}
+    role = labels.get("dpp-factory-role")
+    if role == "resolver-db":
+        return RESOLVER_DB_VOLUME
+    if role == "database":
+        platform_id = labels.get("dpp-factory-platform-id")
+        if platform_id:
+            return platform_db_volume_name(platform_id)
+    return None
 
 async def handle_orphans(client: DockerClient, state: FactoryState) -> FactoryState:
     """Detect and handle orphans, possibly updating the provided state."""

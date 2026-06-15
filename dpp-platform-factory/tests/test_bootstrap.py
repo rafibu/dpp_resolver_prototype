@@ -1,7 +1,6 @@
+import pytest
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from dpp_platform_factory.core.platform import PlatformRecord
 from dpp_platform_factory.core.state import PlatformStatus
@@ -72,6 +71,69 @@ async def test_bootstrap_success(mocker):
     assert "platform-a" in state.platforms
     assert state.platforms["platform-a"] == mock_platform_record
     mock_resolver_client.ensure_platform_mapping.assert_called_once_with(mock_platform_record)
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_removes_stale_db_volumes_before_starting_resolver(mocker):
+    mock_client = MagicMock()
+    mock_network = MagicMock()
+    mock_network.name = "dpp-net"
+    mock_client.ensure_network.return_value = mock_network
+    events = []
+    mock_client.remove_volume.side_effect = lambda name: events.append(("remove_volume", name))
+
+    config = FederationConfig(
+        resolver=ResolverConfig(port=8080),
+        platforms=[
+            PlatformConfig(
+                platform_id="platform-a",
+                stack="spring-postgres",
+                issuer_id="issuer-a",
+                subject_types=["type-a"],
+                port=8081,
+            )
+        ],
+    )
+    mock_resolver_record = ResolverRecord(
+        container_id="res-1",
+        db_container_id="res-db-1",
+        external_url="http://localhost:8080",
+        internal_url="http://dpp-resolver:8080",
+        status="RUNNING",
+        started_at=datetime.now(UTC),
+    )
+
+    async def start_resolver(*args, **kwargs):
+        events.append(("start_resolver", None))
+        return mock_resolver_record
+
+    mocker.patch("dpp_platform_factory.utils.bootstrap.start_resolver", start_resolver)
+    mock_platform_record = PlatformRecord(
+        platform_id="platform-a",
+        stack="spring-postgres",
+        issuer_id="issuer-a",
+        subject_types=["type-a"],
+        container_id="plat-1",
+        db_container_id="plat-db-1",
+        external_url="http://localhost:8081",
+        internal_url="http://dpp-platform-a:8080",
+        status=PlatformStatus.RUNNING,
+        created_at=datetime.now(UTC),
+    )
+    mocker.patch("dpp_platform_factory.utils.bootstrap.spawn_platform", AsyncMock(return_value=mock_platform_record))
+    mocker.patch("dpp_platform_factory.utils.bootstrap.handle_orphans", new_callable=AsyncMock)
+    mock_resolver_client = MagicMock()
+    mock_resolver_client.ensure_subject_type = AsyncMock()
+    mock_resolver_client.ensure_platform_mapping = AsyncMock()
+    mocker.patch("dpp_platform_factory.utils.bootstrap.ResolverClient", return_value=mock_resolver_client)
+
+    await bootstrap(mock_client, config)
+
+    assert events[:2] == [
+        ("remove_volume", "dpp-resolver-db-data"),
+        ("remove_volume", "dpp-platform-a-db-data"),
+    ]
+    assert events[2] == ("start_resolver", None)
 
 @pytest.mark.asyncio
 async def test_bootstrap_platform_failure_continues(mocker):

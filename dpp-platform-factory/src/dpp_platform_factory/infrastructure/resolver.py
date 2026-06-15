@@ -1,17 +1,17 @@
 import asyncio
+import structlog
 import time
 from datetime import UTC, datetime
 
-import structlog
-
-from ..utils.config import ResolverConfig
 from .docker_client import DockerClient
 from ..core.state import PlatformStatus, ResolverRecord
+from ..utils.config import ResolverConfig
 
 logger = structlog.get_logger()
 
 RESOLVER_NAME = "dpp-resolver"
 RESOLVER_DB_NAME = "dpp-resolver-db"
+RESOLVER_DB_VOLUME = f"{RESOLVER_DB_NAME}-data"
 RESOLVER_IMAGE = "dpp-resolver:latest"
 RESOLVER_DB_IMAGE = "postgres:16"
 RESOLVER_INTERNAL_PORT = 8080
@@ -37,7 +37,7 @@ async def start_resolver(
             "POSTGRES_PASSWORD": "postgres",
         },
         ports={},
-        volumes={f"{RESOLVER_DB_NAME}-data": {"bind": "/var/lib/postgresql/data", "mode": "rw"}},
+        volumes={RESOLVER_DB_VOLUME: {"bind": "/var/lib/postgresql/data", "mode": "rw"}},
         network=network_name,
         labels=_RESOLVER_DB_LABELS,
     )

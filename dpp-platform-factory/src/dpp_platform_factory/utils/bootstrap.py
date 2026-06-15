@@ -16,10 +16,10 @@ import structlog
 
 from .config import FederationConfig
 from .orphans import handle_orphans
-from ..core.platform import PlatformSpec, spawn_platform
+from ..core.platform import PlatformSpec, platform_db_volume_name, spawn_platform
 from ..core.state import FactoryState, PlatformStatus
 from ..infrastructure.docker_client import DPP_NET, DockerClient
-from ..infrastructure.resolver import start_resolver
+from ..infrastructure.resolver import RESOLVER_DB_VOLUME, start_resolver
 from ..infrastructure.resolver_client import ResolverClient
 
 logger = structlog.get_logger()
@@ -33,6 +33,7 @@ async def bootstrap(
 
     # Detect orphaned containers from a previous run first
     await handle_orphans(client, state)
+    _remove_startup_db_volumes(client, config)
 
     # Ensure the Docker network exists
     network = client.ensure_network(DPP_NET)
@@ -91,3 +92,12 @@ async def bootstrap(
             await state.add_platform(error_record)
 
     return state
+
+
+def _remove_startup_db_volumes(client: DockerClient, config: FederationConfig) -> None:
+    """Remove deterministic DB volumes before starting a fresh federation."""
+    volume_names = [RESOLVER_DB_VOLUME]
+    volume_names.extend(platform_db_volume_name(platform.platform_id) for platform in config.platforms)
+
+    for volume_name in dict.fromkeys(volume_names):
+        client.remove_volume(volume_name)

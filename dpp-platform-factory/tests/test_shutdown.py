@@ -1,9 +1,11 @@
-import pytest
 import os
-from unittest.mock import MagicMock, patch, AsyncMock
-from dpp_platform_factory.utils.shutdown import shutdown
-from dpp_platform_factory.core.state import FactoryState, ResolverRecord, PlatformRecord, PlatformStatus
+import pytest
 from datetime import datetime, UTC
+from unittest.mock import MagicMock, patch, AsyncMock
+
+from dpp_platform_factory.core.state import FactoryState, ResolverRecord, PlatformRecord, PlatformStatus
+from dpp_platform_factory.utils.shutdown import shutdown
+
 
 @pytest.mark.asyncio
 async def test_shutdown_success(mocker):
@@ -41,6 +43,8 @@ async def test_shutdown_success(mocker):
     await shutdown(mock_client, state)
 
     assert mock_client.stop_container.call_count == 4
+    mock_client.remove_volume.assert_any_call("dpp-p1-db-data")
+    mock_client.remove_volume.assert_any_call("dpp-resolver-db-data")
     mock_network.remove.assert_called_once()
 
 @pytest.mark.asyncio

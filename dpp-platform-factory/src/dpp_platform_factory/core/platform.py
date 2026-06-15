@@ -11,14 +11,13 @@ Container names and Docker labels are the sole persistence mechanism: on restart
 factory can recover the running topology from Docker's label index without a database.
 """
 import asyncio
+import structlog
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import structlog
-
-from ..infrastructure.docker_client import DockerClient
 from .state import PlatformRecord, PlatformStatus
+from ..infrastructure.docker_client import DockerClient
 
 logger = structlog.get_logger()
 
@@ -55,6 +54,7 @@ async def spawn_platform(
     container_name = f"dpp-{spec.platform_id}"
     db_labels = _db_labels(spec.platform_id)
     platform_labels = _platform_labels(spec.platform_id, spec.stack, spec.issuer_id, spec.subject_types, spec.host_port)
+    db_volume = platform_db_volume_name(spec.platform_id)
 
     db_container = None
     platform_container = None
@@ -65,7 +65,7 @@ async def spawn_platform(
             name=db_name,
             env=db_env,
             ports={},
-            volumes={f"{db_name}-data": {"bind": db_mount, "mode": "rw"}},
+            volumes={db_volume: {"bind": db_mount, "mode": "rw"}},
             network=network_name,
             labels=db_labels,
             command=_db_command(spec.stack),
@@ -127,7 +127,9 @@ async def teardown_platform(client: DockerClient, record: PlatformRecord) -> Non
 async def rebuild_db(client: DockerClient, record: PlatformRecord, network_name: str) -> str:
     """Stop and remove database container + volume, then spawn a fresh one. Returns new container ID."""
     db_name = f"dpp-{record.platform_id}-db"
+    db_volume = platform_db_volume_name(record.platform_id)
     _stop_by_id(client, record.db_container_id, remove_volumes=True)
+    client.remove_volume(db_volume)
 
     db_env, db_mount = _db_env_and_mount(record.stack)
     db_container = client.run_container(
@@ -135,7 +137,7 @@ async def rebuild_db(client: DockerClient, record: PlatformRecord, network_name:
         name=db_name,
         env=db_env,
         ports={},
-        volumes={f"{db_name}-data": {"bind": db_mount, "mode": "rw"}},
+        volumes={db_volume: {"bind": db_mount, "mode": "rw"}},
         network=network_name,
         labels=_db_labels(record.platform_id),
         command=_db_command(record.stack),
@@ -172,6 +174,10 @@ def _database_url(stack: str, db_name: str) -> str:
     # replicaSet=rs0 is required: without it PyMongo connects in standalone mode
     # and raises "Transaction numbers are only allowed on a replica set member".
     return f"mongodb://{db_name}:27017/?replicaSet=rs0"
+
+
+def platform_db_volume_name(platform_id: str) -> str:
+    return f"dpp-{platform_id}-db-data"
 
 
 def _db_labels(platform_id: str) -> dict[str, str]:

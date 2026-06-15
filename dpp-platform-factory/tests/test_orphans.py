@@ -1,8 +1,11 @@
-import pytest
 import os
+import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from dpp_platform_factory.utils.orphans import find_orphans, prompt_orphan_action, shutdown_orphans, reuse_orphans, handle_orphans
-from dpp_platform_factory.core.state import FactoryState, PlatformStatus
+
+from dpp_platform_factory.core.state import FactoryState
+from dpp_platform_factory.utils.orphans import find_orphans, prompt_orphan_action, shutdown_orphans, reuse_orphans, \
+    handle_orphans
+
 
 @pytest.fixture
 def mock_client():
@@ -39,6 +42,28 @@ async def test_shutdown_orphans(mock_client):
     await shutdown_orphans(mock_client, [mock_cont])
     mock_client.stop_container.assert_called_once_with(mock_cont)
     mock_client.remove_container.assert_called_once_with(mock_cont, remove_volumes=True)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_orphans_removes_named_db_volumes(mock_client):
+    mock_resolver_db = MagicMock()
+    mock_resolver_db.name = "dpp-resolver-db"
+    mock_resolver_db.labels = {
+        "managed-by": "dpp-factory",
+        "dpp-factory-role": "resolver-db",
+    }
+    mock_platform_db = MagicMock()
+    mock_platform_db.name = "dpp-platform-a-db"
+    mock_platform_db.labels = {
+        "managed-by": "dpp-factory",
+        "dpp-factory-role": "database",
+        "dpp-factory-platform-id": "platform-a",
+    }
+
+    await shutdown_orphans(mock_client, [mock_resolver_db, mock_platform_db])
+
+    mock_client.remove_volume.assert_any_call("dpp-resolver-db-data")
+    mock_client.remove_volume.assert_any_call("dpp-platform-a-db-data")
 
 @pytest.mark.asyncio
 async def test_reuse_orphans(mock_client):
