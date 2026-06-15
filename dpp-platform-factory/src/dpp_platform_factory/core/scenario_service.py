@@ -1,10 +1,9 @@
 import copy
+import httpx
 import json
 import time
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable
-
-import httpx
 
 from .platform_service import PlatformService
 from .schema_seed_service import SchemaSeedService
@@ -249,8 +248,21 @@ class ScenarioService:
             raise RuntimeError(f"Schema seeding failed: {hard_failures}")
 
     async def _cache_subjects(self, platform: PlatformRecord, subject_types: list[str]) -> None:
+        await self._ensure_platform_subject_types(platform, subject_types)
         for subject_type in subject_types:
             await self._post_json(f"{_platform_url(platform)}/schemas/{subject_type}/cacheSchema", {})
+
+    async def _ensure_platform_subject_types(self, platform: PlatformRecord, subject_types: list[str]) -> None:
+        for subject_type in subject_types:
+            response = await self._post_raw(f"{_platform_url(platform)}/admin/subject-types", {
+                "name": subject_type,
+                "description": subject_type.replace("_", " ").title(),
+            })
+            if response.status_code in (200, 201, 409):
+                continue
+            if response.status_code == 400 and _looks_like_duplicate_subject_type(response.text):
+                continue
+            response.raise_for_status()
 
     async def _pause_platform(self, platform: PlatformRecord) -> None:
         await self.platform_service.pause_platform(platform.platform_id)
@@ -441,6 +453,11 @@ def _dto_value(dto: dict, camel_key: str, snake_key: str) -> Any:
     if camel_key in dto:
         return dto[camel_key]
     return dto[snake_key]
+
+
+def _looks_like_duplicate_subject_type(text: str) -> bool:
+    lower_text = text.lower()
+    return "subject type" in lower_text and "already" in lower_text and "exist" in lower_text
 
 
 def _suffix() -> str:
