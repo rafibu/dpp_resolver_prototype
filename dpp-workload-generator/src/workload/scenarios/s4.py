@@ -10,9 +10,9 @@ from ..scenarios.pv import generate_pv_scenario
 
 logger = structlog.get_logger(__name__)
 
-async def run_s1(factory_url: str, seed: int, output_dir: Optional[Path] = None) -> bool:
-    """Scenario S1: Offline Interpretability"""
-    reporter = ScenarioReporter("s1", "Offline Interpretability", output_dir=output_dir)
+async def run_s4(factory_url: str, seed: int, output_dir: Optional[Path] = None) -> bool:
+    """Scenario S4: Offline Interpretability Supplement"""
+    reporter = ScenarioReporter("s4", "Offline Interpretability Supplement", output_dir=output_dir)
 
     async with FederationClient() as fed_client:
         # Initialize sentinel values so that later steps can detect a setup failure
@@ -92,5 +92,5 @@ async def run_s1(factory_url: str, seed: int, output_dir: Optional[Path] = None)
                         )
 
     report_path = reporter.finalize()
-    logger.info("s1_complete", report_path=str(report_path))
+    logger.info("s4_complete", report_path=str(report_path))
     return reporter.result.outcome == "PASSED"

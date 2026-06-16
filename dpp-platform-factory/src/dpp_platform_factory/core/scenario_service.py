@@ -10,7 +10,7 @@ from .schema_seed_service import SchemaSeedService
 from .state import FactoryState, PlatformRecord, PlatformStatus
 from ..api.api_models import ScenarioStatus, ScenarioStep
 
-SCENARIO_IDS = ("s1", "s2", "s3")
+SCENARIO_IDS = ("s2", "s3", "s4")
 
 
 class ScenarioService:
@@ -42,12 +42,12 @@ class ScenarioService:
                 raise
 
         try:
-            if scenario_id == "s1":
-                await self._run_s1(checked, observations)
-            elif scenario_id == "s2":
+            if scenario_id == "s2":
                 await self._run_s2(checked, observations)
             elif scenario_id == "s3":
                 await self._run_s3(checked, observations)
+            elif scenario_id == "s4":
+                await self._run_s4(checked, observations)
             else:
                 raise ValueError(f"Unknown scenario: {scenario_id}")
             status = "passed"
@@ -64,7 +64,7 @@ class ScenarioService:
             report_md=report,
         )
 
-    async def _run_s1(
+    async def _run_s4(
         self,
         checked: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]],
         observations: list[str],
@@ -472,18 +472,25 @@ def _build_report(
     observations: list[str],
 ) -> str:
     title = {
-        "s1": "S1: Offline Validation After Platform Unavailability",
         "s2": "S2: Independent Schema Evolution",
         "s3": "S3: Schema-Level Cycle Rejection",
+        "s4": "S4: Offline Validation After Platform Unavailability",
     }.get(scenario_id, scenario_id.upper())
     lines = [
         f"# {title}",
         "",
         f"- Status: `{status}`",
         f"- Duration: `{elapsed_ms} ms`",
+    ]
+    if scenario_id == "s4":
+        lines.extend([
+            "- Evaluation scope: `supplemental only; not part of the actual evaluation`",
+            "- Purpose: `probe whether offline validation may be interesting for future work`",
+        ])
+    lines.extend([
         "",
         "## Steps",
-    ]
+    ])
     for step in steps:
         suffix = f" - {step.error}" if step.error else ""
         lines.append(f"- `{step.status}` {step.name}{suffix}")

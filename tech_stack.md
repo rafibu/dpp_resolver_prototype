@@ -341,9 +341,9 @@ Measurement and fixtures:
 
 Scenarios:
 
-- `workload scenario s1 --output-dir output/scenarios` offline validation after platform unavailability
 - `workload scenario s2 --output-dir output/scenarios` independent schema evolution
 - `workload scenario s3 --output-dir output/scenarios` schema-level cycle rejection
+- `workload scenario s4 --output-dir output/scenarios` supplemental offline-validation check; not part of the actual evaluation
 
 The Workload Generator queries the Factory at startup to discover platform URLs. It does not need to be told manually where platforms are.
 
@@ -394,7 +394,7 @@ Keep list (minimum viable):
 - Per-platform DPP list and revision history view
 - Per-platform log viewer (reads from Docker logs via Factory proxy or a small backend)
 - Online/offline toggle per platform (calls Factory pause/resume)
-- Trigger-scenario buttons for S1, S2, S3 (invokes scenarios via the Factory)
+- Trigger-scenario buttons for S2, S3, and supplemental S4 (invokes scenarios via the Factory)
 - Raw JSON editor for DPP payloads with client-side schema validation
 - Display of platform state changes after operations
 

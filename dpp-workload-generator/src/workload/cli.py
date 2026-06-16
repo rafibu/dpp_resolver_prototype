@@ -14,9 +14,9 @@ from .payloads import generate_valid_payload
 from .scenarios.depth import generate_depth_chain
 from .scenarios.fanout import generate_fanout as _fanout_scenario
 from .scenarios.pv import generate_pv_scenario
-from .scenarios.s1 import run_s1
 from .scenarios.s2 import run_s2
 from .scenarios.s3 import run_s3
+from .scenarios.s4 import run_s4
 from .scenarios.schema_evolution import run_schema_evolution
 from .schemas.generator import generate_schema
 
@@ -240,23 +240,8 @@ async def _run_schema_evolution(revisions: int, update_kind: str, seed: int, out
     csv_path = recorder.end_run()
     typer.echo(f"Results written to {csv_path}")
 
-scenario_app = typer.Typer(help="Execute federation scenarios (S1, S2)")
+scenario_app = typer.Typer(help="Execute federation scenarios (S2, S3, S4)")
 app.add_typer(scenario_app, name="scenario")
-
-@scenario_app.command()
-def s1(
-    factory_url: str = typer.Option("http://localhost:8000", "--factory-url"),
-    seed: int = typer.Option(42, "--seed"),
-    output_dir: Optional[Path] = typer.Option(None, "--output-dir")
-):
-    """Scenario S1: Offline Interpretability"""
-    try:
-        success = asyncio.run(run_s1(factory_url, seed, output_dir))
-        if not success:
-            raise typer.Exit(code=1)
-    except Exception as e:
-        logger.error("s1_failed", error=str(e))
-        raise typer.Exit(code=1)
 
 @scenario_app.command()
 def s2(
@@ -286,6 +271,21 @@ def s3(
             raise typer.Exit(code=1)
     except Exception as e:
         logger.error("s3_failed", error=str(e))
+        raise typer.Exit(code=1)
+
+@scenario_app.command()
+def s4(
+    factory_url: str = typer.Option("http://localhost:8000", "--factory-url"),
+    seed: int = typer.Option(42, "--seed"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir")
+):
+    """Scenario S4: Offline Interpretability Supplement"""
+    try:
+        success = asyncio.run(run_s4(factory_url, seed, output_dir))
+        if not success:
+            raise typer.Exit(code=1)
+    except Exception as e:
+        logger.error("s4_failed", error=str(e))
         raise typer.Exit(code=1)
 
 if __name__ == "__main__":

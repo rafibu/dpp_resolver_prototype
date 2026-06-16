@@ -1,9 +1,11 @@
-# Scenario S1: Offline Interpretability
+# Scenario S4: Offline Interpretability Supplement
 
-**Run ID:** s1-2026-05-03T14-22-11Z
+**Run ID:** s4-2026-05-03T14-22-11Z
 **Started:** 2026-05-03T14:22:11.456Z
 **Completed:** 2026-05-03T14:22:35.012Z
 **Outcome:** PASSED
+
+**Evaluation scope:** Supplemental only. Scenario S4 is not part of the actual evaluation; it is retained only to check whether offline validation may be interesting for future work.
 
 ## Steps
 
@@ -77,4 +79,4 @@
 
 ## Conclusion
 
-Scenario S1 demonstrated the offline interpretability property of the architecture. The system successfully resolved the full DPP closure even when one of the participating platforms was offline, thanks to local caching of hard dependencies and integrity verification via hashes.
+Scenario S4 provides a supplemental offline-validation check. It is not part of the actual evaluation, but it indicates that cached hard-dependency closures may be worth considering as future work. In this run, the system successfully resolved the full DPP closure even when one participating platform was offline, thanks to local caching of hard dependencies and integrity verification via hashes.

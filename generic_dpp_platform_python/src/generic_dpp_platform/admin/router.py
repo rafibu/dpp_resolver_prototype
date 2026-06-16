@@ -10,9 +10,9 @@ platform state without modifying issued DPP revisions or the resolver registry.
 from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from ..database import get_database
 from . import service
 from .models import PlatformConfigDTO, SubjectTypeDTO
+from ..database import get_database
 
 router = APIRouter()
 
@@ -85,8 +85,8 @@ async def reset_platform_data(
     """Clear the external-revision cache for a clean scenario start.
 
     Removes all cached external DPP revisions from the referenced_dpp_revisions collection.
-    Used in scenarios (S1, S2) to reset the platform to a known state before exercising
-    offline interpretability or schema evolution behavior.
+    Used in scenarios (S2, S4) to reset the platform to a known state before exercising
+    schema evolution or supplemental offline-validation behavior.
     """
     await db.referenced_dpp_revisions.delete_many({})
     await db.dpp_revisions.delete_many({})

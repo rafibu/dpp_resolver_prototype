@@ -1,7 +1,7 @@
 import os
-
 import pytest
 from typer.testing import CliRunner
+
 from workload.cli import app
 
 runner = CliRunner()
@@ -10,9 +10,9 @@ runner = CliRunner()
 def test_scenario_help():
     result = runner.invoke(app, ["scenario", "--help"])
     assert result.exit_code == 0
-    assert "s1" in result.output
     assert "s2" in result.output
     assert "s3" in result.output
+    assert "s4" in result.output
 
 
 def _run_scenario(scenario_id: str, tmp_path) -> str:
@@ -36,8 +36,8 @@ def _run_scenario(scenario_id: str, tmp_path) -> str:
 
 
 @pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")
-def test_scenario_s1_full(tmp_path):
-    _run_scenario("s1", tmp_path)
+def test_scenario_s4_full(tmp_path):
+    _run_scenario("s4", tmp_path)
 
 
 @pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")

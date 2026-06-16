@@ -2,7 +2,7 @@
 
 ## Role in the Paper
 
-The Workload Generator drives the quantitative evaluation (Section 8.3) and the three end-to-end scenarios (Section 8.4) of the paper. It is a CLI tool that issues operations against the live prototype federation and records results.
+The Workload Generator drives the quantitative evaluation (Section 8.3), the end-to-end evaluation scenarios (Section 8.4), and supplemental scenario checks. It is a CLI tool that issues operations against the live prototype federation and records results.
 
 It is not part of the federated DPP ecosystem. It is a measurement harness that exercises the federation from the outside.
 
@@ -13,9 +13,9 @@ It is not part of the federated DPP ecosystem. It is a measurement harness that 
 | Materializes the PV/battery/inverter running example               | Sections 4-5 running example                  |
 | Measures issuance and resolution latency; writes CSV               | Section 8.3: prototype measurements           |
 | Benchmarks resolver fan-out/depth latency; prints CLI summary      | Section 8.3.3: closure resolution cost O(f^d) |
-| Runs scenario S1: offline validation after platform unavailability | Section 8.4.1                                 |
 | Runs scenario S2: independent schema evolution                     | Section 8.4.2                                 |
 | Runs scenario S3: schema-level cycle rejection (Invariant I6)      | Section 8.4.3                                 |
+| Runs scenario S4: offline validation after platform unavailability | Supplemental only; not part of the actual evaluation |
 
 The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are.
 
@@ -40,9 +40,9 @@ src/workload/
     fanout.py         -- fan-out fixture
     pv.py             -- PV/battery/inverter fixture (paper running example)
     schema_evolution.py -- schema evolution measurement workload
-    s1.py             -- Scenario S1: Offline Interpretability
     s2.py             -- Scenario S2: Independent Schema Evolution
     s3.py             -- Scenario S3: Schema-Level Cycle Rejection
+    s4.py             -- Scenario S4: Offline Interpretability Supplement
     reporter.py       -- Markdown report writer for scenarios
 scripts/
   plot.py             -- Matplotlib plots from CSV output
@@ -216,15 +216,17 @@ workload generate-depth --depth 3
 workload generate-fanout --fanout 5
 ```
 
-### Scenario evaluation (Section 8.4)
+### Scenario evaluation and supplement
 
 ```bash
-workload scenario s1 --output-dir output/scenarios
 workload scenario s2 --output-dir output/scenarios
 workload scenario s3 --output-dir output/scenarios
+
+# Supplemental only; not part of the actual evaluation.
+workload scenario s4 --output-dir output/scenarios
 ```
 
-Each scenario writes a Markdown report to the output directory with per-step expected vs. observed outcomes and a PASSED/FAILED verdict.
+Each scenario writes a Markdown report to the output directory with per-step expected vs. observed outcomes and a PASSED/FAILED verdict. S4 is retained only as a supplement to check whether offline validation may be interesting for future work; it is not part of the actual evaluation.
 
 ### Plotting
 

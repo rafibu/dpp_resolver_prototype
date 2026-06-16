@@ -48,12 +48,6 @@ export class ScenarioRunnerComponent {
 
   public scenarios: ScenarioDefinition[] = [
     {
-      id: 's1',
-      icon: 'cloud_off',
-      title: 'S1: Offline Validation',
-      subtitle: 'Previously resolved references remain inspectable while a platform is unavailable'
-    },
-    {
       id: 's2',
       icon: 'schema',
       title: 'S2: Schema Evolution',
@@ -64,12 +58,18 @@ export class ScenarioRunnerComponent {
       icon: 'account_tree',
       title: 'S3: Cycle Rejection',
       subtitle: 'The resolver rejects schema-level hard-reference cycles before issuance'
+    },
+    {
+      id: 's4',
+      icon: 'cloud_off',
+      title: 'S4: Offline Validation',
+      subtitle: 'Supplemental check only; not part of the actual evaluation'
     }
   ];
-  public statuses = signal<Record<ScenarioId, ScenarioStatus | null>>({ s1: null, s2: null, s3: null });
-  public reports = signal<Record<ScenarioId, SafeHtml | null>>({ s1: null, s2: null, s3: null });
+  public statuses = signal<Record<ScenarioId, ScenarioStatus | null>>({ s2: null, s3: null, s4: null });
+  public reports = signal<Record<ScenarioId, SafeHtml | null>>({ s2: null, s3: null, s4: null });
   public runningScenario = signal<ScenarioId | null>(null);
-  public errors = signal<Record<ScenarioId, string | null>>({ s1: null, s2: null, s3: null });
+  public errors = signal<Record<ScenarioId, string | null>>({ s2: null, s3: null, s4: null });
   private pollSubscription?: Subscription;
 
   constructor() {

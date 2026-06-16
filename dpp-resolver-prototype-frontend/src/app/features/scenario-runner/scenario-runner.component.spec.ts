@@ -9,7 +9,7 @@ describe('ScenarioRunnerComponent', () => {
 
   beforeEach(async () => {
     factoryServiceSpy = {
-      runScenario: vi.fn().mockReturnValue(of({ scenario_id: 's1', status: 'passed', steps: [], report_md: '# Report' })),
+      runScenario: vi.fn().mockReturnValue(of({ scenario_id: 's4', status: 'passed', steps: [], report_md: '# Report' })),
       getScenarioStatus: vi.fn().mockReturnValue(of({ status: 'passed', steps: [], report_md: '# Report' }))
     };
 
@@ -28,9 +28,9 @@ describe('ScenarioRunnerComponent', () => {
 
   it('should run scenario and poll status', () => {
     const fixture = TestBed.createComponent(ScenarioRunnerComponent);
-    fixture.componentInstance.runScenario('s1');
+    fixture.componentInstance.runScenario('s4');
 
-    expect(factoryServiceSpy.runScenario).toHaveBeenCalledWith('s1');
+    expect(factoryServiceSpy.runScenario).toHaveBeenCalledWith('s4');
     // startPolling uses interval, so we might need fakeAsync for full verification
   });
 });
