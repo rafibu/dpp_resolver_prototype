@@ -70,7 +70,7 @@ public class DppController {
      * Returns a bounded recursive hard-reference closure rooted at a specific immutable revision.
      * <p>
      * The response contains the root revision and the unique hard-reference revisions reached up to
-     * {@code maxDepth}. A depth of {@code 1} resolves only direct hard references of the root revision, a depth of
+     * {@code max_depth}. A depth of {@code 1} resolves only direct hard references of the root revision, a depth of
      * {@code 2} also resolves hard references of those directly referenced revisions. Soft references are not
      * traversed.
      * As this is not part of the actual formal model, it is implemented to showcase why we only resolve depth of one.
@@ -79,20 +79,20 @@ public class DppController {
      *
      * @param dppId           the issuer-qualified DPP identifier
      * @param revisionVersion the concrete revision version
-     * @param maxDepth         positive traversal depth, currently bounded by the service to a reasonable limit
+     * @param max_depth        positive traversal depth from the {@code max_depth} request parameter
      * @return the root revision and resolved closure entries
      */
     @GetMapping("/{dpp_id}/{revision_version}/closure")
     public ResponseEntity<DppRevisionClosureResponseDTO> getDppRevisionClosure(@PathVariable(name = "dpp_id") String dppId,
                                                                                @PathVariable(name = "revision_version") Integer revisionVersion,
-                                                                               @RequestParam(required = false, name = "max_depth") Integer maxDepth) {
+                                                                               @RequestParam(required = false, name = "max_depth") Integer max_depth) {
         log.info(
-                "Retrieving DPP revision closure for dpp_id: {}, revision_version: {}, maxDepth: {}",
+                "Retrieving DPP revision closure for dpp_id: {}, revision_version: {}, max_depth: {}",
                 dppId,
                 revisionVersion,
-                maxDepth
+                max_depth
         );
-        DppRevisionClosureResponseDTO response = dppRevisionService.getDppRevisionClosure(dppId, revisionVersion, maxDepth);
+        DppRevisionClosureResponseDTO response = dppRevisionService.getDppRevisionClosure(dppId, revisionVersion, max_depth);
         return ResponseEntity.ok(response);
     }
 

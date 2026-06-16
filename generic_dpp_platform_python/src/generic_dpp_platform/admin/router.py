@@ -13,6 +13,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from . import service
 from .models import PlatformConfigDTO, SubjectTypeDTO
 from ..database import get_database
+from ..dpps.models import DppRevisionResponseDTO
 
 router = APIRouter()
 
@@ -92,3 +93,18 @@ async def reset_platform_data(
     await db.dpp_revisions.delete_many({})
     await db.logical_dpps.delete_many({})
     return {"status": "reset_complete"}
+
+
+@router.post("/import-revisions", response_model=list[DppRevisionResponseDTO])
+async def import_revisions(
+    revisions: list[DppRevisionResponseDTO],
+    db: AsyncIOMotorDatabase = Depends(get_database),
+) -> list[DppRevisionResponseDTO]:
+    """Import immutable revisions copied during issuer migration scenarios.
+
+    This administrative hook is intentionally narrow: it delegates subject-type
+    lookup, schema-cache lookup, and DPP persistence to the same service modules used
+    by normal platform operations. The endpoint is therefore an orchestration helper
+    for migration, not a separate DPP lifecycle implementation.
+    """
+    return await service.import_revisions(db, revisions)

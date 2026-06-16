@@ -6,7 +6,7 @@ from .reporter import ScenarioReporter
 from ..clients import ResolverClient, PlatformClient, IssueDppSpec, DppSchemaVersion, SchemaValidationError
 from ..federation import FederationClient
 from ..payloads import generate_seed_payload, ReferenceSpec
-from ..schemas.generator import generate_schema
+from ..seed_schemas import canonical_seed_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -26,9 +26,9 @@ async def run_s2(factory_url: str, seed: int, output_dir: Optional[Path] = None)
             resolver = ResolverClient(resolver_url)
 
             await resolver.ensure_subject_type("battery")
-            await resolver.publish_schema("battery", 1, 0, generate_schema("battery"))
+            await resolver.publish_schema("battery", 1, 0, canonical_seed_schema("battery"))
             await resolver.ensure_subject_type("pv_module")
-            await resolver.publish_schema("pv_module", 1, 0, generate_schema("pv_module", with_dependencies=True))
+            await resolver.publish_schema("pv_module", 1, 0, canonical_seed_schema("pv_module"))
 
             reporter.record_observation("Federation ready, battery v1.0 and pv_module v1.0 published", True)
 

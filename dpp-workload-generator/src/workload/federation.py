@@ -19,6 +19,7 @@ class PlatformInfo(BaseModel):
     issuer_id: str
     subject_types: List[str]
     external_url: str
+    internal_url: Optional[str] = None
     status: PlatformStatus
     created_at: datetime
 

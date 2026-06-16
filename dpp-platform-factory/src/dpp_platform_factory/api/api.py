@@ -2,11 +2,10 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Dict, List, Optional
-
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
+from typing import Dict, List, Optional
 
 from .api_models import (
     FederationOverview,
@@ -98,6 +97,7 @@ def _to_platform_info(record: PlatformRecord) -> PlatformInfo:
         issuer_id=record.issuer_id,
         subject_types=record.subject_types,
         external_url=record.external_url,
+        internal_url=record.internal_url,
         status=record.status,
         created_at=record.created_at
     )

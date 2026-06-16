@@ -11,6 +11,7 @@ export interface PlatformInfo {
   issuer_id: string;
   subject_types: string[];
   external_url: string;
+  internal_url?: string;
   status: PlatformStatus;
   created_at: string;
 }

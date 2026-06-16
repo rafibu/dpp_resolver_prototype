@@ -384,6 +384,98 @@ async def create_dpp_revision_for_existing(
     return _doc_to_response(revision_doc)
 
 
+async def import_existing_revision(
+        db: AsyncIOMotorDatabase,
+        revision: DppRevisionResponseDTO,
+        schema_document: dict,
+) -> DppRevisionResponseDTO:
+    """Persist one copied immutable revision for an issuer-migration import.
+
+    This function is the DPP-service part of the administrative import endpoint. It is
+    intentionally not a replacement for ``create_new_dpp`` or
+    ``create_dpp_revision_for_existing``: no new revision is authored here. Instead, a
+    successor platform stores a revision that was already issued by the previous hosting
+    platform so resolver migration can keep hard and soft references resolvable.
+
+    The method reuses the same stored document shape and invariant checks that apply to
+    normal revisions where they are relevant:
+
+    - I5: validate the copied payload against the exact cached schema.
+    - I4: recompute and compare the copied payload hash before storing.
+    - Logical DPP grouping: create or reuse the logical DPP record for the imported ID.
+    - Idempotency: return an existing imported revision unchanged when migration retries.
+
+    Hard references are not resolved during import because the incoming revision is a
+    historical artefact. Resolving dependencies here would turn migration into a fresh
+    issue/revise transition instead of copying the already-issued revision.
+    """
+    _validate_imported_revision_envelope(revision)
+
+    schema_version = revision.schema_version
+    subject_type = schema_version.subject_type
+    existing_logical = await db.logical_dpps.find_one({"dpp_id": revision.dpp_id})
+    if existing_logical and existing_logical["subject_type"] != subject_type:
+        raise ValueError("Imported revisions for one DPP must use one subject type")
+
+    validated_payload = validate_dpp_document(revision.dpp_payload, schema_document)
+    computed_hash = hash_to_hex(hash_document(validated_payload))
+    if computed_hash != revision.payload_hash:
+        raise ValueError(f"Imported revision payload hash mismatch for {revision.dpp_id}")
+
+    revision_doc = _build_revision_doc(
+        dpp_id=revision.dpp_id,
+        version=revision.version,
+        schema_version=schema_version,
+        validated_payload=validated_payload,
+        payload_hash=revision.payload_hash,
+        created_at=revision.created_at,
+    )
+
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            existing_revision = await db.dpp_revisions.find_one(
+                {"dpp_id": revision.dpp_id, "dpp_version": revision.version},
+                {"_id": 0},
+                session=session,
+            )
+            if existing_revision:
+                return _doc_to_response(existing_revision)
+
+            logical = await db.logical_dpps.find_one({"dpp_id": revision.dpp_id}, session=session)
+            if logical and logical["subject_type"] != subject_type:
+                raise ValueError("Imported revisions for one DPP must use one subject type")
+            if logical is None:
+                await db.logical_dpps.insert_one(
+                    {
+                        "dpp_id": revision.dpp_id,
+                        "subject_type": subject_type,
+                        "current_version": revision.version,
+                        "created_at": revision.created_at,
+                    },
+                    session=session,
+                )
+            else:
+                await db.logical_dpps.update_one(
+                    {"dpp_id": revision.dpp_id, "current_version": {"$lt": revision.version}},
+                    {"$set": {"current_version": revision.version}},
+                    session=session,
+                )
+
+            await db.dpp_revisions.insert_one(revision_doc, session=session)
+
+    logger.info("dpp_revision_imported", dpp_id=revision.dpp_id, version=revision.version)
+    return _doc_to_response(revision_doc)
+
+
+def _validate_imported_revision_envelope(revision: DppRevisionResponseDTO) -> None:
+    if not revision.dpp_id:
+        raise ValueError("dpp_id is required for imported revisions")
+    if revision.version < 1:
+        raise ValueError("version must be positive for imported revisions")
+    if not revision.payload_hash:
+        raise ValueError("payload_hash is required for imported revisions")
+
+
 async def _prepare_revision_doc(
         db: AsyncIOMotorDatabase,
         dpp_id: str,

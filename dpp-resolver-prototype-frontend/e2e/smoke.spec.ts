@@ -31,6 +31,6 @@ test.describe('DPP Resolver Smoke Test', () => {
   test('should navigate to scenario runner', async ({ page }) => {
     await page.click('a:has-text("Scenario Runner")');
     await expect(page).toHaveURL(/.*scenarios/);
-    await expect(page.getByText('S4: Offline Validation')).toBeVisible();
+    await expect(page.getByText('S1: Reference Stability')).toBeVisible();
   });
 });

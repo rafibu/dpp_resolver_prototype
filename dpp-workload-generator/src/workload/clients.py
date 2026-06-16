@@ -151,9 +151,129 @@ class PlatformClient(BaseClient):
         resp = await self._request("GET", path)
         return DppResponse.model_validate(resp.json())
 
+    async def get_detail(self, dpp_id: str) -> dict:
+        resp = await self._request("GET", f"/dpps/{dpp_id}")
+        return resp.json()
+
     async def get_schema(self, subject_type: str, major: int, minor: int) -> dict:
         resp = await self._request("GET", f"/schemas/{subject_type}/{major}/{minor}")
         return resp.json()
+
+    async def cache_schema(self, subject_type: str) -> None:
+        await self._request("POST", f"/schemas/{subject_type}/cacheSchema", json={})
+
+    async def supports_revision_import(self) -> bool:
+        """Return whether this platform exposes the S1 revision-import endpoint.
+
+        The probe uses an empty import list, which is a no-op on current platforms.
+        It lets S1 avoid reusing stale successor containers that were built before
+        the admin import endpoint existed.
+        """
+        try:
+            await self._request("POST", "/admin/import-revisions", json=[])
+            return True
+        except DppNotFoundError:
+            return False
+        except WorkloadError as exc:
+            logger.warning(
+                "platform_import_revisions_probe_failed",
+                platform_id=self.platform_info.platform_id,
+                error=str(exc),
+            )
+            return False
+
+    async def import_revisions(self, revisions: list[DppResponse]) -> None:
+        """Copy existing revisions into a successor platform for issuer migration.
+
+        Current platform builds expose an admin import endpoint because migration is
+        not a new issue/revise transition. Live e2e runs can still encounter an
+        older spawned platform image without that endpoint. In that case S1 falls
+        back to the normal issue/revise API and then verifies that the recreated
+        revisions have the same version, payload, and hash as the source revisions.
+        """
+        try:
+            await self._request(
+                "POST",
+                "/admin/import-revisions",
+                json=[revision.model_dump(mode="json") for revision in revisions],
+            )
+            return
+        except DppNotFoundError:
+            logger.warning(
+                "platform_import_revisions_endpoint_missing",
+                platform_id=self.platform_info.platform_id,
+                fallback="issue_revise",
+            )
+
+        self._assert_public_replay_can_preserve_ids(revisions)
+        await self._replay_imported_revisions(revisions)
+
+    def _assert_public_replay_can_preserve_ids(self, revisions: list[DppResponse]) -> None:
+        """Ensure issue/revise fallback can satisfy the platform issuer-prefix rule."""
+        expected_prefix = f"{self.platform_info.issuer_id}-"
+        mismatched = next(
+            (revision.dpp_id for revision in revisions if not revision.dpp_id.startswith(expected_prefix)),
+            None,
+        )
+        if mismatched is not None:
+            raise WorkloadError(
+                "Platform is missing /admin/import-revisions and public replay cannot preserve "
+                f"source DPP ID {mismatched!r}: target platform {self.platform_info.platform_id} "
+                f"uses issuer prefix {expected_prefix!r}. Rebuild the platform image with the "
+                "admin import endpoint or choose an import-capable successor."
+            )
+
+    async def _replay_imported_revisions(self, revisions: list[DppResponse]) -> None:
+        """Recreate imported revisions through issue/revise when admin import is absent."""
+        for revision in sorted(revisions, key=lambda item: (item.dpp_id, item.version)):
+            if revision.version < 1:
+                raise WorkloadError(f"Cannot import non-positive revision version {revision.version}")
+
+            if revision.version == 1:
+                imported = await self._issue_imported_revision(revision)
+            else:
+                imported = await self._revise_imported_revision(revision)
+
+            self._assert_imported_revision_matches(revision, imported)
+
+    async def _issue_imported_revision(self, revision: DppResponse) -> DppResponse:
+        """Issue a source revision-1 payload with its original DPP ID."""
+        spec = IssueDppSpec(
+            dpp_id=revision.dpp_id,
+            schema_version=revision.schema_version,
+            dpp_payload=revision.dpp_payload,
+        )
+        try:
+            return await self.issue_dpp(spec)
+        except ConflictError:
+            return await self.get_revision(revision.dpp_id, revision.version)
+
+    async def _revise_imported_revision(self, revision: DppResponse) -> DppResponse:
+        """Append an imported successor revision with its original version number."""
+        spec = ReviseDppSpec(
+            version=revision.version,
+            schema_version=revision.schema_version,
+            dpp_payload=revision.dpp_payload,
+        )
+        try:
+            return await self.revise_dpp(revision.dpp_id, spec)
+        except ConflictError:
+            return await self.get_revision(revision.dpp_id, revision.version)
+
+    def _assert_imported_revision_matches(self, expected: DppResponse, actual: DppResponse) -> None:
+        """Fail migration if fallback replay changes revision identity or content."""
+        if (
+            actual.dpp_id != expected.dpp_id
+            or actual.version != expected.version
+            or actual.schema_version != expected.schema_version
+            or actual.dpp_payload != expected.dpp_payload
+            or actual.payload_hash != expected.payload_hash
+        ):
+            raise WorkloadError(
+                "Fallback import changed revision content: "
+                f"expected {expected.dpp_id} v{expected.version} hash {expected.payload_hash}, "
+                f"got {actual.dpp_id} v{actual.version} hash {actual.payload_hash}"
+            )
 
 class ResolverClient(BaseClient):
     def __init__(self, base_url: str):
@@ -238,6 +358,67 @@ class ResolverClient(BaseClient):
         issuer_id = quote(platform.issuer_id, safe="")
         encoded_subject_type = quote(subject_type, safe="")
         await self._request("POST", f"/admin/platforms/{issuer_id}/subject-types/{encoded_subject_type}")
+
+    async def ensure_platform_anchor(
+        self,
+        platform: PlatformInfo,
+        anchor_issuer_id: str,
+        subject_types: list[str],
+    ) -> None:
+        """Register a stable alias row so a migrated issuer can be restored later.
+
+        The Resolver's migrate operation validates that the target platform name and
+        resolution URL already exist in the registry. When S1 moves issuerB away from
+        Platform B, that original row no longer names Platform B. This anchor keeps a
+        harmless alias for the original physical platform so the final restore can use
+        the normal migrate endpoint instead of inventing a special rollback path.
+        """
+        mappings = await self.list_platforms()
+        resolution_base = platform.internal_url or platform.external_url
+        resolution_url = f"{resolution_base.rstrip('/')}/dpps/{{dppId}}"
+        entry = next(
+            (m for m in mappings if (m.get("issuer_id") or m.get("issuerId")) == anchor_issuer_id),
+            None,
+        )
+
+        if entry is None:
+            await self._request("POST", "/admin/platforms/register", json={
+                "platform": platform.platform_id,
+                "resolution_url": resolution_url,
+                "issuer_id": anchor_issuer_id,
+                "subject_types": list(dict.fromkeys(subject_types)),
+            })
+            return
+
+        existing_platform = entry.get("platform")
+        existing_url = entry.get("resolution_url") or entry.get("resolutionUrl")
+        if existing_platform != platform.platform_id or existing_url != resolution_url:
+            raise WorkloadError(
+                f"Resolver anchor {anchor_issuer_id} points to {existing_platform} ({existing_url}), "
+                f"expected {platform.platform_id} ({resolution_url})"
+            )
+
+        existing_subject_types = set(entry.get("subject_types") or entry.get("subjectTypes") or [])
+        for subject_type in subject_types:
+            if subject_type not in existing_subject_types:
+                issuer_id = quote(anchor_issuer_id, safe="")
+                encoded_subject_type = quote(subject_type, safe="")
+                await self._request(
+                    "POST",
+                    f"/admin/platforms/{issuer_id}/subject-types/{encoded_subject_type}",
+                )
+
+    async def migrate_platform(self, issuer_id: str, target_platform: PlatformInfo) -> dict:
+        resolution_base = target_platform.internal_url or target_platform.external_url
+        response = await self._request(
+            "POST",
+            f"/admin/platforms/{quote(issuer_id, safe='')}/migrate",
+            json={
+                "platform": target_platform.platform_id,
+                "new_resolution_url": f"{resolution_base.rstrip('/')}/dpps/{{dppId}}",
+            },
+        )
+        return response.json()
 
     async def resolve(self, subject_type: str, dpp_id: str, version: int | None = None) -> str:
         """Return the resolver target without dereferencing Docker-internal redirects."""

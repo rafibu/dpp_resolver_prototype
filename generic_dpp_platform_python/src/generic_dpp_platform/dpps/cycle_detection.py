@@ -3,13 +3,12 @@ Instance-level hard-dependency cycle detection (BFS, bounded to _MAX_ROUNDS).
 
 Relation to the formal model: this check corresponds to Definition 14 (instance hard-dependency
 graph). It is retained to show an alternative approach at the instance level, consistent with
-the paper's discussion in Section 5. The primary cycle-prevention mechanism is schema-level
+the paper's discussion in Section 7. The primary cycle-prevention mechanism is schema-level
 acyclicity (Invariant I6) enforced by the resolver.
 """
-from collections import deque
-import warnings
-
 import structlog
+import warnings
+from collections import deque
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from .exceptions import DppCycleDetectedException

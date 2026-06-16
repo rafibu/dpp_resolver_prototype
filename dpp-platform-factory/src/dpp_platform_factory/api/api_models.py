@@ -1,7 +1,9 @@
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
 from datetime import datetime
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+
 from ..core.state import PlatformStatus
+
 
 class PlatformSpawnRequest(BaseModel):
     stack: str
@@ -14,6 +16,7 @@ class PlatformInfo(BaseModel):
     issuer_id: str
     subject_types: List[str]
     external_url: str
+    internal_url: str
     status: PlatformStatus
     created_at: datetime
 

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 /**
  *
@@ -30,6 +31,25 @@ public class SubjectTypeService {
         }
         SubjectType toCreate = fromDTO(subjectTypeDTO);
         return toDTO(subjectTypeRepository.save(toCreate));
+    }
+
+    /**
+     * Load a registered subject type as a domain entity for service orchestration.
+     * <p>
+     * Administrative workflows such as issuer-migration imports are not allowed to invent subject types. They
+     * must reuse a subject type that was already registered through the normal subject-type path, just like
+     * issue/revise operations do. Returning the entity here keeps those workflows from reaching around the
+     * subject-type service directly into the repository.
+     * </p>
+     *
+     * @param name subject type name referenced by an incoming DPP revision
+     * @return the persisted subject type entity
+     * @throws NoSuchElementException if the subject type is not registered on this platform
+     */
+    @Transactional(readOnly = true)
+    public SubjectType getRequiredSubjectType(String name) {
+        return subjectTypeRepository.findByName(name)
+                .orElseThrow(() -> new NoSuchElementException("Subject type not found: " + name));
     }
 
     private static SubjectType fromDTO(SubjectTypeDTO subjectTypeDTO) {

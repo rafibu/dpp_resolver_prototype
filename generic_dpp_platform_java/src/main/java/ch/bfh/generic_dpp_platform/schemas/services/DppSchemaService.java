@@ -2,14 +2,17 @@ package ch.bfh.generic_dpp_platform.schemas.services;
 
 import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
-import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
+import ch.bfh.generic_dpp_platform.dpps.dtos.DppRevisionSchemaDTO;
 import ch.bfh.generic_dpp_platform.schemas.dtos.DppSchemaDTO;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
+import ch.bfh.generic_dpp_platform.schemas.repositories.DppSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.NoSuchElementException;
 
 /**
  *
@@ -58,6 +61,41 @@ public class DppSchemaService {
         SubjectType subjectType = subjectTypeRepository.findByName(subjectTypeName).orElseThrow();
 
         return dppSchemaRepository.findNewestBySubjectType(subjectType).map(DppSchemaService::toDTO).orElse(null);
+    }
+
+    /**
+     * Load the exact cached schema entity named by a DPP revision.
+     * <p>
+     * This method is intentionally cache-only. Administrative migration import does not publish schemas and does
+     * not silently change platform capabilities; the caller must have registered the subject type and cached the
+     * exact schema through the existing schema endpoints before importing copied revisions. This keeps the import
+     * endpoint as orchestration over known platform paths rather than a second schema-management path.
+     * </p>
+     *
+     * @param schemaVersion exact schema reference carried by the imported revision
+     * @return cached schema entity used for payload validation
+     * @throws IllegalArgumentException if the schema reference is incomplete
+     * @throws NoSuchElementException   if the exact schema is not cached on this platform
+     */
+    @Transactional(readOnly = true)
+    public DppSchema getRequiredCachedSchema(DppRevisionSchemaDTO schemaVersion) {
+        if (schemaVersion == null) {
+            throw new IllegalArgumentException("schema_version is required for imported revisions");
+        }
+        if (schemaVersion.getSubjectType() == null || schemaVersion.getSubjectType().isBlank()
+                || schemaVersion.getMajorVersion() == null
+                || schemaVersion.getMinorVersion() == null) {
+            throw new IllegalArgumentException("schema_version must contain subject_type, major_version, and minor_version");
+        }
+
+        DppSchemaId schemaId = DppSchemaId.builder()
+                .subjectTypeName(schemaVersion.getSubjectType())
+                .majorVersion(schemaVersion.getMajorVersion())
+                .minorVersion(schemaVersion.getMinorVersion())
+                .build();
+
+        return dppSchemaRepository.findById(schemaId)
+                .orElseThrow(() -> new NoSuchElementException("Schema not cached: " + schemaId));
     }
 
     private static DppSchema fromDTO(DppSchemaDTO dppSchemaDTO, SubjectType subjectType) {

@@ -92,3 +92,186 @@ async def test_cache_subjects_rejects_unexpected_subject_type_error(monkeypatch)
 
     with pytest.raises(httpx.HTTPStatusError):
         await service._cache_subjects(_platform(), ["pv_module"])
+
+
+@pytest.mark.asyncio
+async def test_ensure_platform_anchor_registers_alias(monkeypatch):
+    service = ScenarioService(None, None, None)
+    calls = []
+
+    async def get_json(url: str):
+        calls.append(("get", url, None))
+        return []
+
+    async def post_json(url: str, body) -> dict:
+        calls.append(("post", url, body))
+        return {}
+
+    monkeypatch.setattr(service, "_get_json", get_json)
+    monkeypatch.setattr(service, "_post_json", post_json)
+
+    await service._ensure_platform_anchor(
+        "http://resolver:8080",
+        _platform(),
+        "issuerA_s1_origin_anchor",
+        ["s1_inverter"],
+    )
+
+    assert calls == [
+        ("get", "http://resolver:8080/admin/platforms", None),
+        (
+            "post",
+            "http://resolver:8080/admin/platforms/register",
+            {
+                "platform": "platform-a",
+                "resolution_url": "http://dpp-platform-a:8080/dpps/{dppId}",
+                "issuer_id": "issuerA_s1_origin_anchor",
+                "subject_types": ["s1_inverter"],
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_import_revisions_replays_when_admin_endpoint_is_missing(monkeypatch):
+    service = ScenarioService(None, None, None)
+    calls = []
+    schema_version = {
+        "subject_type": "pv_module",
+        "major_version": 1,
+        "minor_version": 0,
+    }
+    revision_1 = {
+        "dpp_id": "issuerA-pv-001",
+        "version": 1,
+        "schema_version": schema_version,
+        "dpp_payload": {"foo": "one"},
+        "payload_hash": "hash-one",
+    }
+    revision_2 = {
+        "dpp_id": "issuerA-pv-001",
+        "version": 2,
+        "schema_version": schema_version,
+        "dpp_payload": {"foo": "two"},
+        "payload_hash": "hash-two",
+    }
+
+    async def post_raw(url: str, body) -> httpx.Response:
+        calls.append(("admin-import", url, body))
+        return _response(404, url)
+
+    async def post_json(url: str, body) -> dict:
+        calls.append(("replay", url, body))
+        if url.endswith("/dpps/issue"):
+            return revision_1
+        if url.endswith("/dpps/issuerA-pv-001/revise"):
+            return revision_2
+        raise AssertionError(f"Unexpected replay URL: {url}")
+
+    monkeypatch.setattr(service, "_post_raw", post_raw)
+    monkeypatch.setattr(service, "_post_json", post_json)
+
+    imported = await service._import_revisions(_platform(), [revision_2, revision_1])
+
+    assert imported == [revision_1, revision_2]
+    assert calls == [
+        ("admin-import", "http://dpp-platform-a:8080/admin/import-revisions", [revision_2, revision_1]),
+        (
+            "replay",
+            "http://dpp-platform-a:8080/dpps/issue",
+            {
+                "dpp_id": "issuerA-pv-001",
+                "schema_version": schema_version,
+                "dpp_payload": {"foo": "one"},
+            },
+        ),
+        (
+            "replay",
+            "http://dpp-platform-a:8080/dpps/issuerA-pv-001/revise",
+            {
+                "version": 2,
+                "schema_version": schema_version,
+                "dpp_payload": {"foo": "two"},
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_import_revisions_rejects_public_replay_for_different_issuer(monkeypatch):
+    service = ScenarioService(None, None, None)
+    revision = {
+        "dpp_id": "issuerB-pv-001",
+        "version": 1,
+        "schema_version": {
+            "subject_type": "pv_module",
+            "major_version": 1,
+            "minor_version": 0,
+        },
+        "dpp_payload": {"foo": "one"},
+        "payload_hash": "hash-one",
+    }
+
+    async def post_raw(url: str, body) -> httpx.Response:
+        return _response(404, url)
+
+    monkeypatch.setattr(service, "_post_raw", post_raw)
+
+    with pytest.raises(RuntimeError, match="public replay cannot preserve source DPP ID"):
+        await service._import_revisions(_platform(), [revision])
+
+
+@pytest.mark.asyncio
+async def test_resolve_and_fetch_accepts_resolver_redirect(httpx_mock):
+    service = ScenarioService(None, None, None)
+    httpx_mock.add_response(
+        method="GET",
+        url="http://resolver:8080/s1_inverter/issuerB-s1-inv-001/1",
+        status_code=302,
+        headers={"Location": "http://dpp-platform-b:8080/dpps/issuerB-s1-inv-001/1"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="http://dpp-platform-a:8080/dpps/issuerB-s1-inv-001/1",
+        status_code=200,
+        json={"dpp_id": "issuerB-s1-inv-001", "version": 1},
+    )
+
+    resolved = await service._resolve_and_fetch(
+        "http://resolver:8080",
+        "s1_inverter",
+        "issuerB-s1-inv-001",
+        1,
+        _platform(),
+    )
+
+    assert resolved == {
+        "target_url": "http://dpp-platform-b:8080/dpps/issuerB-s1-inv-001/1",
+        "data": {"dpp_id": "issuerB-s1-inv-001", "version": 1},
+    }
+
+
+@pytest.mark.asyncio
+async def test_wait_for_revision_import_retries_transient_probe(monkeypatch):
+    service = ScenarioService(None, None, None)
+    calls = 0
+    sleeps: list[float] = []
+
+    async def probe(platform: PlatformRecord) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("platform still starting")
+        return True
+
+    async def sleep(delay_seconds: float) -> None:
+        sleeps.append(delay_seconds)
+
+    monkeypatch.setattr(service, "_platform_supports_revision_import", probe)
+    monkeypatch.setattr("dpp_platform_factory.core.scenario_service.asyncio.sleep", sleep)
+
+    supported = await service._wait_for_revision_import(_platform(), attempts=2, delay_seconds=0.25)
+
+    assert supported is True
+    assert calls == 2
+    assert sleeps == [0.25]

@@ -2,10 +2,17 @@ import structlog
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
-from ..clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse
+from ..clients import (
+    DppNotFoundError,
+    PlatformClient,
+    ResolverClient,
+    IssueDppSpec,
+    DppSchemaVersion,
+    DppResponse,
+)
 from ..federation import FederationOverview
 from ..payloads import generate_seed_payload, generate_dpp_id, ReferenceSpec
-from ..schemas.generator import generate_schema
+from ..seed_schemas import canonical_seed_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -54,18 +61,19 @@ async def generate_pv_scenario(federation: FederationOverview, seed: int | None 
         p_ba = p_ba or platforms[1 % len(platforms)]
         p_in = p_in or platforms[2 % len(platforms)]
 
-    # 2. Seed schemas
+    # 2. Seed schemas. If an earlier run published an incompatible immutable
+    # schema at 1.0, use the next free major version for the canonical schema.
+    schema_versions: dict[str, DppSchemaVersion] = {}
     for st in ["pv_module", "battery", "inverter"]:
-        schema = generate_schema(st, with_dependencies=(st == "pv_module"))
         await resolver.ensure_subject_type(st)
-        await resolver.publish_schema(st, 1, 0, schema)
+        schema_versions[st] = await _ensure_compatible_seed_schema(resolver, st)
 
     # 3. Issue battery — payload conforms to the seed schema (required: capacity_kwh, chemistry)
     async with PlatformClient(p_ba) as client:
         dpp_id = generate_dpp_id(p_ba.issuer_id, "battery", 1)
         spec = IssueDppSpec(
             dpp_id=dpp_id,
-            schema_version=DppSchemaVersion(subject_type="battery", major_version=1, minor_version=0),
+            schema_version=schema_versions["battery"],
             dpp_payload=generate_seed_payload("battery", seed=seed + 1 if seed else None)
         )
         await resolver.ensure_platform_route(p_ba, "battery")
@@ -77,7 +85,7 @@ async def generate_pv_scenario(federation: FederationOverview, seed: int | None 
         dpp_id = generate_dpp_id(p_in.issuer_id, "inverter", 1)
         spec = IssueDppSpec(
             dpp_id=dpp_id,
-            schema_version=DppSchemaVersion(subject_type="inverter", major_version=1, minor_version=0),
+            schema_version=schema_versions["inverter"],
             dpp_payload=generate_seed_payload("inverter", seed=seed + 2 if seed else None)
         )
         await resolver.ensure_platform_route(p_in, "inverter")
@@ -90,7 +98,7 @@ async def generate_pv_scenario(federation: FederationOverview, seed: int | None 
         dpp_id = generate_dpp_id(p_pv.issuer_id, "pv_module", 1)
         spec = IssueDppSpec(
             dpp_id=dpp_id,
-            schema_version=DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0),
+            schema_version=schema_versions["pv_module"],
             dpp_payload=generate_seed_payload(
                 "pv_module",
                 seed=seed,
@@ -116,3 +124,50 @@ async def generate_pv_scenario(federation: FederationOverview, seed: int | None 
             inverter_resp.dpp_id: p_in.external_url
         }
     )
+
+
+async def _ensure_compatible_seed_schema(
+    resolver: ResolverClient,
+    subject_type: str,
+) -> DppSchemaVersion:
+    """Return a canonical payload-compatible schema version for a seed subject.
+
+    Resolver schemas are immutable. Some older workload runs published generic
+    schemas as ``battery/1.0`` or ``inverter/1.0`` even though the PV scenario
+    issues canonical battery/inverter payloads. Because replacing those fields
+    is a major schema change, recovery publishes the canonical Factory-style
+    schema at the next free major version and issues against that version.
+    """
+    schema = canonical_seed_schema(subject_type)
+    for major in range(1, 10):
+        try:
+            existing = await resolver.get_schema(subject_type, major, 0)
+        except DppNotFoundError:
+            await resolver.publish_schema(subject_type, major, 0, schema)
+            return DppSchemaVersion(
+                subject_type=subject_type,
+                major_version=major,
+                minor_version=0,
+            )
+
+        if _seed_schema_accepts_payload(subject_type, existing):
+            return DppSchemaVersion(
+                subject_type=subject_type,
+                major_version=major,
+                minor_version=0,
+            )
+
+    raise RuntimeError(f"No compatible schema major version available for {subject_type}")
+
+
+def _seed_schema_accepts_payload(subject_type: str, schema: dict) -> bool:
+    properties = schema.get("properties", {})
+    if subject_type == "battery":
+        return {"capacity_kwh", "chemistry"}.issubset(properties)
+    if subject_type == "inverter":
+        return "max_ac_power_watts" in properties
+    if subject_type == "pv_module":
+        if schema.get("additionalProperties") is False and "dependencies" not in properties:
+            return False
+        return {"manufacturer", "model"}.issubset(properties)
+    return False

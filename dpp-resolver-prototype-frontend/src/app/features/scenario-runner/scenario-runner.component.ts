@@ -48,6 +48,12 @@ export class ScenarioRunnerComponent {
 
   public scenarios: ScenarioDefinition[] = [
     {
+      id: 's1',
+      icon: 'sync_alt',
+      title: 'S1: Reference Stability',
+      subtitle: 'Hard references stay pinned while soft references follow issuer migration'
+    },
+    {
       id: 's2',
       icon: 'schema',
       title: 'S2: Schema Evolution',
@@ -66,10 +72,10 @@ export class ScenarioRunnerComponent {
       subtitle: 'Supplemental check only; not part of the actual evaluation'
     }
   ];
-  public statuses = signal<Record<ScenarioId, ScenarioStatus | null>>({ s2: null, s3: null, s4: null });
-  public reports = signal<Record<ScenarioId, SafeHtml | null>>({ s2: null, s3: null, s4: null });
+  public statuses = signal<Record<ScenarioId, ScenarioStatus | null>>({ s1: null, s2: null, s3: null, s4: null });
+  public reports = signal<Record<ScenarioId, SafeHtml | null>>({ s1: null, s2: null, s3: null, s4: null });
   public runningScenario = signal<ScenarioId | null>(null);
-  public errors = signal<Record<ScenarioId, string | null>>({ s2: null, s3: null, s4: null });
+  public errors = signal<Record<ScenarioId, string | null>>({ s1: null, s2: null, s3: null, s4: null });
   private pollSubscription?: Subscription;
 
   constructor() {

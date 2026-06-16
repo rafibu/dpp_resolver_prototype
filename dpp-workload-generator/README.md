@@ -2,20 +2,21 @@
 
 ## Role in the Paper
 
-The Workload Generator drives the quantitative evaluation (Section 8.3), the end-to-end evaluation scenarios (Section 8.4), and supplemental scenario checks. It is a CLI tool that issues operations against the live prototype federation and records results.
+The Workload Generator drives the end-to-end evaluation scenarios and supplemental scenario checks. It is a CLI tool that issues operations against the live prototype federation and records results.
 
 It is not part of the federated DPP ecosystem. It is a measurement harness that exercises the federation from the outside.
 
-| What the generator does                                            | Paper anchor                                  |
-|--------------------------------------------------------------------|-----------------------------------------------|
-| Generates chains of hard-dependent DPPs at controllable depth      | Section 8.3.3: closure resolution cost O(f^d) |
-| Generates DPPs with controllable fan-out                           | Section 8.3.3: per-fan-out constant factors   |
-| Materializes the PV/battery/inverter running example               | Sections 4-5 running example                  |
-| Measures issuance and resolution latency; writes CSV               | Section 8.3: prototype measurements           |
-| Benchmarks resolver fan-out/depth latency; prints CLI summary      | Section 8.3.3: closure resolution cost O(f^d) |
-| Runs scenario S2: independent schema evolution                     | Section 8.4.2                                 |
-| Runs scenario S3: schema-level cycle rejection (Invariant I6)      | Section 8.4.3                                 |
-| Runs scenario S4: offline validation after platform unavailability | Supplemental only; not part of the actual evaluation |
+| What the generator does                                                                     |
+|---------------------------------------------------------------------------------------------|
+| Generates chains of hard-dependent DPPs at controllable depth                               |
+| Generates DPPs with controllable fan-out                                                    |
+| Materializes the PV/battery/inverter running example                                        |
+| Measures issuance and resolution latency; writes CSV                                        |
+| Benchmarks resolver fan-out/depth latency; prints CLI summary                               |
+| Runs scenario S1: federated reference stability under target evolution and issuer migration |
+| Runs scenario S2: independent schema evolution                                              |
+| Runs scenario S3: schema-level cycle rejection (Invariant I6)                               |
+| Runs scenario S4: offline validation after platform unavailability                          |
 
 The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are.
 
@@ -40,6 +41,7 @@ src/workload/
     fanout.py         -- fan-out fixture
     pv.py             -- PV/battery/inverter fixture (paper running example)
     schema_evolution.py -- schema evolution measurement workload
+    s1.py             -- Scenario S1: Federated Reference Stability
     s2.py             -- Scenario S2: Independent Schema Evolution
     s3.py             -- Scenario S3: Schema-Level Cycle Rejection
     s4.py             -- Scenario S4: Offline Interpretability Supplement
@@ -219,6 +221,7 @@ workload generate-fanout --fanout 5
 ### Scenario evaluation and supplement
 
 ```bash
+workload scenario s1 --output-dir output/scenarios
 workload scenario s2 --output-dir output/scenarios
 workload scenario s3 --output-dir output/scenarios
 
@@ -226,7 +229,7 @@ workload scenario s3 --output-dir output/scenarios
 workload scenario s4 --output-dir output/scenarios
 ```
 
-Each scenario writes a Markdown report to the output directory with per-step expected vs. observed outcomes and a PASSED/FAILED verdict. S4 is retained only as a supplement to check whether offline validation may be interesting for future work; it is not part of the actual evaluation.
+Each scenario writes a Markdown report to the output directory with per-step expected vs. observed outcomes and a PASSED/FAILED verdict. S1, S2, and S3 are the evaluation scenarios. S4 is retained only as a supplement to check whether offline validation may be interesting for future work; it is not part of the actual evaluation.
 
 ### Plotting
 

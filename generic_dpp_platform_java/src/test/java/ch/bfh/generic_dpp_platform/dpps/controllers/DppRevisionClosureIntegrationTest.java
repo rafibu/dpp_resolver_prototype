@@ -67,7 +67,7 @@ public class DppRevisionClosureIntegrationTest extends ControllerTest {
         ChainIds chain = createChain();
 
         DppRevisionClosureResponseDTO response = getResponseAsObject(
-                "/dpps/" + chain.root() + "/1/closure?maxDepth=1",
+                "/dpps/" + chain.root() + "/1/closure?max_depth=1",
                 DppRevisionClosureResponseDTO.class
         );
 
@@ -80,7 +80,7 @@ public class DppRevisionClosureIntegrationTest extends ControllerTest {
         ChainIds chain = createChain();
 
         DppRevisionClosureResponseDTO response = getResponseAsObject(
-                "/dpps/" + chain.root() + "/1/closure?maxDepth=2",
+                "/dpps/" + chain.root() + "/1/closure?max_depth=2",
                 DppRevisionClosureResponseDTO.class
         );
 
@@ -103,7 +103,7 @@ public class DppRevisionClosureIntegrationTest extends ControllerTest {
         ));
 
         DppRevisionClosureResponseDTO response = getResponseAsObject(
-                "/dpps/" + root + "/1/closure?maxDepth=1",
+                "/dpps/" + root + "/1/closure?max_depth=1",
                 DppRevisionClosureResponseDTO.class
         );
 
@@ -113,13 +113,13 @@ public class DppRevisionClosureIntegrationTest extends ControllerTest {
     @Test
     public void testClosureRejectsInvalidMaxDepth() throws Exception {
         ApiError error = sendRequestAndExpectObject(
-                get("/dpps/" + ISSUER_ID + "-missing/1/closure?maxDepth=0"),
+                get("/dpps/" + ISSUER_ID + "-missing/1/closure?max_depth=0"),
                 ApiError.class,
                 HttpStatus.BAD_REQUEST
         );
 
         assertEquals("Invalid Argument", error.getError());
-        assertTrue(error.getMessage().contains("maxDepth"));
+        assertTrue(error.getMessage().contains("max_depth"));
     }
 
     private ChainIds createChain() throws Exception {

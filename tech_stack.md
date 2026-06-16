@@ -297,7 +297,7 @@ Additional platforms spawned via `POST /platforms` get ports starting at 8084.
 
 ## Artefact 5: Workload Generator
 
-Drives the quantitative measurements (Section 8.3) and the three end-to-end scenarios (Section 8.4) against the live federation. The scenarios originally scoped as a standalone Interaction Platform are implemented here as the `workload scenario` subcommands, sharing the same federation discovery and HTTP client code as the measurement workloads.
+Drives the three end-to-end scenarios (Section 7) against the live federation. 
 
 ### Stack
 
@@ -323,11 +323,11 @@ Measurement and fixtures:
 - Drive measurement runs: timing each operation, recording bytes
 - Write structured CSV output for analysis
 
-Scenarios (Section 8.4):
+Scenarios (Section 7):
 
 - Set up the prerequisite federation state for each scenario via the Factory
 - Execute the scenario steps in order and capture expected vs observed outcome per step
-- Produce a structured Markdown report with a PASSED/FAILED verdict, suitable for inclusion in Section 8.4
+- Produce a structured Markdown report with a PASSED/FAILED verdict
 
 ### CLI subcommands
 
@@ -341,6 +341,7 @@ Measurement and fixtures:
 
 Scenarios:
 
+- `workload scenario s1 --output-dir output/scenarios` federated reference stability under target evolution and issuer migration
 - `workload scenario s2 --output-dir output/scenarios` independent schema evolution
 - `workload scenario s3 --output-dir output/scenarios` schema-level cycle rejection
 - `workload scenario s4 --output-dir output/scenarios` supplemental offline-validation check; not part of the actual evaluation
@@ -394,7 +395,7 @@ Keep list (minimum viable):
 - Per-platform DPP list and revision history view
 - Per-platform log viewer (reads from Docker logs via Factory proxy or a small backend)
 - Online/offline toggle per platform (calls Factory pause/resume)
-- Trigger-scenario buttons for S2, S3, and supplemental S4 (invokes scenarios via the Factory)
+- Trigger-scenario buttons for S1, S2, S3, and supplemental S4 (invokes scenarios via the Factory)
 - Raw JSON editor for DPP payloads with client-side schema validation
 - Display of platform state changes after operations
 

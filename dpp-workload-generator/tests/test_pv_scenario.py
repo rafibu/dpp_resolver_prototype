@@ -1,8 +1,8 @@
+import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
-import pytest
-from workload.clients import DppResponse
+from workload.clients import DppNotFoundError, DppResponse
 from workload.federation import FederationOverview, ResolverInfo, PlatformInfo, PlatformStatus
 from workload.scenarios.pv import generate_pv_scenario
 
@@ -49,6 +49,7 @@ async def test_generate_pv_scenario_logic(mock_federation):
         
         mock_resolver = MockResolver.return_value
         mock_resolver.ensure_subject_type = AsyncMock()
+        mock_resolver.get_schema = AsyncMock(side_effect=DppNotFoundError("missing"))
         mock_resolver.publish_schema = AsyncMock()
         mock_resolver.ensure_platform_route = AsyncMock()
         
@@ -68,6 +69,14 @@ async def test_generate_pv_scenario_logic(mock_federation):
         mock_platform.issue_dpp = AsyncMock(side_effect=side_effect)
 
         result = await generate_pv_scenario(mock_federation, seed=42)
+
+        published_schemas = {
+            call.args[0]: call.args[3]
+            for call in mock_resolver.publish_schema.call_args_list
+        }
+        assert "chemistry" in published_schemas["battery"]["properties"]
+        assert "max_ac_power_watts" in published_schemas["inverter"]["properties"]
+        assert "components" in published_schemas["pv_module"]["properties"]
         
         assert result.pv_module.schema_version.subject_type == "pv_module"
         assert result.battery.schema_version.subject_type == "battery"

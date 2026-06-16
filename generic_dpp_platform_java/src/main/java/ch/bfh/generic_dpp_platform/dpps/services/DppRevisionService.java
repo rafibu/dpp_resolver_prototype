@@ -312,6 +312,108 @@ public class DppRevisionService {
     }
 
     /**
+     * Persist a copied immutable revision during an administrative issuer-migration import.
+     * <p>
+     * This is not an alternative to {@link #issueDpp(DppRevisionRequestDTO)} or
+     * {@link #reviseExistingDpp(String, DppRevisionRequestDTO)}. It is the DPP-service part of a migration
+     * workflow where another already-authoritative platform has issued revisions and a successor platform must
+     * serve the same immutable artefacts after resolver routing moves to it.
+     * </p>
+     * <p>
+     * The method deliberately reuses the same persisted entities and invariant checks as normal revision
+     * creation where they apply:
+     * </p>
+     * <ul>
+     *     <li>the logical DPP record is created or reused in {@link LogicalDppRepository},</li>
+     *     <li>the payload is validated against the exact cached schema (I5),</li>
+     *     <li>the supplied payload hash is recomputed and verified before persistence (I4),</li>
+     *     <li>an already imported revision is returned unchanged, preserving idempotent migration retries.</li>
+     * </ul>
+     * <p>
+     * Hard references are not resolved here because the imported revision has already been issued elsewhere.
+     * The successor platform is copying a historical artefact byte-for-byte; changing dependency resolution at
+     * import time would make migration a new issue/revise transition, which is precisely what this endpoint
+     * avoids.
+     * </p>
+     *
+     * @param revisionDTO copied revision DTO received through the administrative import endpoint
+     * @param subjectType already registered subject type for the imported logical DPP
+     * @param schema      exact cached schema referenced by the imported revision
+     * @return the stored revision DTO, or the existing stored revision when the import is retried
+     * @throws IllegalArgumentException if identifiers are missing, subject types conflict, schema references do
+     *                                  not match, or the supplied hash does not match the payload
+     */
+    @Transactional
+    public DppRevisionResponseDTO importExistingRevision(
+            DppRevisionResponseDTO revisionDTO,
+            SubjectType subjectType,
+            DppSchema schema
+    ) {
+        validateImportedRevisionEnvelope(revisionDTO, subjectType, schema);
+
+        LogicalDpp logicalDpp = dppRepository.findById(revisionDTO.getDppId()).orElseGet(() -> {
+            LogicalDpp created = new LogicalDpp();
+            created.setDppId(revisionDTO.getDppId());
+            created.setSubjectType(subjectType);
+            return dppRepository.save(created);
+        });
+        if (!logicalDpp.getSubjectType().getName().equals(subjectType.getName())) {
+            throw new IllegalArgumentException("Imported revisions for one DPP must use one subject type");
+        }
+
+        DppRevisionId revisionId = new DppRevisionId(revisionDTO.getVersion(), revisionDTO.getDppId());
+        Optional<DppRevision> existing = dppRevisionRepository.findById(revisionId);
+        if (existing.isPresent()) {
+            return toDTO(existing.get());
+        }
+
+        Map<String, Object> payload = DppUtil.validateDppDocument(revisionDTO.getDppPayload(), schema);
+        String computedHash = DppUtil.hashToHex(DppUtil.hashDocument(payload));
+        if (!computedHash.equals(revisionDTO.getPayloadHash())) {
+            throw new IllegalArgumentException("Imported revision payload hash mismatch for " + revisionDTO.getDppId());
+        }
+
+        DppRevision revision = new DppRevision();
+        revision.setId(revisionId);
+        revision.setDpp(logicalDpp);
+        revision.setDppSchema(schema);
+        revision.setDppDocument(payload);
+        revision.setHashedDocument(DppUtil.hexToHash(revisionDTO.getPayloadHash()));
+        revision.setCreatedAt(revisionDTO.getCreatedAt() != null ? revisionDTO.getCreatedAt().toInstant() : Instant.now());
+
+        return toDTO(dppRevisionRepository.save(revision));
+    }
+
+    private void validateImportedRevisionEnvelope(
+            DppRevisionResponseDTO revisionDTO,
+            SubjectType subjectType,
+            DppSchema schema
+    ) {
+        if (revisionDTO.getDppId() == null || revisionDTO.getDppId().isBlank()) {
+            throw new IllegalArgumentException("dpp_id is required for imported revisions");
+        }
+        if (revisionDTO.getVersion() == null || revisionDTO.getVersion() < 1) {
+            throw new IllegalArgumentException("version must be positive for imported revisions");
+        }
+        DppRevisionSchemaDTO schemaVersion = revisionDTO.getSchemaVersion();
+        if (schemaVersion == null) {
+            throw new IllegalArgumentException("schema_version is required for imported revisions");
+        }
+        if (revisionDTO.getPayloadHash() == null || revisionDTO.getPayloadHash().isBlank()) {
+            throw new IllegalArgumentException("payload_hash is required for imported revisions");
+        }
+        if (!Objects.equals(schemaVersion.getSubjectType(), subjectType.getName())) {
+            throw new IllegalArgumentException("Imported revision subject type does not match registered subject type");
+        }
+        DppSchemaId schemaId = schema.getId();
+        if (!Objects.equals(schemaVersion.getSubjectType(), schemaId.getSubjectTypeName())
+                || !Objects.equals(schemaVersion.getMajorVersion(), schemaId.getMajorVersion())
+                || !Objects.equals(schemaVersion.getMinorVersion(), schemaId.getMinorVersion())) {
+            throw new IllegalArgumentException("Imported revision schema_version does not match cached schema");
+        }
+    }
+
+    /**
      * Creates and persists a new immutable revision for a logical DPP.
      * <p>
      * This method contains the shared revision-creation logic for both {@code issue} and {@code revise}.
@@ -624,7 +726,7 @@ public class DppRevisionService {
                 maxDepth = MAX_CLOSURE_DEPTH;
             }
             if (maxDepth < 1 || maxDepth > MAX_CLOSURE_DEPTH) {
-                throw new IllegalArgumentException("maxDepth must be between 1 and " + MAX_CLOSURE_DEPTH);
+                throw new IllegalArgumentException("max_depth must be between 1 and " + MAX_CLOSURE_DEPTH);
             }
             return new DppRevisionResolutionOptions(maxDepth, true);
         }

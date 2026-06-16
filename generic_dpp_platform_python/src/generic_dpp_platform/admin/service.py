@@ -2,6 +2,8 @@ import structlog
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from .models import PlatformConfigDTO, SubjectTypeDTO
+from ..dpps.models import DppRevisionResponseDTO
+from ..schemas import service as schema_service
 
 logger = structlog.get_logger()
 
@@ -41,3 +43,52 @@ async def create_subject_type(
     await db.subject_types.insert_one(doc)
     logger.info("subject_type_created", name=dto.name)
     return SubjectTypeDTO(**{k: v for k, v in doc.items() if k != "_id"})
+
+
+async def require_subject_type(db: AsyncIOMotorDatabase, name: str) -> SubjectTypeDTO:
+    """Return a registered subject type for service-level orchestration.
+
+    Admin workflows such as revision import are not allowed to create implicit subject
+    types. They must reuse the same subject-type registration path as issue/revise, so
+    this helper centralizes the prerequisite check instead of letting routers reach into
+    collections directly.
+    """
+    doc = await db.subject_types.find_one({"name": name}, _SUBJECT_PROJECTION)
+    if doc is None:
+        raise ValueError(f"Subject type not found: {name}")
+    return SubjectTypeDTO(**doc)
+
+
+async def import_revisions(
+    db: AsyncIOMotorDatabase,
+    revisions: list[DppRevisionResponseDTO],
+) -> list[DppRevisionResponseDTO]:
+    """Import already-issued immutable revisions into this platform.
+
+    Scenario S1 uses this operation during issuer migration: revisions are copied to a
+    successor platform and the resolver route is then moved to that successor. This
+    function coordinates existing platform services instead of becoming a separate DPP
+    lifecycle path:
+
+    - subject type registration is checked through the admin subject-type service;
+    - exact schema availability is checked through the schema service's cache lookup;
+    - revision persistence and hash validation are delegated to the DPP service.
+
+    Revisions are processed in DPP/version order to make multi-version imports
+    deterministic, and the DPP service makes retries idempotent.
+    """
+    from ..dpps import service as dpp_service
+
+    imported: list[DppRevisionResponseDTO] = []
+    for revision in sorted(revisions, key=lambda item: (item.dpp_id, item.version)):
+        schema_version = revision.schema_version
+        await require_subject_type(db, schema_version.subject_type)
+        schema_document = await schema_service.require_cached_schema_document(
+            db,
+            schema_version.subject_type,
+            schema_version.major_version,
+            schema_version.minor_version,
+        )
+        imported.append(await dpp_service.import_existing_revision(db, revision, schema_document))
+
+    return imported

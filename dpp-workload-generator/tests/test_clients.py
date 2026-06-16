@@ -1,7 +1,9 @@
+import json
 import pytest
 from datetime import datetime
-from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppNotFoundError, \
-    SchemaValidationError, CycleDetectedError
+
+from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse, \
+    DppNotFoundError, WorkloadError
 from workload.federation import PlatformInfo, PlatformStatus
 
 
@@ -73,6 +75,90 @@ async def test_platform_not_found(httpx_mock, platform_info):
     async with PlatformClient(platform_info) as client:
         with pytest.raises(DppNotFoundError):
             await client.get_revision("missing")
+
+
+@pytest.mark.asyncio
+async def test_platform_import_revisions_replays_when_admin_endpoint_is_missing(httpx_mock, platform_info):
+    schema_version = DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0)
+    revision_1 = DppResponse(
+        dpp_id="issuerA-pv-001",
+        version=1,
+        schema_version=schema_version,
+        dpp_payload={"foo": "one"},
+        payload_hash="hash-one",
+        created_at=datetime.fromisoformat("2026-05-03T12:00:00+00:00"),
+    )
+    revision_2 = DppResponse(
+        dpp_id="issuerA-pv-001",
+        version=2,
+        schema_version=schema_version,
+        dpp_payload={"foo": "two"},
+        payload_hash="hash-two",
+        created_at=datetime.fromisoformat("2026-05-03T13:00:00+00:00"),
+    )
+
+    httpx_mock.add_response(
+        method="POST",
+        url="http://platform-a:8082/admin/import-revisions",
+        status_code=404,
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="http://platform-a:8082/dpps/issue",
+        status_code=201,
+        json=revision_1.model_dump(mode="json"),
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="http://platform-a:8082/dpps/issuerA-pv-001/revise",
+        status_code=201,
+        json=revision_2.model_dump(mode="json"),
+    )
+
+    async with PlatformClient(platform_info) as client:
+        await client.import_revisions([revision_2, revision_1])
+
+    requests = httpx_mock.get_requests()
+    assert [str(request.url) for request in requests] == [
+        "http://platform-a:8082/admin/import-revisions",
+        "http://platform-a:8082/dpps/issue",
+        "http://platform-a:8082/dpps/issuerA-pv-001/revise",
+    ]
+    assert json.loads(requests[1].content) == {
+        "dpp_id": "issuerA-pv-001",
+        "schema_version": {"subject_type": "pv_module", "major_version": 1, "minor_version": 0},
+        "dpp_payload": {"foo": "one"},
+    }
+    assert json.loads(requests[2].content) == {
+        "version": 2,
+        "schema_version": {"subject_type": "pv_module", "major_version": 1, "minor_version": 0},
+        "dpp_payload": {"foo": "two"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_platform_import_revisions_rejects_public_replay_for_different_issuer(httpx_mock, platform_info):
+    revision = DppResponse(
+        dpp_id="issuerB-pv-001",
+        version=1,
+        schema_version=DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0),
+        dpp_payload={"foo": "one"},
+        payload_hash="hash-one",
+        created_at=datetime.fromisoformat("2026-05-03T12:00:00+00:00"),
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="http://platform-a:8082/admin/import-revisions",
+        status_code=404,
+    )
+
+    async with PlatformClient(platform_info) as client:
+        with pytest.raises(WorkloadError, match="public replay cannot preserve source DPP ID"):
+            await client.import_revisions([revision])
+
+    assert [str(request.url) for request in httpx_mock.get_requests()] == [
+        "http://platform-a:8082/admin/import-revisions",
+    ]
 
 @pytest.mark.asyncio
 async def test_resolver_ensure_subject_type_creates(httpx_mock):
@@ -166,6 +252,37 @@ async def test_ensure_platform_route_idempotent(httpx_mock, platform_info):
         await client.ensure_platform_route(platform_info, "pv_module")
 
     assert all(r.method != "POST" for r in httpx_mock.get_requests())
+
+
+@pytest.mark.asyncio
+async def test_resolver_ensure_platform_anchor_registers_alias(httpx_mock, platform_info):
+    resolver_url = "http://resolver:8081"
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{resolver_url}/admin/platforms",
+        status_code=200,
+        json=[],
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{resolver_url}/admin/platforms/register",
+        status_code=201,
+    )
+
+    async with ResolverClient(resolver_url) as client:
+        await client.ensure_platform_anchor(platform_info, "issuerA_s1_origin_anchor", ["s1_inverter"])
+
+    requests = httpx_mock.get_requests()
+    assert [str(request.url) for request in requests] == [
+        f"{resolver_url}/admin/platforms",
+        f"{resolver_url}/admin/platforms/register",
+    ]
+    assert json.loads(requests[1].content) == {
+        "platform": "platform-a",
+        "resolution_url": "http://platform-a:8082/dpps/{dppId}",
+        "issuer_id": "issuerA_s1_origin_anchor",
+        "subject_types": ["s1_inverter"],
+    }
 
 
 @pytest.mark.asyncio

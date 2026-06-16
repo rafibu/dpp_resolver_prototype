@@ -1,5 +1,5 @@
 """
-Scenario S3: Schema-Level Cycle Rejection (Section 8.4.3).
+Scenario S3: Schema-Level Cycle Rejection
 
 Setup: two subject types A and B. Schema A declares a hard-reference target of type B.
 Schema B then attempts to declare a hard-reference target of type A.
@@ -59,7 +59,7 @@ async def run_s3(factory_url: str, seed: int, output_dir: Optional[Path] = None)
 
         # Step 2: Attempt to publish schema B declaring a hard reference to type A.
         # This would add edge B -> A, closing the cycle A -> B -> A.
-        # Precondition P4 of publishSchema (Section 5.1.3) must reject this.
+        # Precondition P4 of publishSchema must reject this.
         with reporter.step(
             f"Attempt to publish schema {_TYPE_B} with hard-reference target {_TYPE_A}",
             f"Rejected with 422: adding B -> A would close cycle A -> B -> A (I6 preserved)"
