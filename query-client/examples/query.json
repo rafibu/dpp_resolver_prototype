@@ -1,0 +1,11 @@
+{
+  "result_mode": "SUM",
+  "execution_mode": "INDEXED",
+  "subject_type": "battery",
+  "filters": [
+    { "path": "status", "operator": "EQ", "value": "active" },
+    { "path": "material_composition.mass_kg", "operator": "GT", "value": 0 }
+  ],
+  "aggregate_path": "material_composition.mass_kg",
+  "timeout_ms": 30000
+}

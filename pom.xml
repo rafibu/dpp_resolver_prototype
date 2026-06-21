@@ -32,6 +32,7 @@
         <module>dpp-platform-factory</module>
         <module>dpp-workload-generator</module>
         <module>dpp-resolver-prototype-frontend</module>
+        <module>query-client</module>
     </modules>
 
 </project>
