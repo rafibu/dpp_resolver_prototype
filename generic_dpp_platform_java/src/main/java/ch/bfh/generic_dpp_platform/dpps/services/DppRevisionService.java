@@ -12,6 +12,7 @@ import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
 import ch.bfh.generic_dpp_platform.dpps.repositories.LogicalDppRepository;
 import ch.bfh.generic_dpp_platform.dpps.utils.DppReferenceExtractor;
 import ch.bfh.generic_dpp_platform.dpps.utils.DppUtil;
+import ch.bfh.generic_dpp_platform.queries.services.MaterializedIndexService;
 import ch.bfh.generic_dpp_platform.schemas.connectors.ResolverConnector;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchema;
 import ch.bfh.generic_dpp_platform.schemas.models.DppSchemaId;
@@ -59,6 +60,7 @@ public class DppRevisionService {
     private final DppRevisionRepository dppRevisionRepository;
     private final DppReferenceExtractor referenceExtractor;
     private final DppRevisionCacheService cacheService;
+    private final MaterializedIndexService materializedIndexService;
     private final ResolverConnector resolverConnector;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -177,8 +179,8 @@ public class DppRevisionService {
     }
 
     private DppRevisionResolutionResult resolveDppRevision(String dppId,
-                                                          Integer version,
-                                                          DppRevisionResolutionOptions options) {
+                                                           Integer version,
+                                                           DppRevisionResolutionOptions options) {
         DppRevisionResponseDTO rootRevision = loadStoredDppRevision(dppId, version);
 
         if (!options.expandClosure()) {
@@ -300,9 +302,9 @@ public class DppRevisionService {
      * @param dppId      the issuer-qualified DPP identifier of the logical DPP to revise
      * @param requestDTO the revision request containing the schema version, payload, and optional version
      * @return the newly created revision
-     * @throws NoSuchElementException         if the logical DPP does not exist
-     * @throws DppRevisionConflictException   if the requested version is not the next consecutive version
-     * @throws IllegalArgumentException       if schema or payload validation fails
+     * @throws NoSuchElementException          if the logical DPP does not exist
+     * @throws DppRevisionConflictException    if the requested version is not the next consecutive version
+     * @throws IllegalArgumentException        if schema or payload validation fails
      * @throws DppReferenceResolutionException if a hard reference cannot be resolved
      */
     @Transactional
@@ -475,6 +477,9 @@ public class DppRevisionService {
         newRevision.setHashedDocument(DppUtil.hashDocument(validDppDocument));
 
         newRevision = dppRevisionRepository.save(newRevision);
+
+        // 4. Add the facts to the materialized index for easier querying
+        materializedIndexService.createNewMaterializedIndex(newRevision);
 
         return toDTO(newRevision);
     }

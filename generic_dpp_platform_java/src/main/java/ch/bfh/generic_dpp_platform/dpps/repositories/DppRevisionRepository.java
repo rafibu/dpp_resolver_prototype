@@ -13,6 +13,10 @@ import java.util.Optional;
  */
 public interface DppRevisionRepository extends JpaRepository<DppRevision, DppRevisionId> {
 
+    default Optional<DppRevision> findCurrentByDppId(String dppId) {
+        return findFirstByIdDppIdOrderByIdDppVersionDesc(dppId);
+    }
+
     Optional<DppRevision> findFirstByIdDppIdOrderByIdDppVersionDesc(String dppId);
 
     List<DppRevision> findAllByIdDppIdOrderByIdDppVersionAsc(String dppId);
