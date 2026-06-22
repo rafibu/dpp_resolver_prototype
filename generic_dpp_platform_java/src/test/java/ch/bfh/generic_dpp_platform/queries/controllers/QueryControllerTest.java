@@ -51,15 +51,19 @@ class QueryControllerTest extends ControllerTest {
 
     @BeforeEach
     void setupData() throws Exception {
+        registerSubjectType(SUBJECT_TYPE);
+    }
+
+    private void registerSubjectType(String name) throws Exception {
         SubjectTypeDTO subjectType = SubjectTypeDTO.builder()
-                .name(SUBJECT_TYPE)
-                .description("Battery subject type")
+                .name(name)
+                .description(name + " subject type")
                 .build();
         postResponseAsObject("/admin/subject-types", createGson(false).toJson(subjectType), SubjectTypeDTO.class);
 
-        SubjectType subjectTypeEntity = subjectTypeRepository.findByName(SUBJECT_TYPE).orElseThrow();
+        SubjectType subjectTypeEntity = subjectTypeRepository.findByName(name).orElseThrow();
         DppSchemaId schemaId = DppSchemaId.builder()
-                .subjectTypeName(SUBJECT_TYPE)
+                .subjectTypeName(name)
                 .majorVersion(1)
                 .minorVersion(0)
                 .build();
@@ -307,6 +311,119 @@ class QueryControllerTest extends ControllerTest {
         sendRequest(baseQuery("SUM")).andExpect(status().isBadRequest());
     }
 
+    @Test
+    void traverse_happyPath_oneSubjectOnePath_shouldReturnMatches() throws Exception {
+        seedBatteryDpps();
+        seedTraverseData();
+
+        MockHttpServletRequestBuilder request = baseTraverseQuery(SUBJECT_TYPE, ISSUER_ID + "-battery-1");
+        addSource(request, 0, "Vehicle", "battery");
+
+        JsonNode response = query(request);
+        assertEquals(1, response.path("matches").size());
+        assertEquals("Car 1", response.path("matches").get(0).path("name").asText());
+    }
+
+    @Test
+    void traverse_happyPath_noMatches_shouldReturnEmptyList() throws Exception {
+        seedBatteryDpps();
+        seedTraverseData();
+
+        // Query for Battery B references in Vehicle battery path (none exist, Battery B is battery-2)
+        MockHttpServletRequestBuilder request = baseTraverseQuery(SUBJECT_TYPE, ISSUER_ID + "-battery-2");
+        addSource(request, 0, "Vehicle", "battery");
+
+        JsonNode response = query(request);
+        assertEquals(0, response.path("matches").size());
+    }
+
+    @Test
+    void traverse_happyPath_multiSubjectMultiPath_shouldReturnAllMatches() throws Exception {
+        seedBatteryDpps();
+        seedTraverseData();
+
+        // Seed another subject type "Drone" referencing Battery A
+        registerSubjectType("Drone");
+        issue(ISSUER_ID + "-drone-1", "Drone", Map.of(
+                "name", "Drone 1",
+                "power_source", Map.of("$ref", SUBJECT_TYPE + "/" + ISSUER_ID + "-battery-1")
+        ));
+
+        MockHttpServletRequestBuilder request = baseTraverseQuery(SUBJECT_TYPE, ISSUER_ID + "-battery-1");
+        addSource(request, 0, "Vehicle", "battery", "other_reference");
+        addSource(request, 1, "Drone", "power_source");
+
+        JsonNode response = query(request);
+        assertEquals(3, response.path("matches").size());
+        Set<String> names = names(response.path("matches"));
+        assertTrue(names.contains("Car 1"));
+        assertTrue(names.contains("Car 2"));
+        assertTrue(names.contains("Drone 1"));
+    }
+
+    @Test
+    void traverse_happyPath_unknownSubject_shouldReturnEmptyList() throws Exception {
+        seedBatteryDpps();
+
+        MockHttpServletRequestBuilder request = baseTraverseQuery(SUBJECT_TYPE, ISSUER_ID + "-battery-1");
+        addSource(request, 0, UNKNOWN_SUBJECT_TYPE);
+
+        JsonNode response = query(request);
+        assertEquals(0, response.path("matches").size());
+    }
+
+    @Test
+    void traverse_badPath_malformed_shouldReturnBadRequest() throws Exception {
+        // Missing dppId
+        sendRequest(get("/query/traverse")
+                .param("subjectType", SUBJECT_TYPE)
+                .param("sources[0].subjectType", "Vehicle"))
+                .andExpect(status().isBadRequest());
+
+        // Missing subjectType
+        sendRequest(get("/query/traverse")
+                .param("dppId", "some-id")
+                .param("sources[0].subjectType", "Vehicle"))
+                .andExpect(status().isBadRequest());
+
+        // Missing sources
+        sendRequest(get("/query/traverse")
+                .param("subjectType", SUBJECT_TYPE)
+                .param("dppId", "some-id"))
+                .andExpect(status().isBadRequest());
+    }
+
+    private MockHttpServletRequestBuilder baseTraverseQuery(String targetSubjectType, String targetDppId) {
+        return get("/query/traverse")
+                .param("subjectType", targetSubjectType)
+                .param("dppId", targetDppId)
+                .param("executionMode", executionMode.name());
+    }
+
+    private MockHttpServletRequestBuilder addSource(MockHttpServletRequestBuilder request, int index, String subjectType, String... referencePaths) {
+        request.param("sources[" + index + "].subjectType", subjectType);
+        for (int i = 0; i < referencePaths.length; i++) {
+            request.param("sources[" + index + "].referencePaths[" + i + "]", referencePaths[i]);
+        }
+        return request;
+    }
+
+    private void seedTraverseData() throws Exception {
+        registerSubjectType("Vehicle");
+
+        // Issue a vehicle referencing Battery A (ISSUER_ID + "-battery-1")
+        issue(ISSUER_ID + "-vehicle-1", "Vehicle", Map.of(
+                "name", "Car 1",
+                "battery", Map.of("$ref", SUBJECT_TYPE + "/" + ISSUER_ID + "-battery-1")
+        ));
+
+        // Issue another vehicle referencing Battery A but in a different path
+        issue(ISSUER_ID + "-vehicle-2", "Vehicle", Map.of(
+                "name", "Car 2",
+                "other_reference", Map.of("$ref", SUBJECT_TYPE + "/" + ISSUER_ID + "-battery-1")
+        ));
+    }
+
     private MockHttpServletRequestBuilder baseQuery(String resultMode) {
         return get("/query/predicate")
                 .param("resultMode", resultMode)
@@ -368,21 +485,25 @@ class QueryControllerTest extends ControllerTest {
     }
 
     private DppRevisionResponseDTO issue(String dppId, Map<String, Object> payload) throws Exception {
-        return postResponseAsObject("/dpps/issue", createGson(false).toJson(revisionRequest(dppId, 1, payload)),
+        return issue(dppId, SUBJECT_TYPE, payload);
+    }
+
+    private DppRevisionResponseDTO issue(String dppId, String subjectType, Map<String, Object> payload) throws Exception {
+        return postResponseAsObject("/dpps/issue", createGson(false).toJson(revisionRequest(dppId, subjectType, 1, payload)),
                 DppRevisionResponseDTO.class);
     }
 
     private DppRevisionResponseDTO revise(String dppId, int version, Map<String, Object> payload) throws Exception {
-        return postResponseAsObject("/dpps/" + dppId + "/revise", createGson(false).toJson(revisionRequest(null, version, payload)),
+        return postResponseAsObject("/dpps/" + dppId + "/revise", createGson(false).toJson(revisionRequest(null, SUBJECT_TYPE, version, payload)),
                 DppRevisionResponseDTO.class);
     }
 
-    private DppRevisionRequestDTO revisionRequest(String dppId, int version, Map<String, Object> payload) {
+    private DppRevisionRequestDTO revisionRequest(String dppId, String subjectType, int version, Map<String, Object> payload) {
         return DppRevisionRequestDTO.builder()
                 .dppId(dppId)
                 .version(version)
                 .schemaVersion(DppRevisionSchemaDTO.builder()
-                        .subjectType(SUBJECT_TYPE)
+                        .subjectType(subjectType)
                         .majorVersion(1)
                         .minorVersion(0)
                         .build())

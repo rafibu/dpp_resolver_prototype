@@ -8,13 +8,13 @@ import ch.bfh.generic_dpp_platform.dpps.models.LogicalDpp;
 import ch.bfh.generic_dpp_platform.dpps.repositories.DppRevisionRepository;
 import ch.bfh.generic_dpp_platform.dpps.repositories.LogicalDppRepository;
 import ch.bfh.generic_dpp_platform.queries.dtos.PredicateQueryRequestDTO;
+import ch.bfh.generic_dpp_platform.queries.dtos.TraverseQueryRequestDTO;
+import ch.bfh.generic_dpp_platform.queries.dtos.TraverseSourceScopeDTO;
 import ch.bfh.generic_dpp_platform.queries.helpers.PredicateQueryHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -59,6 +59,93 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
                 .sum();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    protected List<Object> executeTraverseQuery(TraverseQueryRequestDTO request) {
+        List<Object> matches = new LinkedList<>();
+        for (TraverseSourceScopeDTO sourceScope : request.getSources()) {
+            List<Object> scopeMatches = getAllDppsForSubjectType(sourceScope.getSubjectType())
+                    .stream()
+                    .map(this::getLatestRevisionForDpp)
+                    .map(DppRevision::getDppDocument)
+                    .filter(Objects::nonNull)
+                    .filter(document -> documentContainsReference(document, sourceScope, request))
+                    .map(document -> (Object) document)
+                    .toList();
+
+            matches.addAll(scopeMatches);
+        }
+        return matches;
+    }
+
+    private boolean documentContainsReference(
+            Map<String, Object> document,
+            TraverseSourceScopeDTO sourceScope,
+            TraverseQueryRequestDTO request
+    ) {
+        if (sourceScope.getReferencePaths() == null || sourceScope.getReferencePaths().isEmpty()) {
+            return containsMatchingReference(document, request);
+        }
+
+        return sourceScope.getReferencePaths()
+                .stream()
+                .map(path -> PredicateQueryHelper.resolvePath(document, path))
+                .anyMatch(value -> containsMatchingReference(value, request));
+    }
+
+    private boolean containsMatchingReference(Object value, TraverseQueryRequestDTO request) {
+        if (value instanceof Map<?, ?> map) {
+            if (map.containsKey("$ref") && referenceMatches(map, request)) {
+                return true;
+            }
+
+            return map.values()
+                    .stream()
+                    .anyMatch(child -> containsMatchingReference(child, request));
+        }
+
+        if (value instanceof Iterable<?> iterable) {
+            for (Object child : iterable) {
+                if (containsMatchingReference(child, request)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private boolean referenceMatches(Map<?, ?> referenceObject, TraverseQueryRequestDTO request) {
+        Object refValue = referenceObject.get("$ref");
+        if (!(refValue instanceof String ref)) {
+            return false;
+        }
+
+        String[] refParts = ref.split("/");
+        if (refParts.length < 2 || refParts.length > 3) {
+            return false;
+        }
+
+        if (!Objects.equals(request.getSubjectType(), refParts[0])
+                || !Objects.equals(request.getDppId(), refParts[1])) {
+            return false;
+        }
+
+        Integer referencedRevision = null;
+        if (refParts.length == 3) {
+            try {
+                referencedRevision = Integer.valueOf(refParts[2]);
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        } else if (referenceObject.get("version") instanceof Number version) {
+            referencedRevision = version.intValue();
+        }
+
+        return request.getRevisionNumber() == null
+                || Objects.equals(request.getRevisionNumber(), referencedRevision);
+    }
+
     private Stream<Map<String, Object>> matchingDocuments(PredicateQueryRequestDTO request) {
         return getAllDppsForSubjectType(request.getSubjectType()).stream()
                 .map(this::getLatestRevisionForDpp)
@@ -81,9 +168,11 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
 
 
     private List<LogicalDpp> getAllDppsForSubjectType(String subjectType) {
-        SubjectType subjectTypeEntity = subjectTypeRepository.findByName(subjectType)
-                .orElseThrow(() -> new IllegalArgumentException("Subject type not found: " + subjectType));
-        return dppRepository.findAllBySubjectType(subjectTypeEntity);
+        Optional<SubjectType> subjectTypeEntity = subjectTypeRepository.findByName(subjectType);
+        if (subjectTypeEntity.isEmpty()) {
+            return List.of();
+        }
+        return dppRepository.findAllBySubjectType(subjectTypeEntity.get());
     }
 
     private DppRevision getLatestRevisionForDpp(LogicalDpp dpp) {

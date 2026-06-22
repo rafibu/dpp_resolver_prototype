@@ -4,16 +4,15 @@ import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.queries.dtos.PredicateFilterDTO;
 import ch.bfh.generic_dpp_platform.queries.dtos.PredicateQueryRequestDTO;
+import ch.bfh.generic_dpp_platform.queries.dtos.TraverseQueryRequestDTO;
+import ch.bfh.generic_dpp_platform.queries.dtos.TraverseSourceScopeDTO;
 import ch.bfh.generic_dpp_platform.queries.models.QueryAttributeFact;
 import ch.bfh.generic_dpp_platform.queries.repositories.QueryAttributeFactRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -55,6 +54,116 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
                 .map(this::requireNumericFact)
                 .mapToDouble(BigDecimal::doubleValue)
                 .sum();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    protected List<Object> executeTraverseQuery(TraverseQueryRequestDTO request) {
+        List<Object> matches = new LinkedList<>();
+
+        for (TraverseSourceScopeDTO sourceScope : request.getSources()) {
+            List<Object> scopeMatches = factsGroupedByDpp(sourceScope.getSubjectType())
+                    .values()
+                    .stream()
+                    .filter(factsByPath -> indexedFactsContainReference(factsByPath, sourceScope, request))
+                    .map(factsByPath -> (Object) selectFields(factsByPath, null))
+                    .toList();
+
+            matches.addAll(scopeMatches);
+        }
+
+        return matches;
+    }
+
+    private boolean indexedFactsContainReference(
+            Map<String, QueryAttributeFact> factsByPath,
+            TraverseSourceScopeDTO sourceScope,
+            TraverseQueryRequestDTO request
+    ) {
+        if (sourceScope.getReferencePaths() == null || sourceScope.getReferencePaths().isEmpty()) {
+            return factsByPath.entrySet()
+                    .stream()
+                    .filter(entry -> isReferenceFactPath(entry.getKey()))
+                    .anyMatch(entry -> indexedReferenceMatches(factsByPath, entry.getKey(), entry.getValue(), request));
+        }
+
+        return sourceScope.getReferencePaths()
+                .stream()
+                .anyMatch(referencePath -> indexedReferencePathMatches(factsByPath, referencePath, request));
+    }
+
+    private boolean indexedReferencePathMatches(
+            Map<String, QueryAttributeFact> factsByPath,
+            String referencePath,
+            TraverseQueryRequestDTO request
+    ) {
+        QueryAttributeFact directReferenceFact = factsByPath.get(referencePath);
+        if (directReferenceFact != null && indexedReferenceMatches(factsByPath, referencePath, directReferenceFact, request)) {
+            return true;
+        }
+
+        String refPath = referencePath + ".$ref";
+        QueryAttributeFact nestedReferenceFact = factsByPath.get(refPath);
+        return nestedReferenceFact != null && indexedReferenceMatches(factsByPath, refPath, nestedReferenceFact, request);
+    }
+
+    private boolean isReferenceFactPath(String path) {
+        return "$ref".equals(path) || path.endsWith(".$ref");
+    }
+
+    private boolean indexedReferenceMatches(
+            Map<String, QueryAttributeFact> factsByPath,
+            String refPath,
+            QueryAttributeFact refFact,
+            TraverseQueryRequestDTO request
+    ) {
+        Object value = refFact.getValue();
+        if (!(value instanceof String ref)) {
+            return false;
+        }
+
+        String[] refParts = ref.split("/");
+        if (refParts.length < 2 || refParts.length > 3) {
+            return false;
+        }
+
+        if (!Objects.equals(request.getSubjectType(), refParts[0])
+                || !Objects.equals(request.getDppId(), refParts[1])) {
+            return false;
+        }
+
+        Integer referencedRevision = indexedRevisionNumber(factsByPath, refPath, refParts);
+        return request.getRevisionNumber() == null
+                || Objects.equals(request.getRevisionNumber(), referencedRevision);
+    }
+
+    private Integer indexedRevisionNumber(
+            Map<String, QueryAttributeFact> factsByPath,
+            String refPath,
+            String[] refParts
+    ) {
+        if (refParts.length == 3) {
+            try {
+                return Integer.valueOf(refParts[2]);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+
+        QueryAttributeFact versionFact = factsByPath.get(siblingVersionPath(refPath));
+        if (versionFact == null || versionFact.getValueNumber() == null) {
+            return null;
+        }
+
+        return versionFact.getValueNumber().intValue();
+    }
+
+    private String siblingVersionPath(String refPath) {
+        if ("$ref".equals(refPath)) {
+            return "version";
+        }
+
+        return refPath.substring(0, refPath.length() - ".$ref".length()) + ".version";
     }
 
     private BigDecimal requireNumericFact(QueryAttributeFact fact) {
