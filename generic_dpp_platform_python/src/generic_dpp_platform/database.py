@@ -46,6 +46,26 @@ async def _setup_indexes(db: AsyncIOMotorDatabase) -> None:
     )
     await db.dpp_revisions.create_index([("dpp_id", 1), ("dpp_version", -1)])
 
+    # Materialized predicate-query facts.  The unique key represents the one
+    # current value per logical DPP/path invariant used by the Java platform.
+    await db.query_attribute_fact.create_index(
+        [("logical_dpp_id", 1), ("path", 1)],
+        unique=True,
+        name="uq_qaf_logical_dpp_path",
+    )
+    await db.query_attribute_fact.create_index(
+        [("subject_type", 1), ("path", 1)], name="idx_qaf_subject_path"
+    )
+    await db.query_attribute_fact.create_index(
+        [("subject_type", 1), ("path", 1), ("value_text", 1)], name="idx_qaf_text_lookup"
+    )
+    await db.query_attribute_fact.create_index(
+        [("subject_type", 1), ("path", 1), ("value_number", 1)], name="idx_qaf_number_lookup"
+    )
+    await db.query_attribute_fact.create_index(
+        [("subject_type", 1), ("path", 1), ("value_boolean", 1)], name="idx_qaf_boolean_lookup"
+    )
+
     # External cache: unique compound key + TTL on fetched_at (7 days)
     await db.referenced_dpp_revisions.create_index(
         [("dpp_id", 1), ("dpp_version", 1)],

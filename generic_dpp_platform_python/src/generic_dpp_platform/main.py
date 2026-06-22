@@ -1,7 +1,6 @@
+import structlog
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-
-import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,6 +16,7 @@ from .dpps.exceptions import (
 )
 from .dpps.router import router as dpps_router
 from .logging_config import configure_logging
+from .queries.router import router as queries_router
 from .schemas.router import router as schemas_router
 
 configure_logging()
@@ -119,6 +119,7 @@ async def reference_resolution_handler(request: Request, exc: DppReferenceResolu
 app.include_router(admin_router, prefix="/admin")
 app.include_router(schemas_router, prefix="/schemas")
 app.include_router(dpps_router, prefix="/dpps")
+app.include_router(queries_router, prefix="/query")
 
 
 @app.get("/health")

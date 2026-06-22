@@ -27,6 +27,7 @@ from .models import (
 from .reference_extractor import extract_references
 from .utils import hash_document, hash_to_hex, validate_dpp_document
 from ..admin import service as admin_service
+from ..queries.index import replace_materialized_facts
 from ..schemas.resolver_connector import cache_schema, resolve_dpp_revision
 
 logger = structlog.get_logger()
@@ -303,6 +304,13 @@ async def create_new_dpp(
             )
 
             await db.dpp_revisions.insert_one(revision_doc, session=session)
+            await replace_materialized_facts(
+                db,
+                dpp_id,
+                subject_type,
+                revision_doc["dpp_document"],
+                session=session,
+            )
 
     logger.info("dpp_revision_created", dpp_id=dpp_id, version=1)
     return _doc_to_response(revision_doc)
@@ -374,6 +382,13 @@ async def create_dpp_revision_for_existing(
                     )
 
                     await db.dpp_revisions.insert_one(revision_doc, session=session)
+                    await replace_materialized_facts(
+                        db,
+                        dpp_id,
+                        subject_type,
+                        revision_doc["dpp_document"],
+                        session=session,
+                    )
                 break  # Transaction committed successfully
             except OperationFailure as exc:
                 labels = (exc.details or {}).get("errorLabels", [])
@@ -462,6 +477,18 @@ async def import_existing_revision(
                 )
 
             await db.dpp_revisions.insert_one(revision_doc, session=session)
+
+    # Imported revisions may be historical.  Rebuild facts only when this is
+    # the current revision for the logical DPP, preserving the same current
+    # view as normal issue/revise operations.
+    current = await db.logical_dpps.find_one({"dpp_id": revision.dpp_id}, {"_id": 0})
+    if current and current["current_version"] == revision.version:
+        await replace_materialized_facts(
+            db,
+            revision.dpp_id,
+            subject_type,
+            revision_doc["dpp_document"],
+        )
 
     logger.info("dpp_revision_imported", dpp_id=revision.dpp_id, version=revision.version)
     return _doc_to_response(revision_doc)
