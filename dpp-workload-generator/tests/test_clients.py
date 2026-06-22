@@ -1,5 +1,6 @@
 import json
 import pytest
+import re
 from datetime import datetime
 
 from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse, \
@@ -75,6 +76,37 @@ async def test_platform_not_found(httpx_mock, platform_info):
     async with PlatformClient(platform_info) as client:
         with pytest.raises(DppNotFoundError):
             await client.get_revision("missing")
+
+
+@pytest.mark.asyncio
+async def test_platform_predicate_query_uses_java_compatible_get_parameters(httpx_mock, platform_info):
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^http://platform-a:8082/query/predicate(?:\\?.*)?$"),
+        status_code=200,
+        json={"result_mode": "COUNT", "execution_mode": "INDEXED", "platform_id": "platform-a", "count": 2},
+    )
+
+    async with PlatformClient(platform_info) as client:
+        execution = await client.query_predicate({
+            "result_mode": "COUNT",
+            "execution_mode": "INDEXED",
+            "subject_type": "pv_module",
+            "filters": [
+                {"path": "production_country", "operator": "IN", "value": ["CH", "DE"]},
+                {"path": "contains_lead", "operator": "EQ", "value": True},
+            ],
+        })
+
+    request = httpx_mock.get_requests()[0]
+    assert execution.status_code == 200
+    assert execution.response["count"] == 2
+    assert request.method == "GET"
+    assert request.url.params.get("resultMode") == "COUNT"
+    assert request.url.params.get("executionMode") == "INDEXED"
+    assert request.url.params.get("subjectType") == "pv_module"
+    assert request.url.params.get_list("filters[0].value") == ["CH", "DE"]
+    assert request.url.params.get("filters[1].value") == "true"
 
 
 @pytest.mark.asyncio

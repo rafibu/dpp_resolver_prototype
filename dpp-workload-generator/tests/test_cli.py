@@ -1,10 +1,18 @@
-from unittest.mock import AsyncMock, patch, MagicMock
-
 import pytest
 from typer.testing import CliRunner
+from unittest.mock import AsyncMock, patch, MagicMock
+
 from workload.cli import app
 
 runner = CliRunner()
+
+
+def test_s4_predicate_query_help():
+    result = runner.invoke(app, ["scenario", "s4", "--help"])
+    assert result.exit_code == 0
+    assert "--scale" in result.output
+    assert "--allow-mismatches" in result.output
+
 
 def test_measure_help():
     result = runner.invoke(app, ["measure", "--help"])

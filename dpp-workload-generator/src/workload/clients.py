@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import structlog
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, Any, List, Dict
@@ -33,6 +34,62 @@ class ReviseDppSpec(BaseModel):
     version: Optional[int] = None
     schema_version: DppSchemaVersion
     dpp_payload: dict
+
+
+@dataclass(frozen=True)
+class PredicateQueryExecution:
+    """A successful platform-local predicate query response and HTTP status."""
+
+    response: dict[str, Any]
+    status_code: int
+
+
+def build_predicate_query_params(request: Dict[str, Any]) -> list[tuple[str, str]]:
+    """Encode a predicate request for Java's ``GET /query/predicate`` contract.
+
+    The Java platform binds a ``PredicateQueryRequestDTO`` with Spring's
+    ``@ModelAttribute``. Its top-level names are camelCase and each AND-connected
+    filter is represented as ``filters[<index>].<field>``. Repeated values encode
+    the ``IN`` operator and repeated ``returnFields`` values encode projection.
+    Keeping this translation here makes the S4 benchmark use the same request
+    shape for both Java and Python platform implementations.
+    """
+    required = ("result_mode", "execution_mode", "subject_type")
+    missing = [field for field in required if request.get(field) is None]
+    if missing:
+        raise ValueError(f"Predicate query request is missing: {', '.join(missing)}")
+
+    params: list[tuple[str, str]] = [
+        ("resultMode", _predicate_query_value(request["result_mode"])),
+        ("executionMode", _predicate_query_value(request["execution_mode"])),
+        ("subjectType", _predicate_query_value(request["subject_type"])),
+    ]
+    for index, filter_ in enumerate(request.get("filters") or []):
+        if "path" not in filter_ or "operator" not in filter_:
+            raise ValueError(f"Predicate filter {index} requires path and operator")
+        params.extend([
+            (f"filters[{index}].path", _predicate_query_value(filter_["path"])),
+            (f"filters[{index}].operator", _predicate_query_value(filter_["operator"])),
+        ])
+        if filter_.get("value") is not None:
+            values = filter_["value"] if isinstance(filter_["value"], list) else [filter_["value"]]
+            params.extend(
+                (f"filters[{index}].value", _predicate_query_value(value))
+                for value in values
+            )
+
+    for field in request.get("return_fields") or []:
+        params.append(("returnFields", _predicate_query_value(field)))
+    if request.get("aggregate_path") is not None:
+        params.append(("aggregatePath", _predicate_query_value(request["aggregate_path"])))
+    return params
+
+
+def _predicate_query_value(value: Any) -> str:
+    """Render scalar predicate-query values without changing their semantics."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
 
 # Exceptions
 class WorkloadError(Exception): pass
@@ -161,6 +218,22 @@ class PlatformClient(BaseClient):
 
     async def cache_schema(self, subject_type: str) -> None:
         await self._request("POST", f"/schemas/{subject_type}/cacheSchema", json={})
+
+    async def query_predicate(self, request: Dict[str, Any]) -> PredicateQueryExecution:
+        """Execute a platform-local predicate query for S4-style benchmark requests.
+
+        Predicate querying is intentionally a GET endpoint because both generic
+        platform implementations mirror the Java ``QueryController`` and bind the
+        request from query parameters. The method returns the raw response body so
+        callers can compare SELECT projections, COUNTs, and SUMs without losing
+        implementation-specific result details.
+        """
+        response = await self._request(
+            "GET",
+            "/query/predicate",
+            params=build_predicate_query_params(request),
+        )
+        return PredicateQueryExecution(response=response.json(), status_code=response.status_code)
 
     async def supports_revision_import(self) -> bool:
         """Return whether this platform exposes the S1 revision-import endpoint.

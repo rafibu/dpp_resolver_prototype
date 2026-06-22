@@ -14,6 +14,7 @@ def test_scenario_help():
     assert "s2" in result.output
     assert "s3" in result.output
     assert "s4" in result.output
+    assert "s5" in result.output
 
 
 def _run_scenario(scenario_id: str, tmp_path) -> str:
@@ -42,8 +43,8 @@ def test_scenario_s1_full(tmp_path):
 
 
 @pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")
-def test_scenario_s4_full(tmp_path):
-    _run_scenario("s4", tmp_path)
+def test_scenario_s5_full(tmp_path):
+    _run_scenario("s5", tmp_path)
 
 
 @pytest.mark.skipif(os.getenv("DOCKER_AVAILABLE") != "true", reason="Requires live federation")

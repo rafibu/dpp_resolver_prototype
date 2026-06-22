@@ -18,6 +18,7 @@ from .scenarios.s1 import run_s1
 from .scenarios.s2 import run_s2
 from .scenarios.s3 import run_s3
 from .scenarios.s4 import run_s4
+from .scenarios.s5 import run_s5
 from .scenarios.schema_evolution import run_schema_evolution
 from .schemas.generator import generate_schema
 
@@ -241,7 +242,7 @@ async def _run_schema_evolution(revisions: int, update_kind: str, seed: int, out
     csv_path = recorder.end_run()
     typer.echo(f"Results written to {csv_path}")
 
-scenario_app = typer.Typer(help="Execute federation scenarios (S1, S2, S3, S4)")
+scenario_app = typer.Typer(help="Execute federation scenarios (S1, S2, S3, S4, S5)")
 app.add_typer(scenario_app, name="scenario")
 
 @scenario_app.command()
@@ -293,15 +294,40 @@ def s3(
 def s4(
     factory_url: str = typer.Option("http://localhost:8000", "--factory-url"),
     seed: int = typer.Option(42, "--seed"),
+    scale: str = typer.Option("medium", "--scale", help="Dataset scale: small, medium, or large"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir"),
+    allow_mismatches: bool = typer.Option(
+        False,
+        "--allow-mismatches",
+        help="Write results but do not fail when INDEXED and ON_DEMAND differ",
+    ),
+):
+    """Scenario S4: Predicate-query INDEXED versus ON_DEMAND evaluation"""
+    try:
+        result = asyncio.run(run_s4(factory_url, seed, output_dir, scale, allow_mismatches))
+        typer.echo(f"Raw results: {result.raw_results_path}")
+        typer.echo(f"Summary: {result.summary_path}")
+        if not result.success:
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as e:
+        logger.error("s4_failed", error=str(e))
+        raise typer.Exit(code=1)
+
+@scenario_app.command()
+def s5(
+    factory_url: str = typer.Option("http://localhost:8000", "--factory-url"),
+    seed: int = typer.Option(42, "--seed"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir")
 ):
-    """Scenario S4: Offline Interpretability Supplement"""
+    """Scenario S5: Offline Interpretability Supplement"""
     try:
-        success = asyncio.run(run_s4(factory_url, seed, output_dir))
+        success = asyncio.run(run_s5(factory_url, seed, output_dir))
         if not success:
             raise typer.Exit(code=1)
     except Exception as e:
-        logger.error("s4_failed", error=str(e))
+        logger.error("s5_failed", error=str(e))
         raise typer.Exit(code=1)
 
 if __name__ == "__main__":
