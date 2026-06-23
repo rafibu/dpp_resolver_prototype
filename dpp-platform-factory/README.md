@@ -38,7 +38,7 @@ Source layout:
 
 ## Prerequisites
 
-- Python 3.14+
+- Python 3.12+
 - Docker Desktop or Docker Engine running
 - Pre-built images: `dpp-resolver:latest`, `generic-dpp-platform-java:latest`, `generic-dpp-platform-python:latest`
 
@@ -46,7 +46,7 @@ Source layout:
 
 ```bash
 cd dpp-platform-factory
-pip install -e .
+pip install -e ../dpp-workload-generator -e .
 python -m dpp_platform_factory
 ```
 
@@ -99,6 +99,8 @@ Interactive docs at `http://localhost:8000/docs`.
 | `DELETE` | `/platforms/{id}`        | Tear down platform and its database                                                                     |
 | `GET`    | `/resolver`              | Resolver URL and status                                                                                 |
 | `POST`   | `/resolver/seed-schemas` | Load `seed-schemas/*.json` into the Resolver's authoritative schema set                                 |
+| `POST`   | `/scenarios/{s1..s5}`    | Run a scenario                                                                                          |
+| `GET`    | `/scenarios/{s1..s5}`    | Last known scenario state                                                                               |
 
 ## Troubleshooting
 

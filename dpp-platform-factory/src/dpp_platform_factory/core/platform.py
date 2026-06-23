@@ -242,7 +242,25 @@ async def _wait_db_ready(container, stack: str, timeout: int = 60) -> None:
         except Exception:
             pass
         await asyncio.sleep(1)
-    raise TimeoutError(f"Database '{container.name}' did not become ready within {timeout}s")
+    raise TimeoutError(_database_startup_failure_message(container, timeout))
+
+
+def _database_startup_failure_message(container, timeout: int) -> str:
+    """Explain Docker's OOM-kill exit code instead of hiding it as a timeout."""
+    try:
+        container.reload()
+        state = container.attrs.get("State", {})
+        exit_code = state.get("ExitCode")
+        if state.get("OOMKilled") or exit_code == 137:
+            return (
+                f"Database '{container.name}' exited with code {exit_code} while starting. "
+                "Docker memory pressure killed the container; increase Docker Desktop's memory limit "
+                "or stop other containers before running the six-platform S4 workload."
+            )
+    except Exception:
+        # Retain the normal timeout message if Docker inspection itself fails.
+        pass
+    return f"Database '{container.name}' did not become ready within {timeout}s"
 
 
 async def _init_mongo_replset(container, timeout: int = 30) -> None:

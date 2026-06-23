@@ -2,8 +2,10 @@ import asyncio
 import copy
 import httpx
 import json
+import os
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from .platform_service import PlatformService
@@ -11,10 +13,18 @@ from .schema_seed_service import SchemaSeedService
 from .state import FactoryState, PlatformRecord, PlatformStatus
 from ..api.api_models import ScenarioStatus, ScenarioStep
 
-SCENARIO_IDS = ("s1", "s2", "s3", "s4")
+SCENARIO_IDS = ("s1", "s2", "s3", "s4", "s5")
 
 S1_INVERTER_TYPE = "s1_inverter"
 S1_INSTALLATION_TYPE = "s1_pv_installation"
+
+
+class S4WorkloadFailure(RuntimeError):
+    """Preserves the workload Markdown report when S4 finishes unsuccessfully."""
+
+    def __init__(self, report_md: str | None, message: str) -> None:
+        super().__init__(message)
+        self.report_md = report_md
 
 
 class ScenarioService:
@@ -32,6 +42,7 @@ class ScenarioService:
         steps: list[ScenarioStep] = []
         observations: list[str] = []
         started = time.perf_counter()
+        workload_report: str | None = None
 
         async def checked(name: str, action: Callable[[], Awaitable[Any]]) -> Any:
             step = ScenarioStep(name=name, status="running")
@@ -53,16 +64,22 @@ class ScenarioService:
             elif scenario_id == "s3":
                 await self._run_s3(checked, observations)
             elif scenario_id == "s4":
-                await self._run_s4(checked, observations)
+                workload_report = await self._run_s4(checked, observations)
+            elif scenario_id == "s5":
+                await self._run_s5(checked, observations)
             else:
                 raise ValueError(f"Unknown scenario: {scenario_id}")
             status = "passed"
+        except S4WorkloadFailure as exc:
+            status = "failed"
+            workload_report = exc.report_md
+            observations.append(f"Failure: {exc}")
         except Exception as exc:
             status = "failed"
             observations.append(f"Failure: {exc}")
 
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
-        report = _build_report(scenario_id, status, elapsed_ms, steps, observations)
+        report = workload_report or _build_report(scenario_id, status, elapsed_ms, steps, observations)
         return ScenarioStatus(
             scenario_id=scenario_id,
             status=status,
@@ -251,7 +268,7 @@ class ScenarioService:
                     lambda: self._migrate_issuer(resolver_url, platform_b.issuer_id, platform_b),
                 )
 
-    async def _run_s4(
+    async def _run_s5(
         self,
         checked: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]],
         observations: list[str],
@@ -321,6 +338,57 @@ class ScenarioService:
             observations.append(f"PV detail remained readable with {len(detail.get('revisions', []))} revision(s).")
         finally:
             await checked("Restore referenced Platform B", lambda: self._resume_platform(platform_b))
+
+    async def _run_s4(
+        self,
+        checked: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]],
+        observations: list[str],
+    ) -> str | None:
+        """Run the canonical S4 query-execution workload in-process.
+
+        The workload owns the deterministic six-platform data set and compares
+        predicate/traverse queries in INDEXED and ON_DEMAND modes.  The Factory
+        remains the HTTP entry point but does not duplicate or shell out to that
+        implementation.
+        """
+        result = await checked("Execute S4 query evaluation workload", self._execute_s4_workload)
+        observations.extend(result.observations)
+        if not result.success:
+            error = next((step.error for step in result.steps if step.error), "S4 query evaluation reported failed checks")
+            await checked(
+                "Verify S4 query equivalence",
+                lambda: _raise_s4_workload_failure(result, error),
+            )
+
+        for workload_step in result.steps:
+            await checked(
+                workload_step.name,
+                lambda step=workload_step: _assert_workload_step_passed(step),
+            )
+        return result.report_md
+
+    async def _execute_s4_workload(self) -> Any:
+        """Load the reusable workload package only when S4 is requested."""
+        try:
+            from workload.scenarios.s4 import run_s4_scenario
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "S4 requires the workload-generator package. Install the Factory with its workload dependency."
+            ) from exc
+
+        factory_url = os.getenv("DPP_FACTORY_URL", "http://127.0.0.1:8000")
+        scale = os.getenv("DPP_S4_SCALE", "small")
+        try:
+            seed = int(os.getenv("DPP_S4_SEED", "42"))
+        except ValueError as exc:
+            raise RuntimeError("DPP_S4_SEED must be an integer") from exc
+        output_dir = os.getenv("DPP_SCENARIO_OUTPUT_DIR")
+        return await run_s4_scenario(
+            factory_url=factory_url,
+            seed=seed,
+            scale=scale,
+            output_dir=None if output_dir is None else Path(output_dir),
+        )
 
     async def _run_s2(
         self,
@@ -1055,6 +1123,15 @@ def _suffix() -> str:
     return datetime.now(UTC).strftime("%H%M%S%f")
 
 
+async def _assert_workload_step_passed(step: Any) -> None:
+    if step.status != "passed":
+        raise RuntimeError(step.error or f"Workload step {step.name!r} did not pass")
+
+
+async def _raise_s4_workload_failure(result: Any, error: str) -> None:
+    raise S4WorkloadFailure(result.report_md, error)
+
+
 def _build_report(
     scenario_id: str,
     status: str,
@@ -1066,7 +1143,8 @@ def _build_report(
         "s1": "S1: Federated Reference Stability Under Target Evolution and Issuer Migration",
         "s2": "S2: Independent Schema Evolution",
         "s3": "S3: Schema-Level Cycle Rejection",
-        "s4": "S4: Offline Validation After Platform Unavailability",
+        "s4": "S4: Query Execution",
+        "s5": "S5: Offline Validation After Platform Unavailability",
     }.get(scenario_id, scenario_id.upper())
     lines = [
         f"# {title}",
@@ -1074,7 +1152,7 @@ def _build_report(
         f"- Status: `{status}`",
         f"- Duration: `{elapsed_ms} ms`",
     ]
-    if scenario_id == "s4":
+    if scenario_id == "s5":
         lines.extend([
             "- Evaluation scope: `supplemental only; not part of the actual evaluation`",
             "- Purpose: `probe whether offline validation may be interesting for future work`",

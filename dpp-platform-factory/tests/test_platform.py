@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from dpp_platform_factory.core.platform import (
     PlatformSpec,
+    _database_startup_failure_message,
     _database_url,
     _db_env_and_mount,
     _platform_labels,
@@ -165,6 +166,16 @@ def test_platform_labels_contain_all_metadata():
 
 def test_platform_db_volume_name_matches_spawned_db_volume():
     assert platform_db_volume_name("platform-a") == "dpp-platform-a-db-data"
+
+
+def test_database_startup_message_explains_oom_kill():
+    container = _mock_container("dpp-platform-a-db", "db")
+    container.attrs = {"State": {"ExitCode": 137, "OOMKilled": True}}
+
+    message = _database_startup_failure_message(container, 60)
+
+    assert "memory pressure" in message
+    assert "six-platform S4 workload" in message
 
 
 # ---------------------------------------------------------------------------

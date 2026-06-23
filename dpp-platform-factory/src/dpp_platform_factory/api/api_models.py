@@ -22,6 +22,7 @@ class PlatformInfo(BaseModel):
 
 class ResolverInfo(BaseModel):
     external_url: str
+    internal_url: Optional[str] = None
     status: PlatformStatus
 
 class FederationOverview(BaseModel):

@@ -1,6 +1,26 @@
 import pytest
 from datetime import datetime
+
+from dpp_platform_factory.api.api import _scenario_states
 from dpp_platform_factory.core.state import PlatformStatus, ResolverRecord
+
+
+def test_s5_is_exposed_by_generic_scenario_status_routes(client):
+    _scenario_states.clear()
+
+    status = client.get("/scenarios/s5")
+    assert status.status_code == 200
+    assert status.json() == {
+        "scenario_id": "s5",
+        "status": "pending",
+        "steps": [],
+        "report_md": None,
+    }
+
+    legacy_status = client.get("/scenarios/s5/status")
+    assert legacy_status.status_code == 200
+    assert legacy_status.json() == status.json()
+    assert client.get("/scenarios/s6").status_code == 404
 
 def test_scenario_spawn_and_seed(client, fake_docker, fake_resolver, test_state):
     # 1. Resolver starts up (simulated)

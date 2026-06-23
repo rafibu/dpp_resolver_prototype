@@ -1,8 +1,9 @@
 import httpx
 import pytest
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
-from dpp_platform_factory.core.scenario_service import ScenarioService
+from dpp_platform_factory.core.scenario_service import SCENARIO_IDS, ScenarioService, _build_report
 from dpp_platform_factory.core.state import PlatformRecord, PlatformStatus
 
 
@@ -27,6 +28,97 @@ def _response(status_code: int, url: str, body: str = "") -> httpx.Response:
         text=body,
         request=httpx.Request("POST", url),
     )
+
+
+def test_scenario_ids_include_s5():
+    assert SCENARIO_IDS == ("s1", "s2", "s3", "s4", "s5")
+
+
+@pytest.mark.asyncio
+async def test_s4_runs_the_query_evaluation_workload(monkeypatch):
+    service = ScenarioService(None, None, None)
+    observations: list[str] = []
+    calls: list[str] = []
+
+    async def checked(name, action):
+        calls.append(name)
+        return await action()
+
+    class Result:
+        success = True
+        report_md = "# Scenario S4: Query Execution"
+        observations = ("Run ID: s4-test",)
+        steps = (
+            type("Step", (), {"name": "Prepare deterministic S4 dataset", "status": "passed", "error": None})(),
+        )
+
+    async def execute_workload():
+        calls.append("query-workload")
+        return Result()
+
+    monkeypatch.setattr(service, "_execute_s4_workload", execute_workload)
+
+    report = await service._run_s4(checked, observations)
+
+    assert calls == ["Execute S4 query evaluation workload", "query-workload", "Prepare deterministic S4 dataset"]
+    assert observations == ["Run ID: s4-test"]
+    assert report == "# Scenario S4: Query Execution"
+
+
+def test_s4_and_s5_report_titles_have_the_canonical_meanings():
+    assert _build_report("s4", "passed", 1, [], []).startswith("# S4: Query Execution")
+    assert _build_report("s5", "passed", 1, [], []).startswith(
+        "# S5: Offline Validation After Platform Unavailability"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_s4_returns_the_workload_markdown_and_steps(monkeypatch):
+    service = ScenarioService(None, None, None)
+    result = SimpleNamespace(
+        success=True,
+        report_md="# Scenario S4: Query Execution\n\n- Status: `passed`",
+        observations=("Run ID: s4-test",),
+        steps=(SimpleNamespace(name="Compare INDEXED and ON_DEMAND query results", status="passed", error=None),),
+    )
+
+    async def execute_workload():
+        return result
+
+    monkeypatch.setattr(service, "_execute_s4_workload", execute_workload)
+
+    status = await service.run("s4")
+
+    assert status.status == "passed"
+    assert status.report_md == result.report_md
+    assert [step.name for step in status.steps] == [
+        "Execute S4 query evaluation workload",
+        "Compare INDEXED and ON_DEMAND query results",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_s4_exposes_a_failed_workload_as_failed_status(monkeypatch):
+    service = ScenarioService(None, None, None)
+    result = SimpleNamespace(
+        success=False,
+        report_md="# Scenario S4: Query Execution\n\n- Status: `failed`",
+        observations=("A query pair was non-equivalent.",),
+        steps=(),
+    )
+
+    async def execute_workload():
+        return result
+
+    monkeypatch.setattr(service, "_execute_s4_workload", execute_workload)
+
+    status = await service.run("s4")
+
+    assert status.status == "failed"
+    assert status.report_md == result.report_md
+    assert status.steps[-1].name == "Verify S4 query equivalence"
+    assert status.steps[-1].status == "failed"
+    assert status.steps[-1].error == "S4 query evaluation reported failed checks"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,8 @@
 import pytest
 from datetime import datetime
+
 from dpp_platform_factory.core.state import PlatformStatus, PlatformRecord, ResolverRecord
+
 
 def test_get_federation_empty(client, test_state):
     test_state.resolver = None
@@ -27,6 +29,7 @@ def test_get_federation_populated(client, test_state):
     assert resp.status_code == 200
     data = resp.json()
     assert data["resolver"]["external_url"] == "http://res"
+    assert data["resolver"]["internal_url"] == "http://res-i"
     assert len(data["platforms"]) == 1
     assert data["platforms"][0]["platform_id"] == "p1"
 

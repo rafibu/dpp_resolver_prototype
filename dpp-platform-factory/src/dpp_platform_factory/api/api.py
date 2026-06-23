@@ -119,6 +119,7 @@ async def get_federation(service: PlatformService = Depends(get_platform_service
     if resolver:
         resolver_info = ResolverInfo(
             external_url=resolver.external_url,
+            internal_url=resolver.internal_url,
             status=resolver.status
         )
             
@@ -236,6 +237,7 @@ async def get_resolver_info():
         return ResolverInfo(external_url="", status="OFFLINE")
     return ResolverInfo(
         external_url=resolver.external_url,
+        internal_url=resolver.internal_url,
         status=resolver.status
     )
 
@@ -341,3 +343,9 @@ async def get_scenario_status(scenario_id: str):
             report_md=None,
         )
     return _scenario_states[scenario_id]
+
+
+@app.get("/scenarios/{scenario_id}", response_model=ScenarioStatus)
+async def get_scenario(scenario_id: str):
+    """Return the last known scenario state using the generic scenario URL."""
+    return await get_scenario_status(scenario_id)

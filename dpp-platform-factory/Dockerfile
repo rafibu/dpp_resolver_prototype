@@ -10,16 +10,14 @@ WORKDIR /app
 # Install uv
 RUN pip install --no-cache-dir uv
 
-# Copy project files needed for installation
-COPY pyproject.toml .
-COPY src/ src/
+# Install both packages from the monorepo. Factory S4 imports the reusable
+# workload implementation directly; it never shells out to the workload CLI.
+COPY dpp-workload-generator/ /app/workload-generator/
+COPY dpp-platform-factory/ /app/factory/
+RUN uv pip install --system /app/workload-generator /app/factory
 
-# Install the Factory package and dependencies
-RUN uv pip install --system .
-
-# Copy runtime data files
-COPY seed-schemas/ seed-schemas/
-COPY default-federation.yml .
+WORKDIR /app/factory
+RUN mkdir -p output/scenarios
 
 # Factory port
 EXPOSE 8000
