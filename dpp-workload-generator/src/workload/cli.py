@@ -17,8 +17,8 @@ from .scenarios.pv import generate_pv_scenario
 from .scenarios.s1 import run_s1
 from .scenarios.s2 import run_s2
 from .scenarios.s3 import run_s3
-from .scenarios.s4 import run_s4
-from .scenarios.s5 import run_s5
+from .scenarios.s4 import run_s4_scenario
+from .scenarios.s5 import run_s5_scenario
 from .scenarios.schema_evolution import run_schema_evolution
 from .schemas.generator import generate_schema
 
@@ -304,9 +304,15 @@ def s4(
 ):
     """Scenario S4: Predicate and traverse INDEXED versus ON_DEMAND evaluation"""
     try:
-        result = asyncio.run(run_s4(factory_url, seed, output_dir, scale, allow_mismatches))
-        typer.echo(f"Raw results: {result.raw_results_path}")
-        typer.echo(f"Summary: {result.summary_path}")
+        result = asyncio.run(run_s4_scenario(
+            factory_url=factory_url,
+            seed=seed,
+            output_dir=output_dir,
+            scale=scale,
+            allow_mismatches=allow_mismatches,
+        ))
+        if result.summary:
+            typer.echo(f"Run ID: {result.summary.get('run_id', 'unknown')}")
         if not result.success:
             raise typer.Exit(code=1)
     except typer.Exit:
@@ -321,10 +327,10 @@ def s5(
     seed: int = typer.Option(42, "--seed"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir")
 ):
-    """Scenario S5: Offline Interpretability Supplement"""
+    """Scenario S5: Offline Validation After Platform Unavailability"""
     try:
-        success = asyncio.run(run_s5(factory_url, seed, output_dir))
-        if not success:
+        result = asyncio.run(run_s5_scenario(factory_url=factory_url, seed=seed, output_dir=output_dir))
+        if not result.success:
             raise typer.Exit(code=1)
     except Exception as e:
         logger.error("s5_failed", error=str(e))

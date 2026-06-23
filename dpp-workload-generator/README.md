@@ -19,7 +19,7 @@ It is not part of the federated DPP ecosystem. It is a measurement harness that 
 | Runs scenario S4: indexed versus on-demand predicate and traverse-query evaluation           |
 | Runs scenario S5: offline validation after platform unavailability                          |
 
-The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are. S1–S4 are the paper's evaluation scenarios; S5 is an offline-interpretability supplement retained outside that evaluation.
+The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are. S1–S4 are the paper's evaluation scenarios; S5 is a supplemental offline-validation scenario retained outside that evaluation.
 
 ## Derived-query evaluation
 
@@ -62,7 +62,7 @@ src/workload/
     s2.py             -- Scenario S2: Independent Schema Evolution
     s3.py             -- Scenario S3: Schema-Level Cycle Rejection
     s4.py             -- Scenario S4: Predicate and Traverse Query Workload Evaluation
-    s5.py             -- Scenario S5: Offline Interpretability Supplement
+    s5.py             -- Scenario S5: Offline Validation After Platform Unavailability
     reporter.py       -- Markdown report writer for scenarios
 scripts/
   plot.py             -- Matplotlib plots from CSV output
@@ -248,7 +248,7 @@ workload scenario s4 --scale medium --output-dir output/scenarios
 workload scenario s5 --output-dir output/scenarios
 ```
 
-S1, S2, S3, and S4 are evaluation scenarios. S4 exports raw and summarized predicate and traverse-query benchmark results. S5 writes a Markdown report and is retained only as a supplement to check whether offline validation may be interesting for future work; it is not part of the actual evaluation.
+S1, S2, S3, and S4 are evaluation scenarios. S4 exports raw and summarized predicate and traverse-query benchmark results. S5 writes a Markdown report for offline validation after a referenced platform becomes unavailable; it is retained as a supplemental scenario and is not part of the actual evaluation.
 
 S4 creates or reuses six role-specific platforms identified by deterministic `s4`-prefixed issuers, without resetting or modifying unrelated platforms. Its scale presets are `small` (300 DPPs), `medium` (5,000 DPPs, the default), and `large` (25,000 DPPs). It writes `*-predicate-results.json` and `*-predicate-summary.json`, containing predicate and traverse records, per-query INDEXED/ON_DEMAND measurements, semantic equivalence checks, and speedup factors. The traverse dataset includes a skewed current-reference graph and reference-changing revisions. Re-running with the same seed and scale reuses the S4 dataset; a conflicting deterministic dataset is rejected rather than overwritten.
 

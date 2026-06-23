@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+import os
 import structlog
 import time
 from dataclasses import dataclass
@@ -197,7 +198,8 @@ class BaseClient:
 
 class PlatformClient(BaseClient):
     def __init__(self, platform: PlatformInfo):
-        super().__init__(platform.external_url)
+        use_internal = os.getenv("DPP_WORKLOAD_USE_INTERNAL_URLS", "").lower() in {"1", "true", "yes"}
+        super().__init__(platform.internal_url if use_internal and platform.internal_url else platform.external_url)
         self.platform_info = platform
 
     async def ensure_subject_type(self, subject_type: str) -> None:

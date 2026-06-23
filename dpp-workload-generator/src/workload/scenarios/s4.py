@@ -15,6 +15,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from .results import WorkloadScenarioResult, WorkloadScenarioStep
 from ..clients import (
     DppNotFoundError,
     DppSchemaVersion,
@@ -290,7 +291,8 @@ def generate_s4_dataset(seed: int, scale: str = "medium") -> S4Dataset:
         revised_indices.add(reference_changing_module_index)
     revised_records: list[S4GeneratedDpp] = []
     for index, record in enumerate(records):
-        revision_payload = _revise_payload(record.payload, record.subject_type, index) if index in revised_indices else None
+        revision_payload = _revise_payload(record.payload, record.subject_type,
+                                           index) if index in revised_indices else None
         revised_records.append(
             S4GeneratedDpp(
                 role=record.role,
@@ -412,11 +414,11 @@ def validate_s4_dataset_quality(dataset: S4Dataset) -> None:
     if common_target < 5 or len(set(component_references)) < 3 or rare_target == len(connector_references):
         raise ValueError("S4 traverse references lack a non-uniform incoming-reference distribution")
     if not any(
-        dpp.revision_payload
-        and dpp.payload.get("components", {}).get("primary_component")
-        != dpp.revision_payload.get("components", {}).get("primary_component")
-        for dpp in dataset.dpps
-        if dpp.subject_type == "pv_module"
+            dpp.revision_payload
+            and dpp.payload.get("components", {}).get("primary_component")
+            != dpp.revision_payload.get("components", {}).get("primary_component")
+            for dpp in dataset.dpps
+            if dpp.subject_type == "pv_module"
     ):
         raise ValueError("S4 requires a revised module to replace a current reference")
 
@@ -574,9 +576,11 @@ async def run_s4(
 
     records = annotate_s4_equivalence(await execute_s4_benchmark(dataset, platforms, run_id), dataset)
     summary = summarize_s4_benchmark(records, dataset, materialization)
+    non_empty_checks = required_s4_non_empty_checks(records)
+    summary["required_non_empty_checks"] = non_empty_checks
     summary["run_id"] = run_id
     success = all(record.success for record in records) and (
-        allow_mismatches or all(query["equivalent"] for query in summary["queries"])
+            allow_mismatches or all(query["equivalent"] for query in summary["queries"])
     )
     summary["success"] = success
     summary["allow_mismatches"] = allow_mismatches
@@ -599,6 +603,121 @@ async def run_s4(
         raw_results_path=raw_results_path,
         summary_path=summary_path,
     )
+
+
+async def run_s4_scenario(
+        *,
+        factory_url: str,
+        resolver_url: str | None = None,
+        seed: int = 42,
+    output_dir: Path | None = None,
+    scale: str = "medium",
+    allow_mismatches: bool = False,
+) -> WorkloadScenarioResult:
+    """Run S4 through a reusable, structured scenario boundary.
+
+    ``resolver_url`` is accepted for a uniform scenario API.  S4 deliberately
+    discovers the resolver from the Factory so that its topology stays aligned
+    with the CLI and the Factory-triggered execution paths.
+    """
+    del resolver_url
+    try:
+        result = await run_s4(factory_url, seed, output_dir, scale, allow_mismatches)
+    except Exception as exc:
+        error = _describe_exception(exc)
+        logger.exception("s4_query_evaluation_failed", error=error)
+        return WorkloadScenarioResult(
+            scenario_id=S4_SCENARIO_ID,
+            success=False,
+            steps=(WorkloadScenarioStep("Run S4 query evaluation", "failed", error),),
+            observations=(f"Failure: {error}",),
+            report_md=_s4_failure_report(error),
+        )
+
+    report_md = build_s4_report(result)
+    report_path = result.summary_path.with_suffix(".md")
+    report_path.write_text(report_md, encoding="utf-8")
+    return WorkloadScenarioResult(
+        scenario_id=S4_SCENARIO_ID,
+        success=result.success,
+        steps=(
+            WorkloadScenarioStep("Prepare deterministic S4 dataset", "passed"),
+            WorkloadScenarioStep(
+                "Compare INDEXED and ON_DEMAND query results",
+                "passed" if result.success else "failed",
+                None if result.success else "One or more query executions failed or produced non-equivalent results.",
+            ),
+            WorkloadScenarioStep("Write S4 benchmark artifacts", "passed"),
+        ),
+        observations=(
+            f"Run ID: {result.run_id}",
+            f"DPPs: {result.total_dpp_count}",
+            f"Generated revisions: {result.generated_revisions}",
+            f"Summary JSON: {result.summary_path}",
+            f"Markdown report: {report_path}",
+        ),
+        report_md=report_md,
+        summary=result.summary,
+    )
+
+
+def build_s4_report(result: S4RunResult) -> str:
+    """Render the S4 summary in the Markdown shape used by scenario consumers."""
+    summary = result.summary
+    lines = [
+        "# Scenario S4: Query Execution",
+        "",
+        f"- Status: `{'passed' if result.success else 'failed'}`",
+        f"- Run ID: `{result.run_id}`",
+        f"- Dataset: `{result.total_dpp_count}` DPPs; `{result.generated_revisions}` generated revisions",
+        "",
+        "## Query Equivalence",
+    ]
+    for query in summary.get("queries", []):
+        status = "passed" if query.get("equivalent") else "failed"
+        lines.append(
+            f"- `{status}` {query.get('query_id', 'unknown')} "
+            f"({query.get('query_category', 'PREDICATE')}, {query.get('result_mode', 'unknown')}): "
+            f"INDEXED {query.get('duration_indexed_ms')} ms; "
+            f"ON_DEMAND {query.get('duration_on_demand_ms')} ms"
+        )
+    lines.extend([
+        "",
+        "## Required Non-Empty Checks",
+    ])
+    for check in summary.get("required_non_empty_checks", []):
+        status = "passed" if check.get("passed") else "failed"
+        lines.append(
+            f"- `{status}` {check.get('query_id', 'unknown')}: "
+            f"INDEXED matches={check.get('indexed_match_count')}; "
+            f"ON_DEMAND matches={check.get('on_demand_match_count')}"
+        )
+    lines.extend([
+        "",
+        "## Artifacts",
+        f"- Raw results: `{result.raw_results_path}`",
+        f"- Summary: `{result.summary_path}`",
+    ])
+    return "\n".join(lines)
+
+
+def _s4_failure_report(error: str) -> str:
+    return "\n".join([
+        "# Scenario S4: Query Execution",
+        "",
+        "- Status: `failed`",
+        "",
+        "## Failure",
+        f"- {error}",
+    ])
+
+
+def _describe_exception(exc: Exception) -> str:
+    """Keep empty-message transport errors actionable in Factory/UI reports."""
+    detail = str(exc).strip()
+    if detail:
+        return f"{type(exc).__name__}: {detail}"
+    return f"{type(exc).__name__} (no detail provided)"
 
 
 async def ensure_s4_platforms(
@@ -631,8 +750,6 @@ async def ensure_s4_platforms(
         platforms[definition.role] = platform
 
     return platforms
-
-
 async def ensure_s4_schemas(resolver: ResolverClient) -> dict[str, DppSchemaVersion]:
     """Ensure payload-compatible active schemas for every S4 subject type."""
     versions: dict[str, DppSchemaVersion] = {}
@@ -643,8 +760,8 @@ async def ensure_s4_schemas(resolver: ResolverClient) -> dict[str, DppSchemaVers
 
 
 async def prepare_s4_platforms(
-    resolver: ResolverClient,
-    platforms: dict[str, PlatformInfo],
+        resolver: ResolverClient,
+        platforms: dict[str, PlatformInfo],
 ) -> None:
     """Register routes and cache S4 schemas on the role owning each subject type."""
     for definition in S4_PLATFORM_DEFINITIONS:
@@ -657,9 +774,9 @@ async def prepare_s4_platforms(
 
 
 async def materialize_s4_dataset(
-    dataset: S4Dataset,
-    platforms: dict[str, PlatformInfo],
-    schema_versions: dict[str, DppSchemaVersion],
+        dataset: S4Dataset,
+        platforms: dict[str, PlatformInfo],
+        schema_versions: dict[str, DppSchemaVersion],
 ) -> S4Materialization:
     """Issue missing S4 DPPs and complete only missing deterministic revisions."""
     issued = 0
@@ -706,9 +823,9 @@ async def materialize_s4_dataset(
 
 
 async def execute_s4_benchmark(
-    dataset: S4Dataset,
-    platforms: dict[str, PlatformInfo],
-    run_id: str,
+        dataset: S4Dataset,
+        platforms: dict[str, PlatformInfo],
+        run_id: str,
 ) -> list[S4BenchmarkRecord]:
     """Run each fixed query in INDEXED and ON_DEMAND mode against its owner platform."""
     records: list[S4BenchmarkRecord] = []
@@ -830,9 +947,9 @@ async def execute_s4_benchmark(
 
 
 def summarize_s4_benchmark(
-    records: list[S4BenchmarkRecord],
-    dataset: S4Dataset,
-    materialization: S4Materialization,
+        records: list[S4BenchmarkRecord],
+        dataset: S4Dataset,
+        materialization: S4Materialization,
 ) -> dict[str, Any]:
     """Calculate per-query indexed/on-demand equivalence and performance summaries."""
     grouped: dict[tuple[str, str], dict[str, S4BenchmarkRecord]] = {}
@@ -923,9 +1040,9 @@ def summarize_s4_benchmark(
 
 
 def predicate_results_equivalent(
-    result_mode: str,
-    indexed: dict[str, Any],
-    on_demand: dict[str, Any],
+        result_mode: str,
+        indexed: dict[str, Any],
+        on_demand: dict[str, Any],
 ) -> bool:
     """Compare logical query results while ignoring ordering and transport metadata."""
     if result_mode == "SELECT":
@@ -951,8 +1068,8 @@ def traverse_results_equivalent(indexed: dict[str, Any], on_demand: dict[str, An
 
 
 def annotate_s4_equivalence(
-    records: list[S4BenchmarkRecord],
-    dataset: S4Dataset,
+        records: list[S4BenchmarkRecord],
+        dataset: S4Dataset,
 ) -> list[S4BenchmarkRecord]:
     """Write each query-pair's semantic equivalence back into its raw records."""
     by_key: dict[tuple[str, str], dict[str, S4BenchmarkRecord]] = {}
@@ -974,17 +1091,74 @@ def annotate_s4_equivalence(
             indexed and on_demand and indexed.success and on_demand.success
             and traverse_results_equivalent(indexed.response or {}, on_demand.response or {})
         )
-    return [replace(record, equivalence=equivalence.get((record.query_category, record.query_id))) for record in records]
+    return [replace(record, equivalence=equivalence.get((record.query_category, record.query_id))) for record in
+            records]
+
+
+def required_s4_non_empty_checks(records: list[S4BenchmarkRecord]) -> list[dict[str, Any]]:
+    """Require one deterministic predicate and one deterministic traverse query to be non-empty.
+
+    S4 primarily checks INDEXED versus ON_DEMAND equivalence. These sentinel checks
+    prevent a broken implementation from passing by returning empty results for
+    both execution modes.
+    """
+    return [
+        _required_s4_non_empty_check(
+            records,
+            query_category="PREDICATE",
+            query_id="q1_modules_containing_lead",
+            description="Predicate sentinel: modules containing lead must produce matches",
+        ),
+        _required_s4_non_empty_check(
+            records,
+            query_category="TRAVERSE",
+            query_id="t1_common_component_revision",
+            description="Traverse sentinel: common component reverse traversal must produce matches",
+        ),
+    ]
+
+
+def _required_s4_non_empty_check(
+        records: list[S4BenchmarkRecord],
+        *,
+        query_category: str,
+        query_id: str,
+        description: str,
+) -> dict[str, Any]:
+    matching_records = [
+        record
+        for record in records
+        if record.query_category == query_category and record.query_id == query_id
+    ]
+    counts = {
+        record.execution_mode: record.match_count
+        for record in matching_records
+    }
+    passed = (
+            counts.get("INDEXED") is not None
+            and counts.get("ON_DEMAND") is not None
+            and counts["INDEXED"] > 0
+            and counts["ON_DEMAND"] > 0
+    )
+    return {
+        "query_category": query_category,
+        "query_id": query_id,
+        "description": description,
+        "indexed_match_count": counts.get("INDEXED"),
+        "on_demand_match_count": counts.get("ON_DEMAND"),
+        "passed": passed,
+    }
 
 
 def export_s4_results(
-    output_dir: Path | None,
-    run_id: str,
-    records: list[S4BenchmarkRecord],
-    summary: dict[str, Any],
+        output_dir: Path | None,
+        run_id: str,
+        records: list[S4BenchmarkRecord],
+        summary: dict[str, Any],
 ) -> tuple[Path, Path]:
     """Write raw executions and the derived comparison summary to normal output storage."""
-    root = Path(output_dir) if output_dir is not None else Path(os.getenv("WORKLOAD_OUTPUT_DIR", "output")) / "predicate-queries"
+    root = Path(output_dir) if output_dir is not None else Path(
+        os.getenv("WORKLOAD_OUTPUT_DIR", "output")) / "predicate-queries"
     root.mkdir(parents=True, exist_ok=True)
     raw_path = root / f"{run_id}-predicate-results.json"
     summary_path = root / f"{run_id}-predicate-summary.json"
@@ -1018,9 +1192,9 @@ async def _ensure_s4_schema(resolver: ResolverClient, subject_type: str) -> DppS
 
 
 async def _get_existing_s4_dpp(
-    client: PlatformClient,
-    generated: S4GeneratedDpp,
-    dataset: S4Dataset,
+        client: PlatformClient,
+        generated: S4GeneratedDpp,
+        dataset: S4Dataset,
 ) -> Any | None:
     try:
         existing = await client.get_revision(generated.dpp_id)
@@ -1051,17 +1225,18 @@ def _allocate_subject_counts(total: int) -> list[tuple[str, str, int]]:
 
 
 def _build_payload(
-    *,
-    role: str,
-    subject_type: str,
-    ordinal: int,
-    dpp_id: str,
-    seed: int,
-    scale: str,
-    rng: random.Random,
+        *,
+        role: str,
+        subject_type: str,
+        ordinal: int,
+        dpp_id: str,
+        seed: int,
+        scale: str,
+        rng: random.Random,
 ) -> dict[str, Any]:
     serial = f"S4-{subject_type.upper().replace('_', '-')}-{ordinal:07d}"
-    manufacturer = _weighted_choice(rng, (("HelioWorks", 0.38), ("NordCell", 0.24), ("TerraVolt", 0.21), ("Aster Energy", 0.17)))
+    manufacturer = _weighted_choice(rng, (("HelioWorks", 0.38), ("NordCell", 0.24), ("TerraVolt", 0.21),
+                                          ("Aster Energy", 0.17)))
     country = _weighted_choice(rng, (("CN", 0.46), ("DE", 0.17), ("US", 0.15), ("CH", 0.12), ("JP", 0.10)))
     payload: dict[str, Any] = {
         "serial_number": serial,
@@ -1089,7 +1264,8 @@ def _build_payload(
             "status": "active",
             "inspection_history": [
                 {"year": 2020 + ordinal % 5, "result": "passed"},
-                {"year": 2025, "result": _weighted_choice(rng, (("passed", 0.78), ("pending", 0.16), ("failed", 0.06)))},
+                {"year": 2025,
+                 "result": _weighted_choice(rng, (("passed", 0.78), ("pending", 0.16), ("failed", 0.06)))},
             ],
         },
         "traceability": {
@@ -1133,7 +1309,8 @@ def _build_payload(
             {
                 "rated_power_kw": rated_power_kw,
                 "max_ac_power_watts": round(rated_power_kw * 1_000, 2),
-                "certification_status": _weighted_choice(rng, (("certified", 0.82), ("pending", 0.12), ("expired", 0.06))),
+                "certification_status": _weighted_choice(rng,
+                                                         (("certified", 0.82), ("pending", 0.12), ("expired", 0.06))),
                 "repairable": rng.random() < 0.79,
                 "failure_count": failures,
                 "copper_mass_kg": round(0.7 + rng.random() * 7.5, 3),
@@ -1156,7 +1333,8 @@ def _build_payload(
         )
         payload["technical"].update({"capacity_kwh": payload["capacity_kwh"], "chemistry": chemistry})
     elif subject_type == "pv_installation":
-        inspection_status = _weighted_choice(rng, (("passed", 0.63), ("pending", 0.19), ("overdue", 0.12), ("failed", 0.06)))
+        inspection_status = _weighted_choice(rng,
+                                             (("passed", 0.63), ("pending", 0.19), ("overdue", 0.12), ("failed", 0.06)))
         payload.update(
             {
                 "installation_id": f"INSTALL-{ordinal:07d}",
@@ -1175,7 +1353,8 @@ def _build_payload(
         toxic = rng.random() < 0.065
         payload.update(
             {
-                "disposal_method": _weighted_choice(rng, (("mechanical_recycling", 0.56), ("thermal_recovery", 0.24), ("controlled_landfill", 0.20))),
+                "disposal_method": _weighted_choice(rng, (("mechanical_recycling", 0.56), ("thermal_recovery", 0.24),
+                                                          ("controlled_landfill", 0.20))),
                 "disposal_year": 2020 + ordinal % 7,
                 "recovered_glass_kg": round(10 + rng.random() * 850, 3),
                 "recovered_aluminium_kg": round(1 + rng.random() * 140, 3),
@@ -1299,8 +1478,8 @@ def _traverse_source_ids(matches: Any) -> tuple[str, ...]:
             continue
         metadata = match.get("workload_s4")
         source_id = (
-            metadata.get("source_dpp_id") if isinstance(metadata, dict) else None
-        ) or match.get("workload_s4.source_dpp_id")
+                        metadata.get("source_dpp_id") if isinstance(metadata, dict) else None
+                    ) or match.get("workload_s4.source_dpp_id")
         # The fallback retains useful mismatch diagnostics for a non-S4 or
         # malformed response instead of falsely treating all such matches equal.
         identities.append(str(source_id) if source_id is not None else json.dumps(match, sort_keys=True, default=str))

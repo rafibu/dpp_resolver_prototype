@@ -2,7 +2,7 @@
 name = "workload-generator"
 version = "0.1.0"
 description = "DPP Workload Generator CLI"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "httpx",
     "pydantic>=2",

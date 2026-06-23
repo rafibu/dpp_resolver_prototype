@@ -1,8 +1,8 @@
 services:
   factory:
     build:
-      context: ./dpp-platform-factory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dpp-platform-factory/Dockerfile
     container_name: dpp-factory
     ports:
       - "8000:8000"
@@ -11,6 +11,7 @@ services:
     environment:
       - DPP_FACTORY_ORPHANS=shutdown
       - DPP_FACTORY_KEEP_RUNNING=false
+      - DPP_WORKLOAD_USE_INTERNAL_URLS=true
     networks:
       - dpp-net
 

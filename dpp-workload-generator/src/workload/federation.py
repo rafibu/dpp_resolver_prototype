@@ -1,4 +1,5 @@
 import httpx
+import os
 import structlog
 from datetime import datetime
 from enum import Enum
@@ -6,6 +7,10 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 logger = structlog.get_logger(__name__)
+
+# A Factory platform POST includes database startup, container health checks,
+# and resolver registration.  It is fundamentally slower than topology reads.
+PLATFORM_CREATION_TIMEOUT_SECONDS = 90.0
 
 class PlatformStatus(str, Enum):
     STARTING = "STARTING"
@@ -25,6 +30,7 @@ class PlatformInfo(BaseModel):
 
 class ResolverInfo(BaseModel):
     external_url: str
+    internal_url: Optional[str] = None
     status: PlatformStatus
 
 class FederationOverview(BaseModel):
@@ -32,9 +38,10 @@ class FederationOverview(BaseModel):
     platforms: List[PlatformInfo]
 
 class FederationClient:
-    def __init__(self, timeout: float = 10.0):
+    def __init__(self, timeout: float = 10.0, platform_creation_timeout: float = PLATFORM_CREATION_TIMEOUT_SECONDS):
         self._client = httpx.AsyncClient(timeout=timeout)
         self._overview: Optional[FederationOverview] = None
+        self._platform_creation_timeout = platform_creation_timeout
 
     async def discover(self, factory_url: str) -> FederationOverview:
         """Fetch federation overview from Factory and cache it."""
@@ -73,7 +80,7 @@ class FederationClient:
         overview = await self.discover(factory_url)
         if not overview.resolver:
             raise RuntimeError("No resolver info available in federation.")
-        return overview.resolver.external_url
+        return _resolver_url(overview.resolver)
 
     async def create_platform(
         self,
@@ -92,8 +99,13 @@ class FederationClient:
                 "issuer_id": issuer_id,
                 "subject_types": list(subject_types),
             },
+            timeout=self._platform_creation_timeout,
         )
-        response.raise_for_status()
+        if response.is_error:
+            detail = _factory_error_detail(response)
+            raise RuntimeError(
+                f"Factory could not create platform {issuer_id!r} ({stack}): {detail}"
+            )
         self._overview = None
         return PlatformInfo.model_validate(response.json())
 
@@ -120,7 +132,7 @@ class FederationClient:
             raise RuntimeError("Federation not discovered yet. Call discover() first.")
         if not self._overview.resolver:
             raise RuntimeError("No resolver info available in federation.")
-        return self._overview.resolver.external_url
+        return _resolver_url(self._overview.resolver)
 
     async def reset_all_platforms(self, factory_url: str):
         """Reset all platforms by calling POST /admin/reset directly on each platform.
@@ -138,7 +150,7 @@ class FederationClient:
             logger.info("platform_reset", platform_id=platform.platform_id)
             try:
                 response = await self._client.post(
-                    f"{platform.external_url.rstrip('/')}/admin/reset",
+                    f"{_platform_url(platform).rstrip('/')}/admin/reset",
                     timeout=15.0
                 )
                 response.raise_for_status()
@@ -180,3 +192,33 @@ class FederationClient:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
+
+
+def _use_internal_urls() -> bool:
+    return os.getenv("DPP_WORKLOAD_USE_INTERNAL_URLS", "").lower() in {"1", "true", "yes"}
+
+
+def _resolver_url(resolver: ResolverInfo) -> str:
+    if _use_internal_urls() and resolver.internal_url:
+        return resolver.internal_url
+    return resolver.external_url
+
+
+def _platform_url(platform: PlatformInfo) -> str:
+    if _use_internal_urls() and platform.internal_url:
+        return platform.internal_url
+    return platform.external_url
+
+
+def _factory_error_detail(response: httpx.Response) -> str:
+    """Preserve Factory's API detail in S4 reports instead of HTTPX's generic status."""
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
+        return payload["detail"]
+    body = response.text.strip()
+    if body:
+        return body
+    return f"HTTP {response.status_code}"
