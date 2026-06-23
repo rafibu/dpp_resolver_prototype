@@ -34,14 +34,11 @@ This module implements only the predicate-retrieval part of that orchestration:
 
 ### Generic-platform compatibility
 
-The current generic Java and Python platforms expose `GET /query/predicate` and
-bind flattened query parameters such as `resultMode` and
-`filters[0].path`. This module currently sends a configurable HTTP method with
-a JSON request body; its defaults are `POST /query/predicate`. Changing
-`PLATFORM_QUERY_METHOD` alone does not convert that body into the generic
-platforms' query-parameter contract. Consequently, this standalone client is
-not the S4 client and needs a transport adapter or implementation change before
-it can call the generic platforms directly.
+The generic Java and Python platforms expose `GET /query/predicate` and bind
+flattened query parameters such as `resultMode` and `filters[0].path`. This
+client now uses that contract by default, including repeated
+`filters[i].value` parameters for `IN` filters. A non-GET method remains an
+explicit legacy override for deployments that expose a JSON-body endpoint.
 
 ## Requirements
 
@@ -65,7 +62,7 @@ Configuration is read from environment variables (see `.env.example`):
 | ------------------------- | ----------------------------- | ----------------------------------------------- |
 | `RESOLVER_BASE_URL`       | `http://localhost:8080`       | Resolver base URL (`GET /admin/platforms`)      |
 | `PLATFORM_QUERY_PATH`     | `/query/predicate`            | Path appended to each platform base URL         |
-| `PLATFORM_QUERY_METHOD`   | `POST`                        | HTTP method for the platform-local query        |
+| `PLATFORM_QUERY_METHOD`   | `GET`                         | HTTP method for the platform-local query        |
 | `DEFAULT_TIMEOUT_MS`      | `120000`                      | Federation timeout when a request omits one     |
 | `HTTP_CONNECT_TIMEOUT_MS` | `5000`                        | Per-platform connect timeout                    |
 | `HTTP_READ_TIMEOUT_MS`    | `120000`                      | Per-platform read timeout                       |

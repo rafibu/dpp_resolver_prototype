@@ -41,7 +41,7 @@ class Config:
 
     resolver_base_url: str = "http://localhost:8080"
     platform_query_path: str = "/query/predicate"
-    platform_query_method: str = "POST"
+    platform_query_method: str = "GET"
     default_timeout_ms: int = 120_000
     http_connect_timeout_ms: int = 5_000
     http_read_timeout_ms: int = 120_000
@@ -62,7 +62,7 @@ def get_config() -> Config:
     return Config(
         resolver_base_url=_env_str("RESOLVER_BASE_URL", "http://localhost:8080"),
         platform_query_path=_env_str("PLATFORM_QUERY_PATH", "/query/predicate"),
-        platform_query_method=_env_str("PLATFORM_QUERY_METHOD", "POST").upper(),
+        platform_query_method=_env_str("PLATFORM_QUERY_METHOD", "GET").upper(),
         default_timeout_ms=_env_int("DEFAULT_TIMEOUT_MS", 120_000),
         http_connect_timeout_ms=_env_int("HTTP_CONNECT_TIMEOUT_MS", 5_000),
         http_read_timeout_ms=_env_int("HTTP_READ_TIMEOUT_MS", 120_000),

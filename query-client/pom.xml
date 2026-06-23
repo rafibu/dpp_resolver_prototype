@@ -7,7 +7,7 @@
 
     <parent>
         <groupId>ch.bfh</groupId>
-        <artifactId>dpp-query-client</artifactId>
+        <artifactId>dpp-resolver-prototype</artifactId>
         <version>1.0.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -16,7 +16,7 @@
     <packaging>pom</packaging>
 
     <name>Query client</name>
-    <description>Query client which creates and executes queries</description>
+    <description>Query client that creates and executes queries</description>
 
     <developers>
         <developer>

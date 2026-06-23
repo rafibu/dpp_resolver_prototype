@@ -1,6 +1,6 @@
 """Platform-local query client.
 
-Sends the validated platform-local predicate query body to one DPP platform,
+Sends the validated platform-local predicate query to one DPP platform,
 measures the call duration, and records the outcome on the supplied
 :class:`PlatformQueryResult`. A platform call never raises: all transport,
 status, and parse failures are captured as FAILED/TIMEOUT on the result so that
@@ -49,7 +49,12 @@ async def send_predicate_query(
     result.started_at = _now()
 
     try:
-        response = await client.request(config.platform_query_method, url, json=body)
+        if config.platform_query_method == "GET":
+            response = await client.get(url, params=build_predicate_params(body))
+        else:
+            # Retained only for deployments that deliberately expose a legacy
+            # JSON-body endpoint.  Generic Java/Python platforms use GET.
+            response = await client.request(config.platform_query_method, url, json=body)
     except httpx.TimeoutException as exc:
         _finish(result, PlatformCallStatus.TIMEOUT, error=f"Platform call timed out: {exc}")
         return result
@@ -103,3 +108,39 @@ def _finish(
 def _safe_text(response: httpx.Response) -> str:
     text = response.text or ""
     return text[:500]
+
+
+def build_predicate_params(body: dict[str, Any]) -> list[tuple[str, str]]:
+    """Encode the generic-platform ``@ModelAttribute`` GET contract.
+
+    The Java controller binds camelCase top-level fields and indexed filter
+    properties.  Repeating ``filters[i].value`` represents an ``IN`` list.
+    This is intentionally the same shape as the Angular QueryService and the
+    workload-generator clients.
+    """
+    params: list[tuple[str, str]] = [
+        ("resultMode", _scalar(body["result_mode"])),
+        ("executionMode", _scalar(body["execution_mode"])),
+        ("subjectType", _scalar(body["subject_type"])),
+    ]
+    for index, filter_ in enumerate(body.get("filters", [])):
+        params.extend([
+            (f"filters[{index}].path", _scalar(filter_["path"])),
+            (f"filters[{index}].operator", _scalar(filter_["operator"])),
+        ])
+        value = filter_.get("value")
+        if value is None:
+            continue
+        values = value if isinstance(value, list) else [value]
+        params.extend((f"filters[{index}].value", _scalar(item)) for item in values)
+    for field in body.get("return_fields") or []:
+        params.append(("returnFields", _scalar(field)))
+    if body.get("aggregate_path") is not None:
+        params.append(("aggregatePath", _scalar(body["aggregate_path"])))
+    return params
+
+
+def _scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)

@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import httpx
 import json
+from typing import Any, Awaitable, Callable
+
 from query_client.config import Config
 from query_client.service import FederatedQueryService
-from typing import Any, Awaitable, Callable
 
 Handler = Callable[[httpx.Request], Awaitable[httpx.Response]]
 
@@ -43,10 +44,10 @@ class RoutingTransport(httpx.AsyncBaseTransport):
     def platform_requests(self) -> list[httpx.Request]:
         return [r for r in self.requests if r.url.path != "/admin/platforms"]
 
-    def body_for(self, host: str) -> dict[str, Any]:
+    def params_for(self, host: str) -> list[tuple[str, str]]:
         for request in self.requests:
             if request.url.host == host and request.url.path != "/admin/platforms":
-                return json.loads(request.content.decode("utf-8"))
+                return list(request.url.params.multi_items())
         raise AssertionError(f"no platform request recorded for host {host!r}")
 
 

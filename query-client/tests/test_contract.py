@@ -1,13 +1,9 @@
-"""Tests that pin the platform-local request contract actually sent on the wire.
-
-These assert the acceptance criterion "the platform-local query request uses
-snake_case JSON fields", plus method/path/headers and the timeout exclusion.
-"""
+"""Tests that pin the generic platform's GET query-parameter contract."""
 
 import pytest
+
 from query_client.config import Config
 from query_client.models import FederatedPredicateQueryRequest
-
 from support import (
     json_handler,
     make_service,
@@ -19,7 +15,7 @@ from support import (
 
 
 @pytest.mark.asyncio
-async def test_forwarded_body_is_snake_case_json_without_timeout():
+async def test_forwarded_request_uses_flattened_get_params_without_timeout():
     transport = make_transport(
         {
             "resolver": resolver_handler(),
@@ -44,22 +40,21 @@ async def test_forwarded_body_is_snake_case_json_without_timeout():
     await service.run_to_completion(request)
     await service.aclose()
 
-    body = transport.body_for("platform-a")
-    assert body == {
-        "result_mode": "SELECT",
-        "execution_mode": "ON_DEMAND",
-        "subject_type": "battery",
-        "filters": [
-            {"path": "status", "operator": "EQ", "value": "active"},
-            {"path": "color", "operator": "IN", "value": ["red", "blue"]},
-        ],
-        "return_fields": ["status"],
-    }
-    assert "timeout_ms" not in body
-    assert "aggregate_path" not in body
-
-    # Both platforms received the identical body.
-    assert transport.body_for("platform-b") == body
+    params = transport.params_for("platform-a")
+    assert params == [
+        ("resultMode", "SELECT"),
+        ("executionMode", "ON_DEMAND"),
+        ("subjectType", "battery"),
+        ("filters[0].path", "status"),
+        ("filters[0].operator", "EQ"),
+        ("filters[0].value", "active"),
+        ("filters[1].path", "color"),
+        ("filters[1].operator", "IN"),
+        ("filters[1].value", "red"),
+        ("filters[1].value", "blue"),
+        ("returnFields", "status"),
+    ]
+    assert transport.params_for("platform-b") == params
 
 
 @pytest.mark.asyncio
@@ -67,7 +62,7 @@ async def test_request_method_path_and_content_type():
     config = Config(
         resolver_base_url="http://localhost:8080",
         platform_query_path="/query/predicate",
-        platform_query_method="POST",
+        platform_query_method="GET",
     )
     transport = make_transport(
         {
@@ -86,9 +81,9 @@ async def test_request_method_path_and_content_type():
     platform_reqs = transport.platform_requests()
     assert len(platform_reqs) == 2
     for req in platform_reqs:
-        assert req.method == "POST"
+        assert req.method == "GET"
         assert req.url.path == "/query/predicate"
-        assert req.headers["content-type"].startswith("application/json")
+        assert req.url.params["resultMode"] == "SELECT"
 
 
 @pytest.mark.asyncio
@@ -107,9 +102,9 @@ async def test_sum_forwards_aggregate_path_only():
     await service.run_to_completion(request)
     await service.aclose()
 
-    body = transport.body_for("platform-a")
-    assert body["aggregate_path"] == "material.mass_kg"
-    assert "return_fields" not in body
+    params = transport.params_for("platform-a")
+    assert ("aggregatePath", "material.mass_kg") in params
+    assert not any(key == "returnFields" for key, _ in params)
 
 
 @pytest.mark.asyncio
