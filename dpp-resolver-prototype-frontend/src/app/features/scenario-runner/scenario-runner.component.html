@@ -16,16 +16,42 @@
         </mat-card-header>
 
         <mat-card-actions align="end">
-          @if (statusFor(scenario.id)) {
-            <button mat-icon-button type="button" matTooltip="Copy status" (click)="copyStatus(scenario.id)">
-              <mat-icon>content_copy</mat-icon>
+          @if (scenario.kind === 'run') {
+            @if (statusFor(scenario.id)) {
+              <button mat-icon-button type="button" matTooltip="Copy status" (click)="copyStatus(scenario.id)">
+                <mat-icon>content_copy</mat-icon>
+              </button>
+            }
+            <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario(scenario.id)">
+              <mat-icon>play_arrow</mat-icon>
+              {{ isRunning(scenario.id) ? 'Running' : 'Run' }}
+            </button>
+            @if (scenario.route) {
+              <a mat-button [routerLink]="scenario.route">
+                <mat-icon>open_in_new</mat-icon>
+                Open Query Builder
+              </a>
+            }
+          } @else if (scenario.kind === 'navigate') {
+            <a mat-flat-button color="primary" [routerLink]="scenario.route">
+              <mat-icon>open_in_new</mat-icon>
+              Open
+            </a>
+          } @else {
+            <mat-chip class="status-chip" [matTooltip]="scenario.statusNote ?? ''">Not available</mat-chip>
+            <button mat-flat-button color="primary" type="button" disabled [matTooltip]="scenario.statusNote ?? ''">
+              <mat-icon>play_arrow</mat-icon>
+              Run
             </button>
           }
-          <button mat-flat-button color="primary" type="button" [disabled]="!!runningScenario()" (click)="runScenario(scenario.id)">
-            <mat-icon>play_arrow</mat-icon>
-            {{ isRunning(scenario.id) ? 'Running' : 'Run' }}
-          </button>
         </mat-card-actions>
+
+        @if (scenario.kind === 'placeholder' && scenario.statusNote) {
+          <div class="inline-note">
+            <mat-icon>info</mat-icon>
+            <span>{{ scenario.statusNote }}</span>
+          </div>
+        }
 
         @if (isRunning(scenario.id)) {
           <mat-progress-bar mode="indeterminate" />

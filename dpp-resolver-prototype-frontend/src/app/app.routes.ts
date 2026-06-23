@@ -4,6 +4,8 @@ import {FederationMapComponent} from './features/federation-map/federation-map.c
 export const routes: Routes = [
   { path: '', component: FederationMapComponent },
   { path: 'scenarios', loadComponent: () => import('./features/scenario-runner/scenario-runner.component').then(m => m.ScenarioRunnerComponent) },
+  { path: 'scenarios/s4', redirectTo: 'scenarios', pathMatch: 'full' },
+  { path: 'query-builder', loadComponent: () => import('./features/query-builder/query-builder.component').then(m => m.QueryBuilderComponent) },
   {
     path: 'resolver',
     loadComponent: () => import('./features/resolver-detail/resolver-detail.component').then(m => m.ResolverDetailComponent),

@@ -1,0 +1,154 @@
+<section class="s4-scenario">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Evaluation Scenario</p>
+      <h1>S4 — Query Evaluation</h1>
+      <p class="lede">
+        S4 evaluates platform-local derived query access in two categories:
+        <strong>predicate queries</strong> (SELECT / COUNT / SUM with AND-connected filters) and
+        <strong>reverse-traverse queries</strong> (find current source revisions referencing a target).
+        Each query is run in both <strong>INDEXED</strong> and <strong>ON_DEMAND</strong> execution modes and the
+        results are compared for indexed/on-demand equivalence, with timing and result export.
+      </p>
+    </div>
+  </header>
+
+  <mat-card appearance="outlined" class="info-card">
+    <div class="category-chips">
+      <mat-chip><mat-icon>filter_alt</mat-icon> Predicate query benchmark</mat-chip>
+      <mat-chip><mat-icon>account_tree</mat-icon> Traverse query benchmark</mat-chip>
+      <mat-chip><mat-icon>speed</mat-icon> INDEXED vs ON_DEMAND</mat-chip>
+      <mat-chip><mat-icon>balance</mat-icon> Equivalence check</mat-chip>
+    </div>
+
+    <div class="benchmark-row">
+      <div>
+        <h3>Automated benchmark suite</h3>
+        <p class="muted">
+          Runs the full fixed S4 query suite across the federation and exports timings, results, and
+          equivalence status.
+        </p>
+      </div>
+      <button mat-flat-button color="primary" type="button"
+              [disabled]="!benchmarkAvailable || running()"
+              [matTooltip]="benchmarkAvailable ? 'Run the automated S4 benchmark' : 'Not available over HTTP'"
+              (click)="runBenchmark()">
+        <mat-icon>play_arrow</mat-icon>
+        Run benchmark
+      </button>
+    </div>
+
+    @if (!benchmarkAvailable) {
+      <div class="inline-warning" role="status">
+        <mat-icon>info</mat-icon>
+        <span>
+          The automated S4 benchmark is not exposed over HTTP. It runs only via the
+          <code>dpp-workload-generator</code> CLI (<code>workload s4</code>). Use the interactive
+          <strong>Query Builder</strong> below to evaluate predicate and traverse queries against a live platform —
+          that path uses the live per-platform <code>/query/predicate</code> and <code>/query/traverse</code> endpoints.
+        </span>
+      </div>
+    }
+
+    @if (running()) {
+      <mat-progress-bar mode="indeterminate" />
+    }
+
+    @if (error()) {
+      <div class="inline-error">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+      </div>
+    }
+  </mat-card>
+
+  @if (summary(); as summary) {
+    <mat-card appearance="outlined" class="results-card">
+      <h2>Predicate results</h2>
+      @if (predicateQueries().length) {
+        <table mat-table [dataSource]="predicateQueries()">
+          <ng-container matColumnDef="query_id">
+            <th mat-header-cell *matHeaderCellDef>Query</th>
+            <td mat-cell *matCellDef="let q">{{ q.query_id }}</td>
+          </ng-container>
+          <ng-container matColumnDef="execution">
+            <th mat-header-cell *matHeaderCellDef>Mode</th>
+            <td mat-cell *matCellDef="let q">{{ q.result_mode }}</td>
+          </ng-container>
+          <ng-container matColumnDef="duration_indexed_ms">
+            <th mat-header-cell *matHeaderCellDef>Indexed (ms)</th>
+            <td mat-cell *matCellDef="let q">{{ q.duration_indexed_ms | number:'1.0-1' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="duration_on_demand_ms">
+            <th mat-header-cell *matHeaderCellDef>On-demand (ms)</th>
+            <td mat-cell *matCellDef="let q">{{ q.duration_on_demand_ms | number:'1.0-1' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="count">
+            <th mat-header-cell *matHeaderCellDef>Count</th>
+            <td mat-cell *matCellDef="let q">{{ q.count }}</td>
+          </ng-container>
+          <ng-container matColumnDef="aggregate">
+            <th mat-header-cell *matHeaderCellDef>Aggregate</th>
+            <td mat-cell *matCellDef="let q">{{ q.aggregate }}</td>
+          </ng-container>
+          <ng-container matColumnDef="equivalent">
+            <th mat-header-cell *matHeaderCellDef>Equivalent</th>
+            <td mat-cell *matCellDef="let q">{{ q.equivalent ? 'yes' : 'no' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="error">
+            <th mat-header-cell *matHeaderCellDef>Error</th>
+            <td mat-cell *matCellDef="let q">{{ q.error_message }}</td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+        </table>
+      } @else {
+        <p class="muted">No predicate results.</p>
+      }
+
+      <h2>Traverse results</h2>
+      @if (traverseQueries().length) {
+        <table mat-table [dataSource]="traverseQueries()">
+          <ng-container matColumnDef="query_id">
+            <th mat-header-cell *matHeaderCellDef>Query</th>
+            <td mat-cell *matCellDef="let q">{{ q.query_id }}</td>
+          </ng-container>
+          <ng-container matColumnDef="execution">
+            <th mat-header-cell *matHeaderCellDef>Mode</th>
+            <td mat-cell *matCellDef="let q">{{ q.result_mode }}</td>
+          </ng-container>
+          <ng-container matColumnDef="duration_indexed_ms">
+            <th mat-header-cell *matHeaderCellDef>Indexed (ms)</th>
+            <td mat-cell *matCellDef="let q">{{ q.duration_indexed_ms | number:'1.0-1' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="duration_on_demand_ms">
+            <th mat-header-cell *matHeaderCellDef>On-demand (ms)</th>
+            <td mat-cell *matCellDef="let q">{{ q.duration_on_demand_ms | number:'1.0-1' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="count">
+            <th mat-header-cell *matHeaderCellDef>Count</th>
+            <td mat-cell *matCellDef="let q">{{ q.count }}</td>
+          </ng-container>
+          <ng-container matColumnDef="aggregate">
+            <th mat-header-cell *matHeaderCellDef>Aggregate</th>
+            <td mat-cell *matCellDef="let q">{{ q.aggregate }}</td>
+          </ng-container>
+          <ng-container matColumnDef="equivalent">
+            <th mat-header-cell *matHeaderCellDef>Equivalent</th>
+            <td mat-cell *matCellDef="let q">{{ q.equivalent ? 'yes' : 'no' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="error">
+            <th mat-header-cell *matHeaderCellDef>Error</th>
+            <td mat-cell *matCellDef="let q">{{ q.error_message }}</td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+        </table>
+      } @else {
+        <p class="muted">No traverse results.</p>
+      }
+    </mat-card>
+  }
+
+  <app-query-builder />
+</section>

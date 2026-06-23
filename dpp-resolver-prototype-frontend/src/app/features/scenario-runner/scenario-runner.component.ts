@@ -1,6 +1,7 @@
 import {Component, DestroyRef, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Clipboard} from '@angular/cdk/clipboard';
+import {RouterLink} from '@angular/router';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import {MatButtonModule} from '@angular/material/button';
 import {MatCardModule} from '@angular/material/card';
@@ -16,18 +17,32 @@ import {ScenarioId, ScenarioStatus} from '../../core/models/api.model';
 import {ToastService} from '../../core/toast.service';
 import {toErrorMessage} from '../../core/http-error.utils';
 
+/**
+ * How a scenario card behaves:
+ *  - `run`: triggers a Factory scenario over HTTP and polls its status (S1–S5).
+ *  - `navigate`: opens a dedicated scenario page (S4 — Query Evaluation).
+ *  - `placeholder`: present but not runnable here (S5 has no HTTP integration).
+ */
+type ScenarioKind = 'run' | 'navigate' | 'placeholder';
+
 interface ScenarioDefinition {
-  id: ScenarioId;
+  id: string;
+  kind: ScenarioKind;
   icon: string;
   title: string;
   subtitle: string;
+  route?: string;
+  statusNote?: string;
 }
+
+const RUNNABLE_IDS = new Set<ScenarioId>(['s1', 's2', 's3', 's4', 's5']);
 
 @Component({
   selector: 'app-scenario-runner',
   standalone: true,
   imports: [
     CommonModule,
+    RouterLink,
     MatButtonModule,
     MatCardModule,
     MatChipsModule,
@@ -49,51 +64,72 @@ export class ScenarioRunnerComponent {
   public scenarios: ScenarioDefinition[] = [
     {
       id: 's1',
+      kind: 'run',
       icon: 'sync_alt',
       title: 'S1: Reference Stability',
       subtitle: 'Hard references stay pinned while soft references follow issuer migration'
     },
     {
       id: 's2',
+      kind: 'run',
       icon: 'schema',
       title: 'S2: Schema Evolution',
       subtitle: 'Historical revisions stay bound to their original schema version'
     },
     {
       id: 's3',
+      kind: 'run',
       icon: 'account_tree',
       title: 'S3: Cycle Rejection',
       subtitle: 'The resolver rejects schema-level hard-reference cycles before issuance'
     },
     {
       id: 's4',
+      kind: 'run',
+      icon: 'manage_search',
+      title: 'S4 — Query Evaluation',
+      subtitle: 'Predicate & traverse query evaluation · INDEXED/ON_DEMAND equivalence · timing/result export',
+      route: '/query-builder'
+    },
+    {
+      id: 's5',
+      kind: 'run',
       icon: 'cloud_off',
-      title: 'S4: Offline Validation',
-      subtitle: 'Supplemental check only; not part of the actual evaluation'
+      title: 'S5 — Offline Validation',
+      subtitle: 'Validate cached referenced-platform data during an offline period'
     }
   ];
-  public statuses = signal<Record<ScenarioId, ScenarioStatus | null>>({ s1: null, s2: null, s3: null, s4: null });
-  public reports = signal<Record<ScenarioId, SafeHtml | null>>({ s1: null, s2: null, s3: null, s4: null });
-  public runningScenario = signal<ScenarioId | null>(null);
-  public errors = signal<Record<ScenarioId, string | null>>({ s1: null, s2: null, s3: null, s4: null });
+
+  public statuses = signal<Record<string, ScenarioStatus | null>>({});
+  public reports = signal<Record<string, SafeHtml | null>>({});
+  public runningScenario = signal<string | null>(null);
+  public errors = signal<Record<string, string | null>>({});
   private pollSubscription?: Subscription;
 
   constructor() {
     this.destroyRef.onDestroy(() => this.pollSubscription?.unsubscribe());
   }
 
-  public runScenario(id: ScenarioId): void {
+  public isRunnable(id: string): boolean {
+    return RUNNABLE_IDS.has(id as ScenarioId);
+  }
+
+  public runScenario(id: string): void {
+    if (!this.isRunnable(id)) {
+      return;
+    }
+    const scenarioId = id as ScenarioId;
     this.pollSubscription?.unsubscribe();
     this.runningScenario.set(id);
     this.setError(id, null);
     this.setStatus(id, null);
     this.setReport(id, null);
 
-    this.factoryService.runScenario(id).subscribe({
+    this.factoryService.runScenario(scenarioId).subscribe({
       next: status => {
         this.setStatus(id, status);
         if (status.status === 'pending' || status.status === 'running') {
-          this.startPolling(id);
+          this.startPolling(scenarioId);
         } else {
           this.runningScenario.set(null);
           this.renderReport(id, status.report_md);
@@ -106,7 +142,7 @@ export class ScenarioRunnerComponent {
     });
   }
 
-  public downloadReport(id: ScenarioId): void {
+  public downloadReport(id: string): void {
     const status = this.statusFor(id);
     if (!status?.report_md) {
       return;
@@ -121,7 +157,7 @@ export class ScenarioRunnerComponent {
     window.URL.revokeObjectURL(url);
   }
 
-  public copyStatus(id: ScenarioId): void {
+  public copyStatus(id: string): void {
     const status = this.statusFor(id);
     if (!status) {
       return;
@@ -142,23 +178,23 @@ export class ScenarioRunnerComponent {
     }
   }
 
-  public isRunning(id: ScenarioId): boolean {
+  public isRunning(id: string): boolean {
     return this.runningScenario() === id;
   }
 
-  public statusFor(id: ScenarioId): ScenarioStatus | null {
-    return this.statuses()[id];
+  public statusFor(id: string): ScenarioStatus | null {
+    return this.statuses()[id] ?? null;
   }
 
-  public reportFor(id: ScenarioId): SafeHtml | null {
-    return this.reports()[id];
+  public reportFor(id: string): SafeHtml | null {
+    return this.reports()[id] ?? null;
   }
 
-  public errorFor(id: ScenarioId): string | null {
-    return this.errors()[id];
+  public errorFor(id: string): string | null {
+    return this.errors()[id] ?? null;
   }
 
-  public statusText(id: ScenarioId): string {
+  public statusText(id: string): string {
     const status = this.statusFor(id);
     return status ? JSON.stringify(status, null, 2) : '';
   }
@@ -191,7 +227,7 @@ export class ScenarioRunnerComponent {
     });
   }
 
-  private renderReport(id: ScenarioId, markdown?: string): void {
+  private renderReport(id: string, markdown?: string): void {
     if (!markdown) {
       return;
     }
@@ -203,15 +239,15 @@ export class ScenarioRunnerComponent {
     });
   }
 
-  private setStatus(id: ScenarioId, status: ScenarioStatus | null): void {
+  private setStatus(id: string, status: ScenarioStatus | null): void {
     this.statuses.update(statuses => ({ ...statuses, [id]: status }));
   }
 
-  private setReport(id: ScenarioId, report: SafeHtml | null): void {
+  private setReport(id: string, report: SafeHtml | null): void {
     this.reports.update(reports => ({ ...reports, [id]: report }));
   }
 
-  private setError(id: ScenarioId, message: string | null): void {
+  private setError(id: string, message: string | null): void {
     this.errors.update(errors => ({ ...errors, [id]: message }));
   }
 }

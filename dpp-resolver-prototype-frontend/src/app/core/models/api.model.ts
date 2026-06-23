@@ -105,4 +105,4 @@ export interface ScenarioResult {
   report_md: string;
 }
 
-export type ScenarioId = 's1' | 's2' | 's3' | 's4';
+export type ScenarioId = 's1' | 's2' | 's3' | 's4' | 's5';

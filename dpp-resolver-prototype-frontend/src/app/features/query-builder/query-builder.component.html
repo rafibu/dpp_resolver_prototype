@@ -1,0 +1,333 @@
+<section class="query-builder">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">S4 — Query Evaluation</p>
+      <h1>Query Builder</h1>
+      <p class="lede">
+        Build well-formed predicate and reverse-traverse queries against a live platform.
+        Requests use the Java platform DTO shape (snake_case preview, GET query-parameter wire format).
+      </p>
+    </div>
+  </header>
+
+  <mat-card appearance="outlined" class="builder-card">
+    <div class="context-row">
+      <mat-form-field appearance="outline" class="platform-select">
+        <mat-label>Target platform</mat-label>
+        <mat-select [ngModel]="platformId()" (ngModelChange)="onPlatformChange($event)">
+          @for (platform of platforms(); track platform.platform_id) {
+            <mat-option [value]="platform.platform_id">
+              {{ platform.platform_id }} · {{ platform.stack }} ({{ platform.status }})
+            </mat-option>
+          }
+        </mat-select>
+        <mat-hint>Queries are platform-local.</mat-hint>
+      </mat-form-field>
+
+      <div class="query-type-toggle">
+        <span class="field-label">Query type</span>
+        <mat-button-toggle-group [value]="queryType" (valueChange)="setQueryType($event)" aria-label="Query type">
+          <mat-button-toggle value="predicate">Predicate</mat-button-toggle>
+          <mat-button-toggle value="traverse">Traverse</mat-button-toggle>
+        </mat-button-toggle-group>
+      </div>
+    </div>
+
+    @if (!platformUrl()) {
+      <div class="inline-warning">
+        <mat-icon>info</mat-icon>
+        <span>Select a running platform to build and execute queries.</span>
+      </div>
+    }
+
+    <mat-divider />
+
+    <!-- ============================ PREDICATE ============================ -->
+    @if (queryType === 'predicate') {
+      <div class="form-grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Result mode</mat-label>
+          <mat-select [(ngModel)]="resultMode">
+            <mat-option [value]="QueryResultMode.SELECT">SELECT</mat-option>
+            <mat-option [value]="QueryResultMode.COUNT">COUNT</mat-option>
+            <mat-option [value]="QueryResultMode.SUM">SUM</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Execution mode</mat-label>
+          <mat-select [(ngModel)]="executionMode">
+            <mat-option [value]="QueryExecutionMode.INDEXED">INDEXED</mat-option>
+            <mat-option [value]="QueryExecutionMode.ON_DEMAND">ON_DEMAND</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Subject type</mat-label>
+          <mat-select [ngModel]="subjectType" (ngModelChange)="onSubjectTypeChange($event)">
+            @for (type of availableSubjectTypes(); track type) {
+              <mat-option [value]="type">{{ type }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      @if (predicateMetadata()?.isFallback) {
+        <p class="fallback-note">
+          <mat-icon>science</mat-icon>
+          Parameters are from the local S4-compatible fallback (no schema metadata available for this subject type).
+        </p>
+      }
+
+      <!-- Filters -->
+      <div class="subsection-header">
+        <h3>Filters <span class="muted">(AND-connected)</span></h3>
+        <button mat-stroked-button type="button" (click)="addFilter()" [disabled]="!predicateParameters().length">
+          <mat-icon>add</mat-icon> Add filter
+        </button>
+      </div>
+
+      @for (row of filters; track row) {
+        <div class="filter-row">
+          <mat-form-field appearance="outline" class="path-field">
+            <mat-label>Path</mat-label>
+            <mat-select [ngModel]="row.path" (ngModelChange)="onFilterPathChange(row, $event)">
+              @for (parameter of predicateParameters(); track parameter.path) {
+                <mat-option [value]="parameter.path">{{ parameter.label }} · {{ parameter.valueType }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="operator-field">
+            <mat-label>Operator</mat-label>
+            <mat-select [ngModel]="row.operator" (ngModelChange)="onFilterOperatorChange(row, $event)">
+              @for (operator of row.operators; track operator) {
+                <mat-option [value]="operator">{{ operator }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          @if (needsValueInput(row)) {
+            @if (row.valueType === 'BOOLEAN') {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Value</mat-label>
+                <mat-select [(ngModel)]="row.boolValue">
+                  <mat-option [value]="true">true</mat-option>
+                  <mat-option [value]="false">false</mat-option>
+                </mat-select>
+              </mat-form-field>
+            } @else if (isListOperator(row.operator) && row.valueType === 'ENUM' && row.enumValues.length) {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Values (IN)</mat-label>
+                <mat-select [(ngModel)]="row.inValues" multiple>
+                  @for (option of row.enumValues; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else if (isListOperator(row.operator)) {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Values (comma-separated)</mat-label>
+                <input matInput [(ngModel)]="row.textValue" placeholder="CN, DE, US">
+              </mat-form-field>
+            } @else if (row.valueType === 'ENUM' && row.enumValues.length) {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Value</mat-label>
+                <mat-select [(ngModel)]="row.textValue">
+                  @for (option of row.enumValues; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else if (row.valueType === 'NUMBER') {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Value</mat-label>
+                <input matInput type="number" [(ngModel)]="row.textValue">
+              </mat-form-field>
+            } @else if (row.valueType === 'DATE') {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Value</mat-label>
+                <input matInput type="date" [(ngModel)]="row.textValue">
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="value-field">
+                <mat-label>Value</mat-label>
+                <input matInput [(ngModel)]="row.textValue">
+              </mat-form-field>
+            }
+          }
+
+          <button mat-icon-button color="warn" type="button" matTooltip="Remove filter" (click)="removeFilter(row)">
+            <mat-icon>delete</mat-icon>
+          </button>
+
+          @if (filterError(row); as message) {
+            <span class="row-error">{{ message }}</span>
+          }
+        </div>
+      }
+
+      <!-- Result-mode specific controls -->
+      @if (resultMode === QueryResultMode.SELECT) {
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Return fields (optional)</mat-label>
+          <mat-select [(ngModel)]="returnFields" multiple>
+            @for (parameter of predicateParameters(); track parameter.path) {
+              <mat-option [value]="parameter.path">{{ parameter.label }}</mat-option>
+            }
+          </mat-select>
+          <mat-hint>Leave empty to return all fields.</mat-hint>
+        </mat-form-field>
+      } @else if (resultMode === QueryResultMode.SUM) {
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Aggregate path (numeric)</mat-label>
+          <mat-select [(ngModel)]="aggregatePath">
+            @for (parameter of numericParameters(); track parameter.path) {
+              <mat-option [value]="parameter.path">{{ parameter.label }}</mat-option>
+            }
+          </mat-select>
+          <mat-hint>SUM requires a numeric field.</mat-hint>
+        </mat-form-field>
+      }
+    }
+
+    <!-- ============================ TRAVERSE ============================ -->
+    @if (queryType === 'traverse') {
+      <div class="form-grid">
+        <mat-form-field appearance="outline">
+          <mat-label>Execution mode</mat-label>
+          <mat-select [(ngModel)]="traverseExecutionMode">
+            <mat-option [value]="QueryExecutionMode.INDEXED">INDEXED</mat-option>
+            <mat-option [value]="QueryExecutionMode.ON_DEMAND">ON_DEMAND</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Target subject type</mat-label>
+          <mat-select [(ngModel)]="traverseSubjectType">
+            @for (type of availableSubjectTypes(); track type) {
+              <mat-option [value]="type">{{ type }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Target DPP id</mat-label>
+          <input matInput [(ngModel)]="dppId" placeholder="COMP-0001">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Revision number (optional)</mat-label>
+          <input matInput type="number" [(ngModel)]="revisionNumber">
+        </mat-form-field>
+      </div>
+
+      <div class="subsection-header">
+        <h3>Sources</h3>
+        <button mat-stroked-button type="button" (click)="addSource()">
+          <mat-icon>add</mat-icon> Add source
+        </button>
+      </div>
+
+      @for (source of sources; track source) {
+        <div class="source-row">
+          <mat-form-field appearance="outline" class="path-field">
+            <mat-label>Source subject type</mat-label>
+            <mat-select [ngModel]="source.subjectType" (ngModelChange)="onSourceSubjectTypeChange(source, $event)">
+              @for (type of availableSubjectTypes(); track type) {
+                <mat-option [value]="type">{{ type }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="value-field">
+            <mat-label>Reference paths (optional)</mat-label>
+            <mat-select [(ngModel)]="source.referencePaths" multiple [disabled]="!source.subjectType">
+              @for (path of referencePathsFor(source.subjectType); track path) {
+                <mat-option [value]="path">{{ path }}</mat-option>
+              }
+            </mat-select>
+            <mat-hint>Empty searches all reference paths for this source.</mat-hint>
+          </mat-form-field>
+
+          <button mat-icon-button color="warn" type="button" matTooltip="Remove source" (click)="removeSource(source)">
+            <mat-icon>delete</mat-icon>
+          </button>
+        </div>
+      }
+
+      @if (traverseError(); as message) {
+        <p class="row-error">{{ message }}</p>
+      }
+    }
+
+    <mat-divider />
+
+    <!-- Preview + execute -->
+    <div class="preview-block">
+      <div class="report-header compact">
+        <h3>Generated request</h3>
+        <span class="muted">live JSON preview</span>
+      </div>
+      <pre class="json-preview">{{ previewJson() }}</pre>
+    </div>
+
+    @if (running()) {
+      <mat-progress-bar mode="indeterminate" />
+    }
+
+    <div class="actions">
+      <button mat-flat-button color="primary" type="button"
+              [disabled]="!isValid() || !platformUrl() || running()"
+              (click)="execute()">
+        <mat-icon>play_arrow</mat-icon>
+        Execute query
+      </button>
+    </div>
+
+    @if (error()) {
+      <div class="inline-error">
+        <mat-icon>error</mat-icon>
+        <span>{{ error() }}</span>
+      </div>
+    }
+  </mat-card>
+
+  <!-- ============================ RESULTS ============================ -->
+  @if (result(); as view) {
+    <mat-card appearance="outlined" class="result-card">
+      <div class="result-summary">
+        <mat-chip>{{ view.matchCount }} match(es)</mat-chip>
+        <mat-chip>{{ view.durationMs | number:'1.0-1' }} ms</mat-chip>
+        @if (view.resultMode === QueryResultMode.COUNT && view.count != null) {
+          <div class="big-stat"><span class="big-stat-label">COUNT</span><span class="big-stat-value">{{ view.count }}</span></div>
+        }
+        @if (view.resultMode === QueryResultMode.SUM && view.aggregate != null) {
+          <div class="big-stat"><span class="big-stat-label">SUM</span><span class="big-stat-value">{{ view.aggregate }}</span></div>
+        }
+      </div>
+
+      @if (view.rows.length) {
+        <div class="result-table-wrap">
+          <table mat-table [dataSource]="view.rows">
+            @for (column of view.columns; track column) {
+              <ng-container [matColumnDef]="column">
+                <th mat-header-cell *matHeaderCellDef>{{ column }}</th>
+                <td mat-cell *matCellDef="let row">{{ cell(row, column) }}</td>
+              </ng-container>
+            }
+            <tr mat-header-row *matHeaderRowDef="view.columns"></tr>
+            <tr mat-row *matRowDef="let row; columns: view.columns;"></tr>
+          </table>
+        </div>
+      } @else if (view.resultMode === QueryResultMode.SELECT || view.category === 'traverse') {
+        <p class="muted">No matching documents.</p>
+      }
+
+      <div class="report-header compact">
+        <h3>Raw response</h3>
+      </div>
+      <pre class="json-preview">{{ rawResultJson() }}</pre>
+    </mat-card>
+  }
+</section>
