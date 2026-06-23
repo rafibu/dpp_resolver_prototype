@@ -1,3 +1,4 @@
+import asyncio
 import structlog
 import uuid
 from collections import deque
@@ -27,7 +28,7 @@ from .models import (
 from .reference_extractor import extract_references
 from .utils import hash_document, hash_to_hex, validate_dpp_document
 from ..admin import service as admin_service
-from ..queries.index import replace_materialized_facts
+from ..queries.index import replace_materialized_facts, replace_materialized_references
 from ..schemas.resolver_connector import cache_schema, resolve_dpp_revision
 
 logger = structlog.get_logger()
@@ -311,6 +312,13 @@ async def create_new_dpp(
                 revision_doc["dpp_document"],
                 session=session,
             )
+            await replace_materialized_references(
+                db,
+                dpp_id,
+                subject_type,
+                revision_doc["dpp_document"],
+                session=session,
+            )
 
     logger.info("dpp_revision_created", dpp_id=dpp_id, version=1)
     return _doc_to_response(revision_doc)
@@ -389,11 +397,23 @@ async def create_dpp_revision_for_existing(
                         revision_doc["dpp_document"],
                         session=session,
                     )
+                    await replace_materialized_references(
+                        db,
+                        dpp_id,
+                        subject_type,
+                        revision_doc["dpp_document"],
+                        session=session,
+                    )
                 break  # Transaction committed successfully
             except OperationFailure as exc:
                 labels = (exc.details or {}).get("errorLabels", [])
                 if "TransientTransactionError" not in labels or attempt == _TRANSACTION_RETRY_LIMIT - 1:
                     raise
+                # Concurrent revisions can repeatedly collide if every caller
+                # retries its Mongo transaction immediately.  A tiny bounded
+                # backoff lets the winning transaction commit before the next
+                # optimistic attempt.
+                await asyncio.sleep(0.01 * (attempt + 1))
 
     logger.info("dpp_revision_created", dpp_id=dpp_id, version=revision_doc["dpp_version"])
     return _doc_to_response(revision_doc)
@@ -484,6 +504,12 @@ async def import_existing_revision(
     current = await db.logical_dpps.find_one({"dpp_id": revision.dpp_id}, {"_id": 0})
     if current and current["current_version"] == revision.version:
         await replace_materialized_facts(
+            db,
+            revision.dpp_id,
+            subject_type,
+            revision_doc["dpp_document"],
+        )
+        await replace_materialized_references(
             db,
             revision.dpp_id,
             subject_type,

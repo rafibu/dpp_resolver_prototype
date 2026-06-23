@@ -5,15 +5,19 @@ from __future__ import annotations
 import inspect
 from collections import OrderedDict
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from numbers import Number
 from typing import Any, Protocol
 
 from .helpers import is_numeric, matches_filter, matches_value, resolve_path, select_fields
-from .index import FACT_COLLECTION
+from .index import FACT_COLLECTION, REFERENCE_COLLECTION
 from .models import (
     PredicateQueryRequest,
     PredicateQueryResponse,
     QueryExecutionMode,
     QueryResultMode,
+    TraverseQueryRequest,
+    TraverseQueryResponse,
+    TraverseSourceScope,
 )
 
 
@@ -141,6 +145,32 @@ async def query_predicate(
     )
 
 
+async def query_traverse(
+    db: AsyncIOMotorDatabase,
+    request: TraverseQueryRequest,
+) -> TraverseQueryResponse:
+    """Execute Java-compatible platform-local reverse traversal.
+
+    Traversal deliberately only searches DPPs currently hosted by this
+    platform.  The workload/federation layer owns any cross-platform fan-out.
+    """
+    validate_traverse_request(request)
+    platform_config = await db.platform_config.find_one({}, {"_id": 0})
+    platform_id = (platform_config or {}).get("issuer_id", "")
+
+    if request.execution_mode is QueryExecutionMode.INDEXED:
+        matches = await _indexed_traverse_matches(db, request)
+    else:
+        matches = await _on_demand_traverse_matches(db, request)
+
+    return TraverseQueryResponse(
+        platform_id=platform_id,
+        subject_type=request.subject_type,
+        dpp_id=request.dpp_id,
+        matches=matches,
+    )
+
+
 def validate_request(request: PredicateQueryRequest) -> None:
     """Apply the Java service's request-level validation rules."""
     if not request.subject_type or not request.subject_type.strip():
@@ -150,6 +180,19 @@ def validate_request(request: PredicateQueryRequest) -> None:
             raise ValueError("aggregate_path is required for SUM queries")
     elif request.aggregate_path is not None and request.aggregate_path.strip():
         raise ValueError("aggregate_path is only supported for SUM queries")
+
+
+def validate_traverse_request(request: TraverseQueryRequest) -> None:
+    """Apply the Java DTO and service validation rules for traversal."""
+    if not request.dpp_id or not request.dpp_id.strip():
+        raise ValueError("dpp_id is required")
+    if not request.subject_type or not request.subject_type.strip():
+        raise ValueError("subject_type is required")
+    # ``sources`` is a required, but intentionally allowed-to-be-empty, list
+    # in the Java DTO.  The per-source type is a Java ``@NotBlank`` field.
+    for index, source in enumerate(request.sources):
+        if not source.subject_type or not source.subject_type.strip():
+            raise ValueError(f"sources[{index}].subject_type is required")
 
 
 def empty_response(request: PredicateQueryRequest, platform_id: str) -> PredicateQueryResponse:
@@ -191,6 +234,113 @@ async def _current_payloads_for_subject_type(
         if revision is not None:
             payloads.append(revision["dpp_document"])
     return payloads
+
+
+async def _indexed_traverse_matches(
+    db: AsyncIOMotorDatabase,
+    request: TraverseQueryRequest,
+) -> list[dict[str, Any]]:
+    """Use the current reference materialization, then Java-style fact output."""
+    matches: list[dict[str, Any]] = []
+    for source_scope in request.sources:
+        query: dict[str, Any] = {
+            "target_subject_type": request.subject_type,
+            "target_dpp_id": request.dpp_id,
+            "source_subject_type": source_scope.subject_type,
+        }
+        if request.revision_number is not None:
+            # A materialized reference with a revision is always HARD, exactly
+            # as the Java extractor classifies it.
+            query["target_revision_number"] = request.revision_number
+            query["reference_type"] = "HARD"
+
+        source_ids: list[str] = []
+        seen_source_ids: set[str] = set()
+        async for reference in db[REFERENCE_COLLECTION].find(query, {"_id": 0}):
+            if not _reference_path_in_scope(reference["reference_path"], source_scope):
+                continue
+            source_id = reference["source_logical_dpp_id"]
+            if source_id not in seen_source_ids:
+                seen_source_ids.add(source_id)
+                source_ids.append(source_id)
+
+        for source_id in source_ids:
+            facts = await db[FACT_COLLECTION].find(
+                {"logical_dpp_id": source_id}, {"_id": 0}
+            ).to_list(None)
+            if facts:
+                facts_by_path = OrderedDict((fact["path"], fact) for fact in facts)
+                matches.append(_select_indexed_fields(facts_by_path, None))
+    return matches
+
+
+async def _on_demand_traverse_matches(
+    db: AsyncIOMotorDatabase,
+    request: TraverseQueryRequest,
+) -> list[dict[str, Any]]:
+    """Load current source payloads and inspect ``$ref`` objects at query time."""
+    matches: list[dict[str, Any]] = []
+    for source_scope in request.sources:
+        for document in await _current_payloads_for_subject_type(db, source_scope.subject_type):
+            if _document_contains_matching_reference(document, source_scope, request):
+                matches.append(document)
+    return matches
+
+
+def _reference_path_in_scope(reference_path: str, source_scope: TraverseSourceScope) -> bool:
+    if not source_scope.reference_paths:
+        return True
+    for path in source_scope.reference_paths:
+        # Java first checks ``path`` / ``path.$ref``.  The prefix case extends
+        # that same payload-path intent to list elements, whose extractor path
+        # includes an index such as ``modules[0]``.
+        if reference_path == path or reference_path.startswith(f"{path}["):
+            return True
+    return False
+
+
+def _document_contains_matching_reference(
+    document: dict[str, Any],
+    source_scope: TraverseSourceScope,
+    request: TraverseQueryRequest,
+) -> bool:
+    if not source_scope.reference_paths:
+        return _contains_matching_reference(document, request)
+    return any(
+        _contains_matching_reference(resolve_path(document, path), request)
+        for path in source_scope.reference_paths
+    )
+
+
+def _contains_matching_reference(value: Any, request: TraverseQueryRequest) -> bool:
+    if isinstance(value, dict):
+        if "$ref" in value and _reference_matches(value, request):
+            return True
+        return any(_contains_matching_reference(child, request) for child in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_matching_reference(child, request) for child in value)
+    return False
+
+
+def _reference_matches(reference_object: dict[str, Any], request: TraverseQueryRequest) -> bool:
+    raw_reference = reference_object.get("$ref")
+    if not isinstance(raw_reference, str):
+        return False
+    parts = raw_reference.split("/")
+    if len(parts) < 2 or len(parts) > 3:
+        return False
+    if parts[0] != request.subject_type or parts[1] != request.dpp_id:
+        return False
+
+    revision: int | None = None
+    if len(parts) == 3:
+        try:
+            revision = int(parts[2])
+        except ValueError:
+            return False
+    elif isinstance(reference_object.get("version"), Number) and not isinstance(reference_object.get("version"), bool):
+        revision = int(reference_object["version"])
+    return request.revision_number is None or request.revision_number == revision
 
 
 def _facts_match_request(facts_by_path: dict[str, dict[str, Any]], request: PredicateQueryRequest) -> bool:

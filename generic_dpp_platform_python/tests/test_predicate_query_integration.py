@@ -186,7 +186,7 @@ async def test_indexed_and_on_demand_select_are_equivalent_and_match_java_http_c
     # The Java controller is GET /query/predicate.  No ObjectId/native Mongo
     # identifier is exposed by the Java-compatible API JSON.
     assert (await http_client.post("/query/predicate", json={})).status_code == 405
-    assert "_id" not in json.dumps(indexed.json())
+    assert '"_id"' not in json.dumps(indexed.json())
     assert await test_db.query_attribute_fact.count_documents({}) > 5
 
 

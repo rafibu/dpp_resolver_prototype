@@ -1,4 +1,4 @@
-"""GET /query/predicate, compatible with the Java QueryController."""
+"""Java-compatible GET ``/query`` endpoints."""
 
 from __future__ import annotations
 
@@ -10,12 +10,21 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 from typing import Any
 
-from .models import PredicateQueryRequest, PredicateQueryResponse
-from .service import query_predicate
+from .models import (
+    PredicateQueryRequest,
+    PredicateQueryResponse,
+    TraverseQueryRequest,
+    TraverseQueryResponse,
+)
+from .service import query_predicate, query_traverse
 from ..database import get_database
 
 router = APIRouter()
 _FILTER_PARAM = re.compile(r"^filters\[(\d+)]\.(path|operator|value)$")
+_TRAVERSE_SOURCE_PARAM = re.compile(r"^sources\[(\d+)]\.(subjectType|subject_type)$")
+_TRAVERSE_REFERENCE_PATH_PARAM = re.compile(
+    r"^sources\[(\d+)]\.(referencePaths|reference_paths)(?:\[(\d+)])?$"
+)
 
 
 @router.get("/predicate", response_model=PredicateQueryResponse)
@@ -25,6 +34,15 @@ async def query_predicate_endpoint(
 ) -> PredicateQueryResponse:
     """Evaluate a predicate query using Java-style query parameter binding."""
     return await query_predicate(db, _parse_request(request))
+
+
+@router.get("/traverse", response_model=TraverseQueryResponse)
+async def query_traverse_endpoint(
+    request: Request,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+) -> TraverseQueryResponse:
+    """Evaluate a Java ``TraverseQueryRequestDTO`` bound from query parameters."""
+    return await query_traverse(db, _parse_traverse_request(request))
 
 
 def _parse_request(request: Request) -> PredicateQueryRequest:
@@ -57,6 +75,37 @@ def _parse_request(request: Request) -> PredicateQueryRequest:
         # The Java controller responds with a 400 for invalid @ModelAttribute
         # binding; routing through the application's ValueError handler does
         # the same here.
+        raise ValueError(str(exc)) from exc
+
+
+def _parse_traverse_request(request: Request) -> TraverseQueryRequest:
+    params = request.query_params
+    sources: dict[int, dict[str, Any]] = defaultdict(dict)
+    reference_paths: dict[int, list[str]] = defaultdict(list)
+
+    for key, value in params.multi_items():
+        source_match = _TRAVERSE_SOURCE_PARAM.match(key)
+        if source_match:
+            sources[int(source_match.group(1))]["subject_type"] = value
+            continue
+        path_match = _TRAVERSE_REFERENCE_PATH_PARAM.match(key)
+        if path_match:
+            reference_paths[int(path_match.group(1))].append(value)
+
+    for index, paths in reference_paths.items():
+        sources[index]["reference_paths"] = paths
+
+    data: dict[str, Any] = {
+        "execution_mode": _first(params, "executionMode", "execution_mode") or "INDEXED",
+        "subject_type": _first(params, "subjectType", "subject_type"),
+        "dpp_id": _first(params, "dppId", "dpp_id"),
+        "revision_number": _first(params, "revisionNumber", "revision_number"),
+        # Java's ``@NotNull`` accepts [] but rejects an omitted parameter.
+        "sources": [sources[index] for index in sorted(sources)] if sources else None,
+    }
+    try:
+        return TraverseQueryRequest.model_validate(data)
+    except ValidationError as exc:
         raise ValueError(str(exc)) from exc
 
 

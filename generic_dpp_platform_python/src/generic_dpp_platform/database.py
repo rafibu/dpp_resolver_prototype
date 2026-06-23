@@ -66,6 +66,30 @@ async def _setup_indexes(db: AsyncIOMotorDatabase) -> None:
         [("subject_type", 1), ("path", 1), ("value_boolean", 1)], name="idx_qaf_boolean_lookup"
     )
 
+    # Current-state reverse-traverse materialization.  Each replacement is
+    # keyed by the source logical DPP; the remaining indexes mirror the
+    # target and source-scope lookup shapes used by ``GET /query/traverse``.
+    await db.dpp_reference.create_index(
+        [
+            ("target_subject_type", 1),
+            ("target_dpp_id", 1),
+            ("target_revision_number", 1),
+            ("reference_type", 1),
+        ],
+        name="idx_ref_target_revision",
+    )
+    await db.dpp_reference.create_index(
+        [("target_subject_type", 1), ("target_dpp_id", 1), ("reference_type", 1)],
+        name="idx_ref_target_logical",
+    )
+    await db.dpp_reference.create_index(
+        [("source_subject_type", 1), ("reference_path", 1)],
+        name="idx_ref_source_path",
+    )
+    await db.dpp_reference.create_index(
+        "source_logical_dpp_id", name="idx_ref_source_logical_dpp"
+    )
+
     # External cache: unique compound key + TTL on fetched_at (7 days)
     await db.referenced_dpp_revisions.create_index(
         [("dpp_id", 1), ("dpp_version", 1)],

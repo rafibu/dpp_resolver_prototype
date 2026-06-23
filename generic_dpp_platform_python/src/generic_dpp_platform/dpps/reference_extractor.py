@@ -25,7 +25,9 @@ def _traverse(node: dict | list, path: str, refs: list[DppReference]) -> None:
 
 
 def _parse_reference(node: dict, path: str) -> DppReference:
-    raw_ref: str = node["$ref"]
+    raw_ref = node["$ref"]
+    if not isinstance(raw_ref, str):
+        raise ValueError(f"Invalid reference at {path}: $ref must be a string")
     match = _REF_PATTERN.match(raw_ref)
     if not match:
         raise ValueError(
@@ -37,9 +39,14 @@ def _parse_reference(node: dict, path: str) -> DppReference:
     dpp_id = match.group(2)
     version_in_path: int | None = int(match.group(3)) if match.group(3) else None
 
-    version_field: int | None = node.get("version")
-    if isinstance(version_field, float):
-        version_field = int(version_field)
+    version_field: int | None = None
+    if "version" in node:
+        candidate = node["version"]
+        # Jackson's ``JsonNode.isInt`` deliberately excludes floats, strings,
+        # and booleans. Match it rather than silently coercing values.
+        if type(candidate) is not int:
+            raise ValueError(f"Invalid reference at {path}: version must be an integer")
+        version_field = candidate
 
     if version_in_path is not None and version_field is not None and version_in_path != version_field:
         raise ValueError(

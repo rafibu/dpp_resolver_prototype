@@ -1,4 +1,4 @@
-"""DTOs and enums for platform-local predicate queries.
+"""DTOs and enums for platform-local predicate and traverse queries.
 
 Field names deliberately use the Java response contract's snake_case JSON
 names.  The HTTP adapter additionally accepts Java's camelCase query parameter
@@ -72,3 +72,33 @@ class PredicateQueryResponse(BaseModel):
     aggregate: float | None = None
     matches: Any | None = None
 
+
+class TraverseSourceScope(BaseModel):
+    """One Java-compatible ``sources[i]`` traverse-query scope."""
+
+    subject_type: str
+    reference_paths: list[str] | None = None
+
+
+class TraverseQueryRequest(BaseModel):
+    """Flattened Java ``TraverseQueryRequestDTO`` equivalent.
+
+    ``sources`` deliberately remains required: the Java DTO declares it
+    ``@NotNull`` even though an individual source's ``reference_paths`` is
+    optional.
+    """
+
+    subject_type: str
+    dpp_id: str
+    execution_mode: QueryExecutionMode = QueryExecutionMode.INDEXED
+    revision_number: int | None = None
+    sources: list[TraverseSourceScope]
+
+
+class TraverseQueryResponse(BaseModel):
+    """Java-compatible ``TraverseQueryResponseDTO`` response body."""
+
+    platform_id: str
+    subject_type: str
+    dpp_id: str
+    matches: list[Any] = Field(default_factory=list)

@@ -9,6 +9,7 @@ from numbers import Number
 from typing import Any
 
 FACT_COLLECTION = "query_attribute_fact"
+REFERENCE_COLLECTION = "dpp_reference"
 _VALUE_FIELDS = ("value_text", "value_number", "value_boolean")
 
 
@@ -58,6 +59,56 @@ async def replace_materialized_facts(
     await collection.delete_many({"logical_dpp_id": logical_dpp_id}, session=session)
     if facts:
         await collection.insert_many(facts, ordered=True, session=session)
+
+
+def project_payload_to_references(
+    payload: dict[str, Any],
+    logical_dpp_id: str,
+    subject_type: str,
+) -> list[dict[str, Any]]:
+    """Materialize the current outgoing references of one logical DPP.
+
+    The reference parser is shared with issue/revise validation, so the index
+    recognizes exactly the Java-compatible ``$ref`` convention.  Paths omit
+    the extractor's leading ``$.`` because traverse source scopes use payload
+    paths (for example ``components.junction_box``).
+    """
+    # Import locally to keep this query-materialization module independent of
+    # DPP service initialization.
+    from ..dpps.reference_extractor import extract_references
+
+    references: list[dict[str, Any]] = []
+    for reference in extract_references(payload):
+        path = reference.json_path[2:] if reference.json_path.startswith("$.") else reference.json_path
+        references.append(
+            {
+                "source_logical_dpp_id": logical_dpp_id,
+                "source_dpp_id": logical_dpp_id,
+                "source_subject_type": subject_type,
+                "reference_path": path,
+                "reference_type": reference.dependency_type.value,
+                "target_subject_type": reference.subject_type,
+                "target_dpp_id": reference.dpp_id,
+                "target_revision_number": reference.version,
+            }
+        )
+    return references
+
+
+async def replace_materialized_references(
+    db: AsyncIOMotorDatabase,
+    logical_dpp_id: str,
+    subject_type: str,
+    payload: dict[str, Any],
+    *,
+    session: Any | None = None,
+) -> None:
+    """Replace the current reverse-traverse index entries for one DPP."""
+    references = project_payload_to_references(payload, logical_dpp_id, subject_type)
+    collection = db[REFERENCE_COLLECTION]
+    await collection.delete_many({"source_logical_dpp_id": logical_dpp_id}, session=session)
+    if references:
+        await collection.insert_many(references, ordered=True, session=session)
 
 
 def _flatten_mapping(
