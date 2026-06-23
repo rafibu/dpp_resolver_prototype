@@ -44,6 +44,14 @@ class PredicateQueryExecution:
     status_code: int
 
 
+@dataclass(frozen=True)
+class TraverseQueryExecution:
+    """A successful platform-local traverse response and HTTP status."""
+
+    response: dict[str, Any]
+    status_code: int
+
+
 def build_predicate_query_params(request: Dict[str, Any]) -> list[tuple[str, str]]:
     """Encode a predicate request for Java's ``GET /query/predicate`` contract.
 
@@ -90,6 +98,37 @@ def _predicate_query_value(value: Any) -> str:
     if isinstance(value, bool):
         return str(value).lower()
     return str(value)
+
+
+def build_traverse_query_params(request: Dict[str, Any]) -> list[tuple[str, str]]:
+    """Encode the flattened Java ``GET /query/traverse`` request shape.
+
+    Spring binds nested source scopes from ``sources[0].subjectType`` and
+    ``sources[0].referencePaths[0]``.  This is intentionally query parameters,
+    not a JSON body or a nested ``target`` object.
+    """
+    required = ("execution_mode", "subject_type", "dpp_id", "sources")
+    missing = [field for field in required if request.get(field) is None]
+    if missing:
+        raise ValueError(f"Traverse query request is missing: {', '.join(missing)}")
+
+    params: list[tuple[str, str]] = [
+        ("executionMode", _predicate_query_value(request["execution_mode"])),
+        ("subjectType", _predicate_query_value(request["subject_type"])),
+        ("dppId", _predicate_query_value(request["dpp_id"])),
+    ]
+    if request.get("revision_number") is not None:
+        params.append(("revisionNumber", _predicate_query_value(request["revision_number"])))
+
+    for index, source in enumerate(request["sources"]):
+        if source.get("subject_type") is None:
+            raise ValueError(f"Traverse source {index} requires subject_type")
+        params.append((f"sources[{index}].subjectType", _predicate_query_value(source["subject_type"])))
+        for path_index, path in enumerate(source.get("reference_paths") or []):
+            params.append(
+                (f"sources[{index}].referencePaths[{path_index}]", _predicate_query_value(path))
+            )
+    return params
 
 # Exceptions
 class WorkloadError(Exception): pass
@@ -234,6 +273,15 @@ class PlatformClient(BaseClient):
             params=build_predicate_query_params(request),
         )
         return PredicateQueryExecution(response=response.json(), status_code=response.status_code)
+
+    async def query_traverse(self, request: Dict[str, Any]) -> TraverseQueryExecution:
+        """Execute one flattened Java-compatible local traverse query."""
+        response = await self._request(
+            "GET",
+            "/query/traverse",
+            params=build_traverse_query_params(request),
+        )
+        return TraverseQueryExecution(response=response.json(), status_code=response.status_code)
 
     async def supports_revision_import(self) -> bool:
         """Return whether this platform exposes the S1 revision-import endpoint.

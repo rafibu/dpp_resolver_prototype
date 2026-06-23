@@ -1,4 +1,4 @@
-"""Required S4 predicate-query workload and INDEXED/ON_DEMAND comparison."""
+"""S4 predicate and reverse-traverse workload with mode equivalence checks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import os
 import random
 import structlog
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -28,7 +28,7 @@ from ..federation import FederationClient, PlatformInfo, PlatformStatus
 logger = structlog.get_logger(__name__)
 
 S4_SCENARIO_ID = "s4"
-S4_DATASET_VERSION = 1
+S4_DATASET_VERSION = 3
 S4_REVISION_FRACTION = 0.20
 S4_SCALE_TOTALS = {"small": 300, "medium": 5_000, "large": 25_000}
 
@@ -46,37 +46,37 @@ class S4PlatformDefinition:
 S4_PLATFORM_DEFINITIONS = (
     S4PlatformDefinition(
         "component_supplier",
-        "s4-component-supplier",
+        "s4componentsupplier",
         "spring-postgres",
         ("component", "junction_box", "cable", "connector"),
     ),
     S4PlatformDefinition(
         "module_manufacturer",
-        "s4-module-manufacturer",
+        "s4modulemanufacturer",
         "fastapi-mongo",
         ("pv_module",),
     ),
     S4PlatformDefinition(
         "inverter_manufacturer",
-        "s4-inverter-manufacturer",
+        "s4invertermanufacturer",
         "spring-postgres",
         ("inverter",),
     ),
     S4PlatformDefinition(
         "battery_manufacturer",
-        "s4-battery-manufacturer",
+        "s4batterymanufacturer",
         "fastapi-mongo",
         ("battery_pack",),
     ),
     S4PlatformDefinition(
         "installer_operator",
-        "s4-installer-operator",
+        "s4installeroperator",
         "spring-postgres",
         ("pv_installation",),
     ),
     S4PlatformDefinition(
         "recycler",
-        "s4-recycler",
+        "s4recycler",
         "fastapi-mongo",
         ("recycling_batch", "disposal_record"),
     ),
@@ -158,6 +158,32 @@ class S4Query:
 
 
 @dataclass(frozen=True)
+class S4TraverseQuery:
+    """One fixed Java-compatible platform-local reverse-traverse query."""
+
+    query_id: str
+    subject_type: str
+    dpp_id: str
+    sources: tuple[dict[str, Any], ...]
+    revision_number: int | None = None
+
+    @property
+    def source_subject_type(self) -> str:
+        return str(self.sources[0]["subject_type"])
+
+    def request(self, execution_mode: str) -> dict[str, Any]:
+        request: dict[str, Any] = {
+            "execution_mode": execution_mode,
+            "subject_type": self.subject_type,
+            "dpp_id": self.dpp_id,
+            "sources": [copy.deepcopy(source) for source in self.sources],
+        }
+        if self.revision_number is not None:
+            request["revision_number"] = self.revision_number
+        return request
+
+
+@dataclass(frozen=True)
 class S4BenchmarkRecord:
     """One measured request made by S4 against a single platform."""
 
@@ -179,6 +205,8 @@ class S4BenchmarkRecord:
     success: bool
     error_message: str | None
     response: dict[str, Any] | None
+    query_category: str = "PREDICATE"
+    equivalence: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-ready raw record without mutating the captured response."""
@@ -196,7 +224,7 @@ class S4Materialization:
 
 @dataclass(frozen=True)
 class S4RunResult:
-    """Outcome and artifacts of a completed S4 predicate-query evaluation."""
+    """Outcome and artifacts of a completed S4 query evaluation."""
 
     success: bool
     run_id: str
@@ -246,8 +274,20 @@ def generate_s4_dataset(seed: int, scale: str = "medium") -> S4Dataset:
             )
             records.append(S4GeneratedDpp(role, subject_type, dpp_id, payload, None))
 
+    records = _attach_s4_references(records)
     revision_total = max(1, round(total * S4_REVISION_FRACTION))
     revised_indices = set(rng.sample(range(len(records)), revision_total))
+    # Guarantee at least one current-reference replacement at every scale
+    # without changing the documented revision count.
+    reference_changing_module_index = next(
+        index
+        for index, record in enumerate(records)
+        if record.subject_type == "pv_module" and record.payload["components"]["primary_component"]["$ref"]
+        != record.payload["workload_s4"]["reference_alternate_component"]
+    )
+    if reference_changing_module_index not in revised_indices:
+        revised_indices.remove(min(revised_indices))
+        revised_indices.add(reference_changing_module_index)
     revised_records: list[S4GeneratedDpp] = []
     for index, record in enumerate(records):
         revision_payload = _revise_payload(record.payload, record.subject_type, index) if index in revised_indices else None
@@ -264,6 +304,83 @@ def generate_s4_dataset(seed: int, scale: str = "medium") -> S4Dataset:
     dataset = S4Dataset(seed=seed, scale=normalized_scale, dpps=tuple(revised_records))
     validate_s4_dataset_quality(dataset)
     return dataset
+
+
+def _attach_s4_references(records: list[S4GeneratedDpp]) -> list[S4GeneratedDpp]:
+    """Add deterministic, deliberately skewed current-state DPP references.
+
+    The source graph stays platform-local for each benchmark request: modules
+    point to components, installations to modules, and recycler records to
+    disposed modules.  Hard references use revision 1, while battery packs
+    carry a logical (soft) component reference for the logical-target query.
+    """
+    payload_by_id = {record.dpp_id: copy.deepcopy(record.payload) for record in records}
+    ids_by_subject: dict[str, list[str]] = {}
+    for record in records:
+        ids_by_subject.setdefault(record.subject_type, []).append(record.dpp_id)
+
+    component_ids = ids_by_subject["component"]
+    junction_box_ids = ids_by_subject["junction_box"]
+    cable_ids = ids_by_subject["cable"]
+    connector_ids = ids_by_subject["connector"]
+    module_ids = ids_by_subject["pv_module"]
+    inverter_ids = ids_by_subject["inverter"]
+
+    # These target choices create the query suite's high- and low-selectivity
+    # cases.  They are stored as normal references, not special benchmark data.
+    common_component = component_ids[0]
+    rare_connector = connector_ids[-1]
+    common_connector = connector_ids[0]
+
+    for index, module_id in enumerate(module_ids):
+        payload = payload_by_id[module_id]
+        alternate_component = component_ids[1 + (index % (len(component_ids) - 1))]
+        primary_component = (
+            common_component if index % 5 else alternate_component
+        )
+        connector = rare_connector if index % 29 == 0 else common_connector
+        payload["components"] = {
+            "primary_component": {"$ref": f"component/{primary_component}/1"},
+            "junction_box": {"$ref": f"junction_box/{junction_box_ids[index % len(junction_box_ids)]}/1"},
+            "connector": {"$ref": f"connector/{connector}/1"},
+            "cable": {"$ref": f"cable/{cable_ids[index % len(cable_ids)]}/1"},
+        }
+        payload["workload_s4"]["reference_alternate_component"] = f"component/{alternate_component}/1"
+
+        # A deterministic subset is disposed and becomes the recycler target
+        # set.  The pre-existing predicate fields remain meaningful.
+        if index % 6 == 0:
+            payload["disposal_status"] = "recycled"
+            payload["operational_status"] = "recycled"
+            payload.setdefault("disposal_date", f"2025-{index % 9 + 1:02d}-15")
+
+    disposed_module_ids = [module_id for index, module_id in enumerate(module_ids) if index % 6 == 0]
+
+    for index, battery_id in enumerate(ids_by_subject["battery_pack"]):
+        payload_by_id[battery_id]["cell_component"] = {
+            "$ref": f"component/{common_component if index % 4 else component_ids[-1]}"
+        }
+
+    for index, installation_id in enumerate(ids_by_subject["pv_installation"]):
+        primary_module = module_ids[0] if index % 3 == 0 else module_ids[(index * 5) % len(module_ids)]
+        payload = payload_by_id[installation_id]
+        payload["primary_module"] = {"$ref": f"pv_module/{primary_module}/1"}
+        payload["inverter"] = {"$ref": f"inverter/{inverter_ids[index % len(inverter_ids)]}/1"}
+
+    for subject_type in ("recycling_batch", "disposal_record"):
+        for index, record_id in enumerate(ids_by_subject[subject_type]):
+            payload_by_id[record_id]["disposed_module"] = {
+                "$ref": f"pv_module/{disposed_module_ids[index % len(disposed_module_ids)]}/1"
+            }
+
+    materialized: list[S4GeneratedDpp] = []
+    for record in records:
+        payload = payload_by_id[record.dpp_id]
+        payload["workload_s4"]["source_dpp_id"] = record.dpp_id
+        materialized.append(
+            S4GeneratedDpp(record.role, record.subject_type, record.dpp_id, payload, None)
+        )
+    return materialized
 
 
 def validate_s4_dataset_quality(dataset: S4Dataset) -> None:
@@ -283,6 +400,25 @@ def validate_s4_dataset_quality(dataset: S4Dataset) -> None:
         raise ValueError(f"S4 lead distribution is not selective enough: {lead_ratio:.3f}")
     if len(countries) < 4 or missing_disposal_dates == 0:
         raise ValueError("S4 payload distribution lacks country or missing-value variation")
+
+    current_modules = [dpp.revision_payload or dpp.payload for dpp in dataset.dpps if dpp.subject_type == "pv_module"]
+    component_references = [
+        module["components"]["primary_component"]["$ref"]
+        for module in current_modules
+    ]
+    common_target = max(component_references.count(reference) for reference in set(component_references))
+    connector_references = [module["components"]["connector"]["$ref"] for module in current_modules]
+    rare_target = connector_references.count(connector_references[0])
+    if common_target < 5 or len(set(component_references)) < 3 or rare_target == len(connector_references):
+        raise ValueError("S4 traverse references lack a non-uniform incoming-reference distribution")
+    if not any(
+        dpp.revision_payload
+        and dpp.payload.get("components", {}).get("primary_component")
+        != dpp.revision_payload.get("components", {}).get("primary_component")
+        for dpp in dataset.dpps
+        if dpp.subject_type == "pv_module"
+    ):
+        raise ValueError("S4 requires a revised module to replace a current reference")
 
 
 def build_s4_query_suite() -> tuple[S4Query, ...]:
@@ -356,6 +492,59 @@ def build_s4_query_suite() -> tuple[S4Query, ...]:
     )
 
 
+def build_s4_traverse_query_suite(dataset: S4Dataset) -> tuple[S4TraverseQuery, ...]:
+    """Build the fixed, flattened reverse-traverse suite from S4 identities."""
+    by_subject: dict[str, list[S4GeneratedDpp]] = {}
+    for dpp in dataset.dpps:
+        by_subject.setdefault(dpp.subject_type, []).append(dpp)
+
+    common_component = by_subject["component"][0].dpp_id
+    rare_connector = by_subject["connector"][-1].dpp_id
+    selected_module = by_subject["pv_module"][0].dpp_id
+    disposed_module = next(
+        dpp.dpp_id
+        for dpp in by_subject["pv_module"]
+        if (dpp.revision_payload or dpp.payload).get("disposal_status") == "recycled"
+    )
+
+    return (
+        S4TraverseQuery(
+            "t1_common_component_revision",
+            "component",
+            common_component,
+            ({"subject_type": "pv_module", "reference_paths": ["components.primary_component"]},),
+            revision_number=1,
+        ),
+        S4TraverseQuery(
+            "t2_rare_connector_revision",
+            "connector",
+            rare_connector,
+            ({"subject_type": "pv_module", "reference_paths": ["components.connector"]},),
+            revision_number=1,
+        ),
+        S4TraverseQuery(
+            "t3_installations_using_module",
+            "pv_module",
+            selected_module,
+            ({"subject_type": "pv_installation", "reference_paths": ["primary_module"]},),
+            revision_number=1,
+        ),
+        S4TraverseQuery(
+            "t4_recycling_batches_for_disposed_module",
+            "pv_module",
+            disposed_module,
+            ({"subject_type": "recycling_batch", "reference_paths": ["disposed_module"]},),
+            revision_number=1,
+        ),
+        S4TraverseQuery(
+            "t5_logical_component_usage",
+            "component",
+            common_component,
+            ({"subject_type": "battery_pack", "reference_paths": ["cell_component"]},),
+        ),
+    )
+
+
 async def run_s4(
     factory_url: str,
     seed: int,
@@ -363,7 +552,7 @@ async def run_s4(
     scale: str = "medium",
     allow_mismatches: bool = False,
 ) -> S4RunResult:
-    """Materialize S4 and compare indexed predicate queries with on-demand execution.
+    """Materialize S4 and compare indexed predicate and traverse queries.
 
     The scenario never resets or deletes federation resources. It owns only DPPs
     with deterministic ``s4-*`` issuer IDs and reuses them on re-runs with the
@@ -373,14 +562,17 @@ async def run_s4(
     run_id = f"s4-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
 
     async with FederationClient() as federation:
-        platforms = await ensure_s4_platforms(federation, factory_url)
         resolver_url = await federation.get_resolver_url(factory_url)
         async with ResolverClient(resolver_url) as resolver:
+            # The Factory registers a platform's declared subject types while
+            # creating it.  Register schemas/types first so a fresh S4
+            # federation can create all six roles successfully.
             schema_versions = await ensure_s4_schemas(resolver)
+            platforms = await ensure_s4_platforms(federation, factory_url)
             await prepare_s4_platforms(resolver, platforms)
         materialization = await materialize_s4_dataset(dataset, platforms, schema_versions)
 
-    records = await execute_s4_benchmark(dataset, platforms, run_id)
+    records = annotate_s4_equivalence(await execute_s4_benchmark(dataset, platforms, run_id), dataset)
     summary = summarize_s4_benchmark(records, dataset, materialization)
     summary["run_id"] = run_id
     success = all(record.success for record in records) and (
@@ -390,7 +582,7 @@ async def run_s4(
     summary["allow_mismatches"] = allow_mismatches
     raw_results_path, summary_path = export_s4_results(output_dir, run_id, records, summary)
     logger.info(
-        "s4_predicate_queries_complete",
+        "s4_query_benchmark_complete",
         success=success,
         total_dpp_count=dataset.total_dpp_count,
         generated_revisions=dataset.revision_count,
@@ -540,6 +732,7 @@ async def execute_s4_benchmark(
                             subject_type=query.subject_type,
                             query_id=query.query_id,
                             result_mode=query.result_mode,
+                            query_category="PREDICATE",
                             execution_mode=execution_mode,
                             request_payload=request,
                             http_status=execution.status_code,
@@ -563,6 +756,64 @@ async def execute_s4_benchmark(
                             subject_type=query.subject_type,
                             query_id=query.query_id,
                             result_mode=query.result_mode,
+                            query_category="PREDICATE",
+                            execution_mode=execution_mode,
+                            request_payload=request,
+                            http_status=_exception_http_status(exc),
+                            duration_ms=(time.perf_counter() - started) * 1000,
+                            count=None,
+                            aggregate=None,
+                            match_count=None,
+                            success=False,
+                            error_message=str(exc),
+                            response=None,
+                        )
+                    )
+    for query in build_s4_traverse_query_suite(dataset):
+        role = _ROLE_BY_SUBJECT_TYPE[query.source_subject_type]
+        platform = platforms[role]
+        async with PlatformClient(platform) as client:
+            for execution_mode in ("INDEXED", "ON_DEMAND"):
+                request = query.request(execution_mode)
+                started = time.perf_counter()
+                try:
+                    execution = await client.query_traverse(request)
+                    response = execution.response
+                    records.append(
+                        S4BenchmarkRecord(
+                            scenario_name=S4_SCENARIO_ID,
+                            run_id=run_id,
+                            seed=dataset.seed,
+                            scale=dataset.scale,
+                            platform_id=platform.platform_id,
+                            subject_type=query.source_subject_type,
+                            query_id=query.query_id,
+                            result_mode="TRAVERSE",
+                            query_category="TRAVERSE",
+                            execution_mode=execution_mode,
+                            request_payload=request,
+                            http_status=execution.status_code,
+                            duration_ms=(time.perf_counter() - started) * 1000,
+                            count=_response_count(response),
+                            aggregate=None,
+                            match_count=_response_match_count(response),
+                            success=True,
+                            error_message=None,
+                            response=response,
+                        )
+                    )
+                except Exception as exc:
+                    records.append(
+                        S4BenchmarkRecord(
+                            scenario_name=S4_SCENARIO_ID,
+                            run_id=run_id,
+                            seed=dataset.seed,
+                            scale=dataset.scale,
+                            platform_id=platform.platform_id,
+                            subject_type=query.source_subject_type,
+                            query_id=query.query_id,
+                            result_mode="TRAVERSE",
+                            query_category="TRAVERSE",
                             execution_mode=execution_mode,
                             request_payload=request,
                             http_status=_exception_http_status(exc),
@@ -584,13 +835,13 @@ def summarize_s4_benchmark(
     materialization: S4Materialization,
 ) -> dict[str, Any]:
     """Calculate per-query indexed/on-demand equivalence and performance summaries."""
-    grouped: dict[str, dict[str, S4BenchmarkRecord]] = {}
+    grouped: dict[tuple[str, str], dict[str, S4BenchmarkRecord]] = {}
     for record in records:
-        grouped.setdefault(record.query_id, {})[record.execution_mode] = record
+        grouped.setdefault((record.query_category, record.query_id), {})[record.execution_mode] = record
 
     query_summaries: list[dict[str, Any]] = []
     for query in build_s4_query_suite():
-        modes = grouped.get(query.query_id, {})
+        modes = grouped.get(("PREDICATE", query.query_id), {})
         indexed = modes.get("INDEXED")
         on_demand = modes.get("ON_DEMAND")
         equivalent = bool(
@@ -610,8 +861,43 @@ def summarize_s4_benchmark(
         query_summaries.append(
             {
                 "query_id": query.query_id,
+                "query_category": "PREDICATE",
                 "subject_type": query.subject_type,
                 "result_mode": query.result_mode,
+                "duration_indexed_ms": indexed_duration,
+                "duration_on_demand_ms": on_demand_duration,
+                "speedup_factor": speedup,
+                "equivalent": equivalent,
+                "indexed_response": indexed.response if indexed else None,
+                "on_demand_response": on_demand.response if on_demand else None,
+            }
+        )
+
+    for query in build_s4_traverse_query_suite(dataset):
+        modes = grouped.get(("TRAVERSE", query.query_id), {})
+        indexed = modes.get("INDEXED")
+        on_demand = modes.get("ON_DEMAND")
+        equivalent = bool(
+            indexed
+            and on_demand
+            and indexed.success
+            and on_demand.success
+            and traverse_results_equivalent(indexed.response or {}, on_demand.response or {})
+        )
+        indexed_duration = indexed.duration_ms if indexed else None
+        on_demand_duration = on_demand.duration_ms if on_demand else None
+        speedup = (
+            on_demand_duration / indexed_duration
+            if indexed_duration is not None and on_demand_duration is not None and indexed_duration > 0
+            else None
+        )
+        query_summaries.append(
+            {
+                "query_id": query.query_id,
+                "query_category": "TRAVERSE",
+                "subject_type": query.subject_type,
+                "source_subject_type": query.source_subject_type,
+                "result_mode": "TRAVERSE",
                 "duration_indexed_ms": indexed_duration,
                 "duration_on_demand_ms": on_demand_duration,
                 "speedup_factor": speedup,
@@ -651,6 +937,44 @@ def predicate_results_equivalent(
     if result_mode == "SUM":
         return _decimal_equal(indexed.get("aggregate"), on_demand.get("aggregate"))
     raise ValueError(f"Unsupported predicate result mode: {result_mode}")
+
+
+def traverse_results_equivalent(indexed: dict[str, Any], on_demand: dict[str, Any]) -> bool:
+    """Compare source-DPP identities despite Java's two response projections.
+
+    Java returns flattened materialized-fact maps for INDEXED and full payloads
+    for ON_DEMAND.  S4 embeds the stable source DPP ID in each generated
+    payload, letting the benchmark compare the same logical match set without
+    treating projection shape or ordering as a mismatch.
+    """
+    return _traverse_source_ids(indexed.get("matches")) == _traverse_source_ids(on_demand.get("matches"))
+
+
+def annotate_s4_equivalence(
+    records: list[S4BenchmarkRecord],
+    dataset: S4Dataset,
+) -> list[S4BenchmarkRecord]:
+    """Write each query-pair's semantic equivalence back into its raw records."""
+    by_key: dict[tuple[str, str], dict[str, S4BenchmarkRecord]] = {}
+    for record in records:
+        by_key.setdefault((record.query_category, record.query_id), {})[record.execution_mode] = record
+
+    equivalence: dict[tuple[str, str], bool] = {}
+    for query in build_s4_query_suite():
+        modes = by_key.get(("PREDICATE", query.query_id), {})
+        indexed, on_demand = modes.get("INDEXED"), modes.get("ON_DEMAND")
+        equivalence[("PREDICATE", query.query_id)] = bool(
+            indexed and on_demand and indexed.success and on_demand.success
+            and predicate_results_equivalent(query.result_mode, indexed.response or {}, on_demand.response or {})
+        )
+    for query in build_s4_traverse_query_suite(dataset):
+        modes = by_key.get(("TRAVERSE", query.query_id), {})
+        indexed, on_demand = modes.get("INDEXED"), modes.get("ON_DEMAND")
+        equivalence[("TRAVERSE", query.query_id)] = bool(
+            indexed and on_demand and indexed.success and on_demand.success
+            and traverse_results_equivalent(indexed.response or {}, on_demand.response or {})
+        )
+    return [replace(record, equivalence=equivalence.get((record.query_category, record.query_id))) for record in records]
 
 
 def export_s4_results(
@@ -873,11 +1197,15 @@ def _build_payload(
 
 
 def _revise_payload(payload: dict[str, Any], subject_type: str, index: int) -> dict[str, Any]:
-    """Create revision two with a current-state predicate value different from revision one."""
+    """Create revision two with predicate and, where relevant, reference changes."""
     revised = copy.deepcopy(payload)
     revised["workload_s4"]["target_revision"] = 2
     revised["workload_s4"]["revision_reason"] = "s4_current_state_predicate_update"
     if subject_type == "pv_module":
+        alternate_reference = revised["workload_s4"].get("reference_alternate_component")
+        if alternate_reference:
+            revised["components"]["primary_component"] = {"$ref": alternate_reference}
+            revised["workload_s4"]["reference_revision_changed"] = True
         if not revised["contains_lead"]:
             revised["contains_lead"] = True
             revised["lead_mass_kg"] = 0.35 + (index % 7) * 0.08
@@ -960,6 +1288,23 @@ def _weighted_choice(rng: random.Random, choices: tuple[tuple[Any, float], ...])
 def _canonical_match_set(matches: Any) -> tuple[str, ...]:
     values = matches if isinstance(matches, list) else [matches]
     return tuple(sorted(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str) for value in values))
+
+
+def _traverse_source_ids(matches: Any) -> tuple[str, ...]:
+    values = matches if isinstance(matches, list) else []
+    identities: list[str] = []
+    for match in values:
+        if not isinstance(match, dict):
+            identities.append(json.dumps(match, sort_keys=True, default=str))
+            continue
+        metadata = match.get("workload_s4")
+        source_id = (
+            metadata.get("source_dpp_id") if isinstance(metadata, dict) else None
+        ) or match.get("workload_s4.source_dpp_id")
+        # The fallback retains useful mismatch diagnostics for a non-S4 or
+        # malformed response instead of falsely treating all such matches equal.
+        identities.append(str(source_id) if source_id is not None else json.dumps(match, sort_keys=True, default=str))
+    return tuple(sorted(identities))
 
 
 def _decimal_equal(left: Any, right: Any) -> bool:

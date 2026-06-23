@@ -110,6 +110,43 @@ async def test_platform_predicate_query_uses_java_compatible_get_parameters(http
 
 
 @pytest.mark.asyncio
+async def test_platform_traverse_query_uses_flattened_java_get_parameters(httpx_mock, platform_info):
+    httpx_mock.add_response(
+        method="GET",
+        url=re.compile(r"^http://platform-a:8082/query/traverse(?:\?.*)?$"),
+        status_code=200,
+        json={
+            "platform_id": "platform-a",
+            "subject_type": "component",
+            "dpp_id": "issuerA-component-1",
+            "matches": [],
+        },
+    )
+
+    async with PlatformClient(platform_info) as client:
+        execution = await client.query_traverse({
+            "execution_mode": "ON_DEMAND",
+            "subject_type": "component",
+            "dpp_id": "issuerA-component-1",
+            "revision_number": 3,
+            "sources": [{
+                "subject_type": "pv_module",
+                "reference_paths": ["components.primary_component", "components.connector"],
+            }],
+        })
+
+    request = httpx_mock.get_requests()[0]
+    assert execution.status_code == 200
+    assert request.method == "GET"
+    assert request.url.params.get("executionMode") == "ON_DEMAND"
+    assert request.url.params.get("subjectType") == "component"
+    assert request.url.params.get("dppId") == "issuerA-component-1"
+    assert request.url.params.get("revisionNumber") == "3"
+    assert request.url.params.get("sources[0].subjectType") == "pv_module"
+    assert request.url.params.get("sources[0].referencePaths[1]") == "components.connector"
+
+
+@pytest.mark.asyncio
 async def test_platform_import_revisions_replays_when_admin_endpoint_is_missing(httpx_mock, platform_info):
     schema_version = DppSchemaVersion(subject_type="pv_module", major_version=1, minor_version=0)
     revision_1 = DppResponse(

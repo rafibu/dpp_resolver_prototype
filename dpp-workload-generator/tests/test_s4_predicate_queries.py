@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from workload.clients import PredicateQueryExecution
+from workload.clients import PredicateQueryExecution, TraverseQueryExecution
 from workload.federation import PlatformInfo, PlatformStatus
 from workload.scenarios import s4
 
@@ -86,6 +86,42 @@ def test_query_suite_builds_indexed_and_on_demand_requests():
     assert on_demand["execution_mode"] == "ON_DEMAND"
     assert indexed["filters"][1]["value"] == ["CN", "DE", "US"]
     assert indexed["subject_type"] == "pv_module"
+
+
+def test_traverse_dataset_is_deterministic_skewed_and_revised():
+    dataset = s4.generate_s4_dataset(seed=31, scale="small")
+    modules = [dpp.revision_payload or dpp.payload for dpp in dataset.dpps if dpp.subject_type == "pv_module"]
+    incoming = {}
+    for module in modules:
+        ref = module["components"]["primary_component"]["$ref"]
+        incoming[ref] = incoming.get(ref, 0) + 1
+
+    assert max(incoming.values()) > 10
+    assert any(count == 1 for count in incoming.values())
+    assert any(
+        dpp.revision_payload
+        and dpp.payload["components"]["primary_component"]
+        != dpp.revision_payload["components"]["primary_component"]
+        for dpp in dataset.dpps
+        if dpp.subject_type == "pv_module"
+    )
+
+
+def test_traverse_query_suite_builds_flattened_mode_requests_and_equivalence():
+    dataset = s4.generate_s4_dataset(seed=17, scale="small")
+    query = s4.build_s4_traverse_query_suite(dataset)[0]
+
+    indexed = query.request("INDEXED")
+    on_demand = query.request("ON_DEMAND")
+
+    assert indexed["execution_mode"] == "INDEXED"
+    assert on_demand["execution_mode"] == "ON_DEMAND"
+    assert "target" not in indexed
+    assert indexed["sources"][0]["reference_paths"] == ["components.primary_component"]
+    assert s4.traverse_results_equivalent(
+        {"matches": [{"workload_s4.source_dpp_id": "module-1"}]},
+        {"matches": [{"workload_s4": {"source_dpp_id": "module-1"}}]},
+    )
 
 
 @pytest.mark.parametrize(
@@ -210,7 +246,7 @@ async def test_ensure_s4_platforms_creates_missing_roles_without_touching_existi
 
     assert len(platforms) == 6
     assert len(federation.created) == 5
-    assert all(issuer_id.startswith("s4-") for _, issuer_id, _ in federation.created)
+    assert all(issuer_id.startswith("s4") for _, issuer_id, _ in federation.created)
 
 
 @pytest.mark.asyncio
@@ -275,12 +311,27 @@ async def test_benchmark_records_indexed_and_on_demand_and_detects_mismatch(monk
                 response = {"count": 4}
             return PredicateQueryExecution(response=response, status_code=200)
 
+        async def query_traverse(self, request: dict):
+            source = request["sources"][0]["subject_type"]
+            response = {
+                "platform_id": "fake",
+                "subject_type": request["subject_type"],
+                "dpp_id": request["dpp_id"],
+                "matches": [{
+                    "workload_s4": {"source_dpp_id": f"{source}-source"},
+                }],
+            }
+            return TraverseQueryExecution(response=response, status_code=200)
+
     monkeypatch.setattr(s4, "PlatformClient", FakeClient)
     dataset = s4.generate_s4_dataset(seed=23, scale="small")
     records = await s4.execute_s4_benchmark(dataset, _platforms(), "run")
     summary = s4.summarize_s4_benchmark(records, dataset, s4.S4Materialization(300, 0, 60))
 
-    assert len(records) == len(s4.build_s4_query_suite()) * 2
+    assert len(records) == (
+        len(s4.build_s4_query_suite()) + len(s4.build_s4_traverse_query_suite(dataset))
+    ) * 2
     assert {record.execution_mode for record in records} == {"INDEXED", "ON_DEMAND"}
+    assert {record.query_category for record in records} == {"PREDICATE", "TRAVERSE"}
     q8 = next(query for query in summary["queries"] if query["query_id"] == "q8_repairable_inverters_with_failures")
     assert q8["equivalent"] is False

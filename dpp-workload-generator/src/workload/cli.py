@@ -302,7 +302,7 @@ def s4(
         help="Write results but do not fail when INDEXED and ON_DEMAND differ",
     ),
 ):
-    """Scenario S4: Predicate-query INDEXED versus ON_DEMAND evaluation"""
+    """Scenario S4: Predicate and traverse INDEXED versus ON_DEMAND evaluation"""
     try:
         result = asyncio.run(run_s4(factory_url, seed, output_dir, scale, allow_mismatches))
         typer.echo(f"Raw results: {result.raw_results_path}")
