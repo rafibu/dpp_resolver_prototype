@@ -16,8 +16,12 @@ import java.util.*;
 import java.util.stream.Stream;
 
 /**
+ * Evaluates local derived queries from materialized attribute facts.
  *
- * @author rbu on 21.06.2026
+ * <p>The facts are the platform's indexed representation of the derived query
+ * view for current revisions. Indexing moves projection work to issue and
+ * revise; it is an execution optimization and must preserve the on-demand
+ * result semantics.</p>
  */
 @Service
 public class IndexedQueryMatcher extends AbstractQueryMatcher {
@@ -31,6 +35,9 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
         this.queryAttributeFactRepository = queryAttributeFactRepository;
     }
 
+    /**
+     * Selects projected attribute facts for local groups that satisfy all filters.
+     */
     @Override
     @Transactional(readOnly = true)
     protected Object queryMatches(PredicateQueryRequestDTO request) {
@@ -39,12 +46,18 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
                 .toList();
     }
 
+    /**
+     * Counts local attribute-fact groups that satisfy all filters.
+     */
     @Override
     @Transactional(readOnly = true)
     protected Long queryCount(PredicateQueryRequestDTO request) {
         return matchingFactGroups(request).count();
     }
 
+    /**
+     * Sums the requested numeric attribute fact over matching local groups.
+     */
     @Override
     @Transactional(readOnly = true)
     protected Double querySum(PredicateQueryRequestDTO request) {
@@ -56,6 +69,9 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
                 .sum();
     }
 
+    /**
+     * Performs reverse traversal by testing indexed reference facts in each source scope.
+     */
     @Override
     @Transactional(readOnly = true)
     protected List<Object> executeTraverseQuery(TraverseQueryRequestDTO request) {

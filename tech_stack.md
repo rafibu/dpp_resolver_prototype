@@ -297,7 +297,8 @@ Additional platforms spawned via `POST /platforms` get ports starting at 8084.
 
 ## Artefact 5: Workload Generator
 
-Drives the three end-to-end scenarios (Section 7) against the live federation. 
+Drives the four end-to-end evaluation scenarios (S1–S4) and the supplemental
+offline-interpretability check (S5) against the live federation.
 
 ### Stack
 
@@ -323,7 +324,7 @@ Measurement and fixtures:
 - Drive measurement runs: timing each operation, recording bytes
 - Write structured CSV output for analysis
 
-Scenarios (Section 7):
+Scenarios:
 
 - Set up the prerequisite federation state for each scenario via the Factory
 - Execute the scenario steps in order and capture expected vs observed outcome per step
@@ -344,7 +345,8 @@ Scenarios:
 - `workload scenario s1 --output-dir output/scenarios` federated reference stability under target evolution and issuer migration
 - `workload scenario s2 --output-dir output/scenarios` independent schema evolution
 - `workload scenario s3 --output-dir output/scenarios` schema-level cycle rejection
-- `workload scenario s4 --output-dir output/scenarios` supplemental offline-validation check; not part of the actual evaluation
+- `workload scenario s4 --output-dir output/scenarios` derived-query evaluation: indexed and on-demand predicate retrieval and reverse traversal
+- `workload scenario s5 --output-dir output/scenarios` supplemental offline-interpretability check; not part of the paper's evaluation
 
 The Workload Generator queries the Factory at startup to discover platform URLs. It does not need to be told manually where platforms are.
 
@@ -395,7 +397,7 @@ Keep list (minimum viable):
 - Per-platform DPP list and revision history view
 - Per-platform log viewer (reads from Docker logs via Factory proxy or a small backend)
 - Online/offline toggle per platform (calls Factory pause/resume)
-- Trigger-scenario buttons for S1, S2, S3, and supplemental S4 (invokes scenarios via the Factory)
+- Trigger-scenario buttons for S1, S2, S3, and S4 (invokes scenarios via the Factory)
 - Raw JSON editor for DPP payloads with client-side schema validation
 - Display of platform state changes after operations
 

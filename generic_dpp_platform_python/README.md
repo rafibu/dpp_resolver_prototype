@@ -58,6 +58,39 @@ implemented in this Python platform.
 | **cacheSchema** | Fetch schemas from the resolver into the local platform cache.               | `POST /schemas/{subjectType}/cacheSchema`, `schemas/resolver_connector.py`: `cache_schema` |
 | **resolve**     | Resolve a hard reference through the resolver and fetch the target revision. | `schemas/resolver_connector.py`: `resolve_dpp_revision`                                    |
 
+## Derived query access
+
+The paper treats lifecycle queryability as three distinct retrieval patterns:
+point lookup, predicate retrieval, and reverse traversal. Point lookup is the
+resolver-mediated DPP API described below. This platform evaluates the other
+two patterns only for revisions it hosts; a federation client is responsible
+for platform fan-out, resolver-based routing, schema-level source scoping, and
+result merging.
+
+| Method | Path | Local query | Purpose |
+|---|---|---|---|
+| `GET` | `/query/predicate` | Predicate retrieval | Evaluates AND-connected predicates for one subject type and returns `SELECT`, `COUNT`, or `SUM`. |
+| `GET` | `/query/traverse` | Reverse traversal | Finds current source revisions in supplied source scopes that reference a target logical DPP or exact revision. |
+
+The Python endpoints deliberately mirror Java-style query-parameter binding:
+predicate requests use `resultMode`, `executionMode`, and `subjectType`; filters
+use `filters[0].path`, `filters[0].operator`, and `filters[0].value`; repeated
+`returnFields` select fields. Traverse requests use `subjectType`, `dppId`,
+optional `revisionNumber`, `executionMode`, and source scopes such as
+`sources[0].subjectType` and `sources[0].referencePaths[0]`.
+
+`ON_DEMAND` scans the current revision payloads. `INDEXED` evaluates the same
+local candidates through materialized attribute facts rebuilt on issue and
+revise. The index is an execution optimization: it does not change the derived
+query semantics. Reverse traversal scopes its scan to source subject types
+supplied by the caller; those scopes are normally derived from the resolver's
+schema dependency graph.
+
+The current prototype returns projected payload fields or source documents,
+plus the responding `platform_id`. A client that needs every match to carry a
+stable source-revision identifier must preserve that identity separately; this
+is narrower than the paper's traceability target for federated query results.
+
 ## Implementation overview
 
 The platform stores logical DPPs and append-only revisions in MongoDB. Each revision is bound

@@ -1,4 +1,4 @@
-"""Predicate query execution over materialized facts or current payloads."""
+"""Platform-local derived query execution over current revisions."""
 
 from __future__ import annotations
 
@@ -26,25 +26,30 @@ class FactRepository(Protocol):
 
 
 class MongoFactRepository:
+    """Reads the materialized attribute facts for indexed predicate retrieval."""
+
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._db = db
 
     async def find_all_by_subject_type(self, subject_type: str) -> list[dict[str, Any]]:
+        """Return the current attribute facts for one local subject type."""
         return await self._db[FACT_COLLECTION].find(
             {"subject_type": subject_type}, {"_id": 0}
         ).to_list(None)
 
 
 class IndexedQueryMatcher:
-    """Match a subject type's materialized fact groups.
+    """Evaluate predicate retrieval from materialized attribute facts.
 
-    The repository seam keeps the data-independent matcher easy to unit test.
+    Facts are the local indexed representation of the derived query view for
+    current revisions. Indexing changes execution cost, not query semantics.
     """
 
     def __init__(self, repository: FactRepository) -> None:
         self._repository = repository
 
     async def matching_fact_groups(self, request: PredicateQueryRequest) -> list[dict[str, dict[str, Any]]]:
+        """Return current local fact groups that satisfy every predicate."""
         facts = self._repository.find_all_by_subject_type(request.subject_type)
         if inspect.isawaitable(facts):
             facts = await facts
@@ -58,12 +63,15 @@ class IndexedQueryMatcher:
         ]
 
     async def select(self, request: PredicateQueryRequest) -> list[dict[str, Any]]:
+        """Project requested attribute facts from each matching local group."""
         return [_select_indexed_fields(group, request.return_fields) for group in await self.matching_fact_groups(request)]
 
     async def count(self, request: PredicateQueryRequest) -> int:
+        """Count local fact groups that satisfy every predicate."""
         return len(await self.matching_fact_groups(request))
 
     async def sum(self, request: PredicateQueryRequest) -> float:
+        """Sum the requested numeric attribute fact over matching local groups."""
         total = 0.0
         for group in await self.matching_fact_groups(request):
             fact = group.get(request.aggregate_path or "")
@@ -76,12 +84,13 @@ class IndexedQueryMatcher:
 
 
 class OnDemandQueryMatcher:
-    """Pure matcher for current revision payloads."""
+    """Evaluate predicate retrieval by scanning current revision payloads."""
 
     def __init__(self, documents: list[dict[str, Any]]) -> None:
         self._documents = documents
 
     def matching_documents(self, request: PredicateQueryRequest) -> list[dict[str, Any]]:
+        """Return current local payloads that satisfy every predicate."""
         return [
             document
             for document in self._documents
@@ -89,12 +98,15 @@ class OnDemandQueryMatcher:
         ]
 
     def select(self, request: PredicateQueryRequest) -> list[dict[str, Any]]:
+        """Project requested payload fields from each matching document."""
         return [select_fields(document, request.return_fields) for document in self.matching_documents(request)]
 
     def count(self, request: PredicateQueryRequest) -> int:
+        """Count current local payloads that satisfy every predicate."""
         return len(self.matching_documents(request))
 
     def sum(self, request: PredicateQueryRequest) -> float:
+        """Sum a numeric payload path over matching current local payloads."""
         total = 0.0
         for document in self.matching_documents(request):
             value = resolve_path(document, request.aggregate_path)
@@ -110,7 +122,11 @@ async def query_predicate(
     db: AsyncIOMotorDatabase,
     request: PredicateQueryRequest,
 ) -> PredicateQueryResponse:
-    """Execute a validated platform-local query with Java-compatible results."""
+    """Validate and execute platform-local predicate retrieval.
+
+    Selects the indexed or on-demand matcher and returns a local SELECT, COUNT,
+    or SUM response. Federation fan-out and merging are external concerns.
+    """
     validate_request(request)
     platform_config = await db.platform_config.find_one({}, {"_id": 0})
     platform_id = (platform_config or {}).get("issuer_id", "")
@@ -149,10 +165,11 @@ async def query_traverse(
     db: AsyncIOMotorDatabase,
     request: TraverseQueryRequest,
 ) -> TraverseQueryResponse:
-    """Execute Java-compatible platform-local reverse traversal.
+    """Validate and execute platform-local reverse traversal.
 
-    Traversal deliberately only searches DPPs currently hosted by this
-    platform.  The workload/federation layer owns any cross-platform fan-out.
+    Traversal searches current source revisions in the caller-supplied scope
+    for references to a logical DPP or exact revision. The workload or another
+    federation client owns resolver routing and cross-platform fan-out.
     """
     validate_traverse_request(request)
     platform_config = await db.platform_config.find_one({}, {"_id": 0})

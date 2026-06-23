@@ -18,8 +18,11 @@ import java.util.*;
 import java.util.stream.Stream;
 
 /**
+ * Evaluates local derived queries directly from current revision payloads.
  *
- * @author rbu on 21.06.2026
+ * <p>This execution strategy scans the candidate revisions, resolves payload
+ * paths, and applies predicates or reference matching at request time. It is
+ * the semantic baseline for the materialized attribute-fact index.</p>
  */
 @Service
 public class OnDemandQueryMatcher extends AbstractQueryMatcher {
@@ -34,6 +37,9 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
         this.dppRevisionRepository = dppRevisionRepository;
     }
 
+    /**
+     * Selects fields from every current local payload satisfying all filters.
+     */
     @Override
     @Transactional(readOnly = true)
     protected Object queryMatches(PredicateQueryRequestDTO request) {
@@ -42,12 +48,18 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
                 .toList();
     }
 
+    /**
+     * Counts current local payloads satisfying all filters.
+     */
     @Override
     @Transactional(readOnly = true)
     protected Long queryCount(PredicateQueryRequestDTO request) {
         return matchingDocuments(request).count();
     }
 
+    /**
+     * Sums a numeric payload field over the matching current local payloads.
+     */
     @Override
     @Transactional(readOnly = true)
     protected Double querySum(PredicateQueryRequestDTO request) {
@@ -59,6 +71,9 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
                 .sum();
     }
 
+    /**
+     * Performs reverse traversal by scanning current local source payloads.
+     */
     @Override
     @Transactional(readOnly = true)
     protected List<Object> executeTraverseQuery(TraverseQueryRequestDTO request) {

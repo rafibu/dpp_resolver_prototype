@@ -11,8 +11,12 @@ import lombok.RequiredArgsConstructor;
 import java.util.List;
 
 /**
+ * Common result shaping for the two local derived-query execution strategies.
  *
- * @author rbu on 21.06.2026
+ * <p>Implementations provide equivalent predicate retrieval and reverse
+ * traversal semantics over either current payloads or materialized attribute
+ * facts. This class adds the platform identity and turns the requested result
+ * mode into a local SELECT, COUNT, or SUM response.</p>
  */
 @RequiredArgsConstructor
 public abstract class AbstractQueryMatcher {
@@ -20,6 +24,12 @@ public abstract class AbstractQueryMatcher {
 
     private final SubjectTypeRepository subjectTypeRepository;
 
+    /**
+     * Executes platform-local predicate retrieval in the requested result mode.
+     *
+     * @param request the validated predicate-retrieval request
+     * @return a response tied to this platform, or an empty result for an unknown subject type
+     */
     public PredicateQueryResponseDTO queryPredicate(PredicateQueryRequestDTO request) {
         String platformId = platformConfigService.getPlatformConfig().getIssuerId();
 
@@ -51,6 +61,12 @@ public abstract class AbstractQueryMatcher {
         };
     }
 
+    /**
+     * Executes reverse traversal within the source scopes supplied by the caller.
+     *
+     * @param request the target logical DPP or revision and source subject-type scope
+     * @return local source records whose references match the target
+     */
     public TraverseQueryResponseDTO traverse(TraverseQueryRequestDTO request) {
         String platformId = platformConfigService.getPlatformConfig().getIssuerId();
         return TraverseQueryResponseDTO.builder()
@@ -62,32 +78,34 @@ public abstract class AbstractQueryMatcher {
     }
 
     /**
-     * Executes a query to match predicate conditions based on the given request.
+     * Returns projected fields for current local revisions satisfying every predicate.
      *
-     * @param request the request object containing the query details
-     * @return an object representing the matching results, which can vary based on the
-     *         implementation and the result mode specified in the request.
+     * @param request the predicate-retrieval request
+     * @return one projected result per matching local revision
      */
     protected abstract Object queryMatches(PredicateQueryRequestDTO request);
 
     /**
-     * Executes a query to count the number of records matching the specified predicate conditions
-     * based on the provided request.
+     * Counts current local revisions satisfying every predicate.
      *
-     * @param request the request object containing the query details
-     * @return the count of records that match the specified query conditions.
+     * @param request the predicate-retrieval request
+     * @return the local matching-revision count
      */
     protected abstract Long queryCount(PredicateQueryRequestDTO request);
 
     /**
-     * Executes a query to compute the sum of values for a specified field or path based on the provided
-     * predicate conditions in the request.
+     * Sums a numeric attribute over current local revisions satisfying every predicate.
      *
-     * @param request the request object containing the query details, including the field to aggregate.
-     * @return the computed sum of the values for the specified field or path, matching the query conditions;
-     *         or {@code null} if no matching records are found or the field is invalid.
+     * @param request the predicate-retrieval request with an aggregate path
+     * @return the local aggregate, with missing values omitted
      */
     protected abstract Double querySum(PredicateQueryRequestDTO request);
 
+    /**
+     * Finds local source documents whose references match the requested target.
+     *
+     * @param request the target and schema-level source scope
+     * @return the matching source records
+     */
     protected abstract List<Object> executeTraverseQuery(TraverseQueryRequestDTO request);
 }

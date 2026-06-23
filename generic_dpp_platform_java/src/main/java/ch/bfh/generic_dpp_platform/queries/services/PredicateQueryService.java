@@ -6,8 +6,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
+ * Coordinates platform-local predicate retrieval.
  *
- * @author rbu on 19.06.2026
+ * <p>The service validates the requested local result shape and selects either
+ * on-demand payload evaluation or materialized attribute-fact evaluation.
+ * Federation-wide distribution and merging are intentionally outside this
+ * service.</p>
  */
 
 @Service
@@ -17,6 +21,12 @@ public class PredicateQueryService {
     private final IndexedQueryMatcher indexedQueryMatcher;
     private final OnDemandQueryMatcher onDemandQueryMatcher;
 
+    /**
+     * Validates and executes one local predicate-retrieval request.
+     *
+     * @param request the requested subject type, predicates, result mode, and execution mode
+     * @return the local SELECT, COUNT, or SUM result
+     */
     public PredicateQueryResponseDTO queryPredicate(PredicateQueryRequestDTO request) {
         validateRequest(request);
 

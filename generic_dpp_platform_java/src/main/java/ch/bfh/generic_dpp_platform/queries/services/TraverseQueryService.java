@@ -8,8 +8,12 @@ import org.springframework.stereotype.Service;
 
 
 /**
+ * Coordinates platform-local reverse traversal over DPP references.
  *
- * @author rbu on 22.06.2026
+ * <p>The caller supplies source subject types and optional reference paths,
+ * normally derived from the resolver's schema dependency graph. This service
+ * selects indexed or on-demand matching but does not perform federation-wide
+ * routing.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -19,6 +23,12 @@ public class TraverseQueryService {
     private final IndexedQueryMatcher indexedQueryMatcher;
     private final OnDemandQueryMatcher onDemandQueryMatcher;
 
+    /**
+     * Validates and executes one local reverse-traversal request.
+     *
+     * @param request the target logical DPP or revision and source scope
+     * @return current local source records that reference the target
+     */
     public TraverseQueryResponseDTO queryTraverse(@Valid TraverseQueryRequestDTO request) {
         validateRequest(request);
 

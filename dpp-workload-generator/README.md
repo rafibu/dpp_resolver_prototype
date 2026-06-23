@@ -19,7 +19,23 @@ It is not part of the federated DPP ecosystem. It is a measurement harness that 
 | Runs scenario S4: indexed versus on-demand predicate and traverse-query evaluation           |
 | Runs scenario S5: offline validation after platform unavailability                          |
 
-The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are.
+The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are. S1–S4 are the paper's evaluation scenarios; S5 is an offline-interpretability supplement retained outside that evaluation.
+
+## Derived-query evaluation
+
+S4 evaluates the paper's derived query view across six registered platform
+instances. It distributes platform-local predicate retrieval and reverse
+traversal requests, compares `INDEXED` with `ON_DEMAND`, and checks that the two
+execution modes produce equivalent logical results.
+
+- Predicate retrieval covers `SELECT`, `COUNT`, and `SUM` over current local revisions.
+- Reverse traversal looks for current source revisions that reference a target logical DPP or a pinned target revision.
+- Source scopes restrict traversal to predecessor subject types and reference paths. They stand in for the resolver's schema-level hard-reference scope.
+- `PlatformClient` uses the generic-platform `GET /query/predicate` and `GET /query/traverse` contracts, including Java-style flattened query parameters, so the same workload runs against both implementations.
+
+The separate `query-client` module is a predicate-only orchestration prototype.
+It is not used by S4 because it currently does not implement reverse traversal
+or the generic platforms' flattened-parameter transport.
 
 ## Architecture
 

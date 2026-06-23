@@ -1,4 +1,4 @@
-"""Java-compatible GET ``/query`` endpoints."""
+"""HTTP boundary for platform-local predicate retrieval and reverse traversal."""
 
 from __future__ import annotations
 
@@ -32,7 +32,10 @@ async def query_predicate_endpoint(
     request: Request,
     db: AsyncIOMotorDatabase = Depends(get_database),
 ) -> PredicateQueryResponse:
-    """Evaluate a predicate query using Java-style query parameter binding."""
+    """Evaluate predicate retrieval over this platform's current revisions.
+
+    Federation-wide routing and result merging remain outside this endpoint.
+    """
     return await query_predicate(db, _parse_request(request))
 
 
@@ -41,7 +44,11 @@ async def query_traverse_endpoint(
     request: Request,
     db: AsyncIOMotorDatabase = Depends(get_database),
 ) -> TraverseQueryResponse:
-    """Evaluate a Java ``TraverseQueryRequestDTO`` bound from query parameters."""
+    """Find local current source revisions that reference the requested target.
+
+    The caller supplies schema-level source scopes; this endpoint does not
+    perform resolver routing or federation-wide traversal.
+    """
     return await query_traverse(db, _parse_traverse_request(request))
 
 

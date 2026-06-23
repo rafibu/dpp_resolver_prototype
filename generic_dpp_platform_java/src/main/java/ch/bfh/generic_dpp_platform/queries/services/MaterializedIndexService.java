@@ -13,8 +13,12 @@ import java.math.BigDecimal;
 import java.util.*;
 
 /**
+ * Maintains the materialized attribute-fact view used by indexed local queries.
  *
- * @author rbu on 21.06.2026
+ * <p>For each logical DPP, the service replaces facts from the previous
+ * current revision with a flattened projection of the newly issued revision.
+ * The index accelerates query evaluation; the revision payload remains the
+ * authoritative record.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -22,6 +26,11 @@ public class MaterializedIndexService {
 
     private final QueryAttributeFactRepository queryAttributeFactRepository;
 
+    /**
+     * Rebuilds one logical DPP's current attribute facts after issue or revise.
+     *
+     * @param revision the newly stored current revision to project
+     */
     @Transactional
     public void createNewMaterializedIndex(DppRevision revision) {
         LogicalDpp dpp = revision.getDpp();

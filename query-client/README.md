@@ -1,12 +1,10 @@
-# query-client
+# Federated Predicate Query Client
 
-A self-contained, Python-based **federated predicate query client** for the DPP
-prototype.
-
-The query client is an **orchestration component only**. It does not evaluate DPP
-payloads and does not implement predicate logic. Each DPP platform remains
-responsible for evaluating a predicate query over the revisions it hosts. The
-query client:
+This is a Python-based **federated predicate-query orchestration prototype**.
+It is not a DPP platform or resolver and is not part of the formal federation
+state. It does not evaluate DPP payloads or implement predicate logic. Each DPP
+platform remains responsible for local predicate retrieval over the revisions it
+hosts. The client:
 
 1. validates a federated query request,
 2. retrieves the registered platform mappings from the resolver,
@@ -14,8 +12,36 @@ query client:
 4. records per-platform execution time, failures, and timeouts, and
 5. merges the per-platform responses into one federation-level result.
 
-It treats the resolver and the DPP platforms as **external services** accessed
-through their HTTP APIs. It never modifies resolver or platform state.
+It treats the resolver and DPP platforms as **external HTTP services** and never
+modifies their state.
+
+## Relation to the paper and current scope
+
+The paper's derived-query realization distributes subject-type and payload
+queries to registered platforms, keeps predicate evaluation local, and merges
+the returned results. It also includes reverse traversal over references using
+schema-level source scopes supplied by the resolver.
+
+This module implements only the predicate-retrieval part of that orchestration:
+
+| Paper query concern | This module |
+|---|---|
+| Platform-local predicate retrieval | Forwards `SELECT`, `COUNT`, and `SUM` requests and merges successful responses. |
+| Federation routing | Discovers resolver registry entries and queries each distinct platform once. |
+| Reverse traversal | Not implemented. The S4 workload uses `dpp-workload-generator`'s `PlatformClient` for the generic platforms' `/query/traverse` endpoint. |
+| Schema-level source scope | Not derived or consumed because this module has no reverse-traversal API. |
+| Source-revision traceability | Preserved only when platform responses include stable revision identity fields. Current generic-platform query responses return payload projections or source documents, so this client cannot add that identity itself. |
+
+### Generic-platform compatibility
+
+The current generic Java and Python platforms expose `GET /query/predicate` and
+bind flattened query parameters such as `resultMode` and
+`filters[0].path`. This module currently sends a configurable HTTP method with
+a JSON request body; its defaults are `POST /query/predicate`. Changing
+`PLATFORM_QUERY_METHOD` alone does not convert that body into the generic
+platforms' query-parameter contract. Consequently, this standalone client is
+not the S4 client and needs a transport adapter or implementation change before
+it can call the generic platforms directly.
 
 ## Requirements
 
@@ -38,7 +64,7 @@ Configuration is read from environment variables (see `.env.example`):
 | Variable                  | Default                       | Purpose                                         |
 | ------------------------- | ----------------------------- | ----------------------------------------------- |
 | `RESOLVER_BASE_URL`       | `http://localhost:8080`       | Resolver base URL (`GET /admin/platforms`)      |
-| `PLATFORM_QUERY_PATH`     | `/api/v1/query/predicate`     | Path appended to each platform base URL         |
+| `PLATFORM_QUERY_PATH`     | `/query/predicate`            | Path appended to each platform base URL         |
 | `PLATFORM_QUERY_METHOD`   | `POST`                        | HTTP method for the platform-local query        |
 | `DEFAULT_TIMEOUT_MS`      | `120000`                      | Federation timeout when a request omits one     |
 | `HTTP_CONNECT_TIMEOUT_MS` | `5000`                        | Per-platform connect timeout                    |
@@ -92,9 +118,10 @@ OpenAPI docs are then available at `http://localhost:8090/docs`.
     non-empty array.
   - `BETWEEN`/`CONTAINS` are not supported.
 
-The forwarded **platform-local** body contains only `result_mode`,
+The forwarded **platform-local** JSON body contains only `result_mode`,
 `execution_mode`, `subject_type`, `filters`, `return_fields`, `aggregate_path`
-(snake_case JSON).
+(snake_case JSON). See the compatibility note above before using it with the
+generic platforms.
 
 ## CLI (reproducible runs)
 

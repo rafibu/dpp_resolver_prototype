@@ -16,8 +16,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
+ * HTTP boundary for platform-local derived query access.
  *
- * @author rbu on 19.06.2026
+ * <p>Predicate retrieval and reverse traversal are evaluated by the platform
+ * that hosts the candidate revisions. Federation-wide routing, schema-level
+ * source scoping, and result merging are performed by callers outside this
+ * controller.</p>
  */
 @Slf4j
 @RestController
@@ -28,6 +32,12 @@ public class QueryController {
     private final PredicateQueryService predicateQueryService;
     private final TraverseQueryService traverseQueryService;
 
+    /**
+     * Evaluates predicate retrieval over this platform's current revisions.
+     *
+     * @param request the platform-local query, bound from query parameters
+     * @return selected attribute facts, a count, or a sum for the local candidates
+     */
     @GetMapping("/predicate")
     public ResponseEntity<PredicateQueryResponseDTO> queryPredicate(
             @Valid @ModelAttribute PredicateQueryRequestDTO request) {
@@ -35,6 +45,12 @@ public class QueryController {
         return ResponseEntity.ok(predicateQueryService.queryPredicate(request));
     }
 
+    /**
+     * Finds current source revisions that reference a target logical DPP or revision.
+     *
+     * @param request the target and externally supplied schema-level source scope
+     * @return the matching source records hosted by this platform
+     */
     @GetMapping("/traverse")
     public ResponseEntity<TraverseQueryResponseDTO> queryTraverse(
             @Valid @ModelAttribute TraverseQueryRequestDTO request
