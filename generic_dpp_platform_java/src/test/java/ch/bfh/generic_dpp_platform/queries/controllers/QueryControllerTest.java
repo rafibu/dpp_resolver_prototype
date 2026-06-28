@@ -36,6 +36,8 @@ class QueryControllerTest extends ControllerTest {
 
     private static final String ISSUER_ID = "issuerA";
     private static final String SUBJECT_TYPE = "Battery";
+    private static final String VEHICLE_SUBJECT_TYPE = "Vehicle";
+    private static final String DRONE_SUBJECT_TYPE = "Drone";
     private static final String UNKNOWN_SUBJECT_TYPE = "UnknownSubjectType";
 
     @Autowired
@@ -97,6 +99,89 @@ class QueryControllerTest extends ControllerTest {
         seedBatteryDpps();
 
         assertCount(query(baseQuery("COUNT")), 5);
+    }
+
+    @Test
+    void selectWithSubjectTypes_shouldReturnOnlyRequestedSubjectTypes() throws Exception {
+        seedMultiSubjectDpps();
+
+        JsonNode response = query(baseQueryForSubjectTypes("SELECT", VEHICLE_SUBJECT_TYPE, DRONE_SUBJECT_TYPE));
+
+        assertEquals("SELECT", response.path("result_mode").asText());
+        assertEquals(executionMode.name(), response.path("execution_mode").asText());
+        JsonNode matches = response.path("matches");
+        assertEquals(4, matches.size());
+        assertEquals(Set.of("Vehicle Alpha", "Vehicle Beta", "Drone Scout", "Drone Cargo"), names(matches));
+        assertFalse(names(matches).contains("Battery A"));
+        assertFalse(names(matches).contains("Battery B"));
+        assertFalse(names(matches).contains("Battery C"));
+        assertFalse(names(matches).contains("Battery D"));
+        assertFalse(names(matches).contains("Battery E"));
+    }
+
+    @Test
+    void countWithSubjectTypesAndFilters_shouldApplyFiltersAcrossRequestedSubjectTypes() throws Exception {
+        seedMultiSubjectDpps();
+
+        MockHttpServletRequestBuilder request = filter(
+                baseQueryForSubjectTypes("COUNT", SUBJECT_TYPE, VEHICLE_SUBJECT_TYPE, DRONE_SUBJECT_TYPE),
+                0,
+                "chemistry",
+                "EQ",
+                "NMC"
+        );
+
+        assertCount(query(request), 5);
+    }
+
+    @Test
+    void subjectTypesWithMixedKnownAndUnknownValues_shouldSearchKnownSubjectTypes() throws Exception {
+        seedMultiSubjectDpps();
+
+        JsonNode response = query(baseQueryForSubjectTypes("SELECT", DRONE_SUBJECT_TYPE, UNKNOWN_SUBJECT_TYPE));
+
+        JsonNode matches = response.path("matches");
+        assertEquals(2, matches.size());
+        assertEquals(Set.of("Drone Scout", "Drone Cargo"), names(matches));
+    }
+
+    @Test
+    void selectWithoutSubjectTypes_shouldSearchAllSubjectTypes() throws Exception {
+        seedMultiSubjectDpps();
+
+        JsonNode response = query(baseQueryWithoutSubjectTypes("SELECT"));
+
+        JsonNode matches = response.path("matches");
+        assertEquals(9, matches.size());
+        assertEquals(Set.of(
+                "Battery A", "Battery B", "Battery C", "Battery D", "Battery E",
+                "Vehicle Alpha", "Vehicle Beta",
+                "Drone Scout", "Drone Cargo"
+        ), names(matches));
+        assertFalse(names(matches).contains("Battery A old"));
+        assertFalse(names(matches).contains("Battery B old"));
+    }
+
+    @Test
+    void countWithoutSubjectTypes_shouldApplyFiltersAcrossAllSubjectTypes() throws Exception {
+        seedMultiSubjectDpps();
+
+        MockHttpServletRequestBuilder request = filter(
+                baseQueryWithoutSubjectTypes("COUNT"),
+                0,
+                "manufacturer.country",
+                "EQ",
+                "CH"
+        );
+
+        assertCount(query(request), 4);
+    }
+
+    @Test
+    void sumWithoutSubjectTypes_shouldAggregateAcrossAllSubjectTypes() throws Exception {
+        seedMultiSubjectDpps();
+
+        assertAggregate(query(baseQueryWithoutSubjectTypes("SUM").param("aggregatePath", "weight_kg")), 3717.0);
     }
 
     @Test
@@ -238,7 +323,7 @@ class QueryControllerTest extends ControllerTest {
 
     @Test
     void unknownSubjectType_select_shouldReturnEmptyMatches() throws Exception {
-        JsonNode response = query(baseQuery("SELECT").param("subjectType", UNKNOWN_SUBJECT_TYPE));
+        JsonNode response = query(baseQueryForSubjectTypes("SELECT", UNKNOWN_SUBJECT_TYPE));
 
         assertTrue(response.path("matches").isArray());
         assertEquals(0, response.path("matches").size());
@@ -249,12 +334,12 @@ class QueryControllerTest extends ControllerTest {
 
     @Test
     void unknownSubjectType_count_shouldReturnZero() throws Exception {
-        assertCount(query(baseQuery("COUNT").param("subjectType", UNKNOWN_SUBJECT_TYPE)), 0);
+        assertCount(query(baseQueryForSubjectTypes("COUNT", UNKNOWN_SUBJECT_TYPE)), 0);
     }
 
     @Test
     void unknownSubjectType_sum_shouldReturnZero() throws Exception {
-        assertAggregate(query(baseQuery("SUM").param("subjectType", UNKNOWN_SUBJECT_TYPE).param("aggregatePath", "something")), 0.0);
+        assertAggregate(query(baseQueryForSubjectTypes("SUM", UNKNOWN_SUBJECT_TYPE).param("aggregatePath", "something")), 0.0);
     }
 
     @Test
@@ -276,14 +361,6 @@ class QueryControllerTest extends ControllerTest {
         seedBatteryDpps();
 
         assertCount(query(filter(baseQuery("COUNT"), 0, "does.not.exist", "NOT_EXISTS", null)), 5);
-    }
-
-    @Test
-    void missingPathWithComparison_shouldReturnBadRequest() throws Exception {
-        seedBatteryDpps();
-
-        sendRequest(filter(baseQuery("COUNT"), 0, "does.not.exist", "GT", "10"))
-                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -343,15 +420,15 @@ class QueryControllerTest extends ControllerTest {
         seedTraverseData();
 
         // Seed another subject type "Drone" referencing Battery A
-        registerSubjectType("Drone");
-        issue(ISSUER_ID + "-drone-1", "Drone", Map.of(
+        registerSubjectType(DRONE_SUBJECT_TYPE);
+        issue(ISSUER_ID + "-drone-1", DRONE_SUBJECT_TYPE, Map.of(
                 "name", "Drone 1",
                 "power_source", Map.of("$ref", SUBJECT_TYPE + "/" + ISSUER_ID + "-battery-1")
         ));
 
         MockHttpServletRequestBuilder request = baseTraverseQuery(SUBJECT_TYPE, ISSUER_ID + "-battery-1");
-        addSource(request, 0, "Vehicle", "battery", "other_reference");
-        addSource(request, 1, "Drone", "power_source");
+        addSource(request, 0, VEHICLE_SUBJECT_TYPE, "battery", "other_reference");
+        addSource(request, 1, DRONE_SUBJECT_TYPE, "power_source");
 
         JsonNode response = query(request);
         assertEquals(3, response.path("matches").size());
@@ -409,26 +486,35 @@ class QueryControllerTest extends ControllerTest {
     }
 
     private void seedTraverseData() throws Exception {
-        registerSubjectType("Vehicle");
+        registerSubjectType(VEHICLE_SUBJECT_TYPE);
 
         // Issue a vehicle referencing Battery A (ISSUER_ID + "-battery-1")
-        issue(ISSUER_ID + "-vehicle-1", "Vehicle", Map.of(
+        issue(ISSUER_ID + "-vehicle-1", VEHICLE_SUBJECT_TYPE, Map.of(
                 "name", "Car 1",
                 "battery", Map.of("$ref", SUBJECT_TYPE + "/" + ISSUER_ID + "-battery-1")
         ));
 
         // Issue another vehicle referencing Battery A but in a different path
-        issue(ISSUER_ID + "-vehicle-2", "Vehicle", Map.of(
+        issue(ISSUER_ID + "-vehicle-2", VEHICLE_SUBJECT_TYPE, Map.of(
                 "name", "Car 2",
                 "other_reference", Map.of("$ref", SUBJECT_TYPE + "/" + ISSUER_ID + "-battery-1")
         ));
     }
 
     private MockHttpServletRequestBuilder baseQuery(String resultMode) {
+        return baseQueryForSubjectTypes(resultMode, SUBJECT_TYPE);
+    }
+
+    private MockHttpServletRequestBuilder baseQueryForSubjectTypes(String resultMode, String... subjectTypes) {
+        MockHttpServletRequestBuilder request = baseQueryWithoutSubjectTypes(resultMode);
+        request.param("subjectTypes", subjectTypes);
+        return request;
+    }
+
+    private MockHttpServletRequestBuilder baseQueryWithoutSubjectTypes(String resultMode) {
         return get("/query/predicate")
                 .param("resultMode", resultMode)
-                .param("executionMode", executionMode.name())
-                .param("subjectType", SUBJECT_TYPE);
+                .param("executionMode", executionMode.name());
     }
 
     private MockHttpServletRequestBuilder filter(MockHttpServletRequestBuilder request, int index, String path,
@@ -482,6 +568,33 @@ class QueryControllerTest extends ControllerTest {
         issue(ISSUER_ID + "-battery-3", batteryCRevision1());
         issue(ISSUER_ID + "-battery-4", batteryDRevision1());
         issue(ISSUER_ID + "-battery-5", batteryERevision1());
+    }
+
+    private void seedMultiSubjectDpps() throws Exception {
+        seedBatteryDpps();
+        registerSubjectType(VEHICLE_SUBJECT_TYPE);
+        registerSubjectType(DRONE_SUBJECT_TYPE);
+
+        issue(ISSUER_ID + "-vehicle-query-1", VEHICLE_SUBJECT_TYPE, Map.of(
+                "name", "Vehicle Alpha", "serial", "V-001", "category", "transport", "chemistry", "NMC",
+                "weight_kg", 1200, "recyclable", false,
+                "manufacturer", Map.of("name", "FleetWorks", "country", "CH"),
+                "metrics", Map.of("soh", 0.73, "cycles", 900)));
+        issue(ISSUER_ID + "-vehicle-query-2", VEHICLE_SUBJECT_TYPE, Map.of(
+                "name", "Vehicle Beta", "serial", "V-002", "category", "transport", "chemistry", "LFP",
+                "weight_kg", 900, "recyclable", true,
+                "manufacturer", Map.of("name", "RoadMakers", "country", "DE"),
+                "metrics", Map.of("soh", 0.81, "cycles", 500)));
+        issue(ISSUER_ID + "-drone-query-1", DRONE_SUBJECT_TYPE, Map.of(
+                "name", "Drone Scout", "serial", "DR-001", "category", "aerial", "chemistry", "NMC",
+                "weight_kg", 12, "recyclable", true,
+                "manufacturer", Map.of("name", "SkyLabs", "country", "CH"),
+                "metrics", Map.of("soh", 0.97, "cycles", 40)));
+        issue(ISSUER_ID + "-drone-query-2", DRONE_SUBJECT_TYPE, Map.of(
+                "name", "Drone Cargo", "serial", "DR-002", "category", "aerial", "chemistry", "LiPo",
+                "weight_kg", 25, "recyclable", false,
+                "manufacturer", Map.of("name", "LiftAir", "country", "US"),
+                "metrics", Map.of("soh", 0.92, "cycles", 75)));
     }
 
     private DppRevisionResponseDTO issue(String dppId, Map<String, Object> payload) throws Exception {

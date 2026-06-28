@@ -1,5 +1,6 @@
 package ch.bfh.generic_dpp_platform.queries.services;
 
+import ch.bfh.generic_dpp_platform.admin.models.SubjectType;
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
 import ch.bfh.generic_dpp_platform.queries.dtos.PredicateQueryRequestDTO;
@@ -8,7 +9,9 @@ import ch.bfh.generic_dpp_platform.queries.dtos.TraverseQueryRequestDTO;
 import ch.bfh.generic_dpp_platform.queries.dtos.TraverseQueryResponseDTO;
 import lombok.RequiredArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Common result shaping for the two local derived-query execution strategies.
@@ -33,8 +36,19 @@ public abstract class AbstractQueryMatcher {
     public PredicateQueryResponseDTO queryPredicate(PredicateQueryRequestDTO request) {
         String platformId = platformConfigService.getPlatformConfig().getIssuerId();
 
-        if(!subjectTypeRepository.existsByName(request.getSubjectType())) {
-            return PredicateQueryResponseDTO.empty(request, platformId);
+        //If no subject types are specified, query all subject types
+        if (request.getSubjectTypes() == null || request.getSubjectTypes().isEmpty()) {
+            request.setSubjectTypes(subjectTypeRepository.findAll().stream().map(SubjectType::getName).toList());
+        } else {
+            List<String> actualSubjectTypes = new ArrayList<>(request.getSubjectTypes().size());
+            for (String subjectType : request.getSubjectTypes()) {
+                Optional<SubjectType> subjectTypeOptional = subjectTypeRepository.findByNameIgnoreCase(subjectType);
+                subjectTypeOptional.ifPresent(type -> actualSubjectTypes.add(type.getName()));
+            }
+            if (actualSubjectTypes.isEmpty()) {
+                return PredicateQueryResponseDTO.empty(request, platformId);
+            }
+            request.setSubjectTypes(actualSubjectTypes);
         }
 
         return switch (request.getResultMode()) {

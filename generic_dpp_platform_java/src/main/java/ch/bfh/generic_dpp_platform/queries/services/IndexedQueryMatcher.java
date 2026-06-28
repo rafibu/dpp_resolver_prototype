@@ -2,7 +2,6 @@ package ch.bfh.generic_dpp_platform.queries.services;
 
 import ch.bfh.generic_dpp_platform.admin.repositories.SubjectTypeRepository;
 import ch.bfh.generic_dpp_platform.admin.services.PlatformConfigService;
-import ch.bfh.generic_dpp_platform.queries.dtos.PredicateFilterDTO;
 import ch.bfh.generic_dpp_platform.queries.dtos.PredicateQueryRequestDTO;
 import ch.bfh.generic_dpp_platform.queries.dtos.TraverseQueryRequestDTO;
 import ch.bfh.generic_dpp_platform.queries.dtos.TraverseSourceScopeDTO;
@@ -41,9 +40,7 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
     @Override
     @Transactional(readOnly = true)
     protected Object queryMatches(PredicateQueryRequestDTO request) {
-        return matchingFactGroups(request)
-                .map(factsByPath -> selectFields(factsByPath, request.getReturnFields()))
-                .toList();
+        return matchingSelectedFactValues(request).toList();
     }
 
     /**
@@ -82,9 +79,8 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
                     .values()
                     .stream()
                     .filter(factsByPath -> indexedFactsContainReference(factsByPath, sourceScope, request))
-                    .map(factsByPath -> (Object) selectFields(factsByPath, null))
+                    .map(factsByPath -> (Object) factValuesByPath(factsByPath))
                     .toList();
-
             matches.addAll(scopeMatches);
         }
 
@@ -190,57 +186,67 @@ public class IndexedQueryMatcher extends AbstractQueryMatcher {
         throw new IllegalArgumentException("Aggregate value is not numeric for path: " + fact.getPath());
     }
 
-    private Stream<Map<String, QueryAttributeFact>> matchingFactGroups(PredicateQueryRequestDTO request) {
-        return factsGroupedByDpp(request.getSubjectType()).values().stream()
-                .filter(factsByPath -> matchesAllFilters(factsByPath, request));
+    /**
+     * Returns SELECT rows as flat path-value maps, applying both filters and requested return fields in the repository.
+     */
+    private Stream<Map<String, Object>> matchingSelectedFactValues(PredicateQueryRequestDTO request) {
+        return factsGroupedByDpp(request, request.getReturnFields())
+                .values()
+                .stream()
+                .map(this::factValuesByPath);
     }
 
+    /**
+     * Returns complete matching fact groups for COUNT and SUM; return fields are intentionally ignored here.
+     */
+    private Stream<Map<String, QueryAttributeFact>> matchingFactGroups(PredicateQueryRequestDTO request) {
+        return factsGroupedByDpp(request, null).values().stream();
+    }
+
+    /**
+     * Loads DB-filtered facts for a predicate request and groups them by logical DPP ID and path.
+     *
+     * @param returnFields optional SELECT projection; pass {@code null} when full fact groups are required
+     */
+    private Map<String, Map<String, QueryAttributeFact>> factsGroupedByDpp(
+            PredicateQueryRequestDTO request,
+            List<String> returnFields
+    ) {
+        return groupFactsByDpp(queryAttributeFactRepository.findAllBySubjectTypesNameAndFilters(
+                request.getSubjectTypes(),
+                request.getFilters(),
+                returnFields
+        ));
+    }
+
+    /**
+     * Loads all facts for a source subject type and groups them for in-memory traverse matching.
+     */
     private Map<String, Map<String, QueryAttributeFact>> factsGroupedByDpp(String subjectType) {
+        return groupFactsByDpp(queryAttributeFactRepository.findAllBySubjectTypeName(subjectType));
+    }
+
+    /**
+     * Groups flat fact rows into logical DPP records keyed by query path.
+     */
+    private Map<String, Map<String, QueryAttributeFact>> groupFactsByDpp(List<QueryAttributeFact> facts) {
         Map<String, Map<String, QueryAttributeFact>> result = new LinkedHashMap<>();
 
-        for (QueryAttributeFact fact : queryAttributeFactRepository.findAllBySubjectTypeName(subjectType)) {
+        for (QueryAttributeFact fact : facts) {
             String logicalDppId = fact.getId().getLogicalDppId();
             result.computeIfAbsent(logicalDppId, ignored -> new LinkedHashMap<>())
                     .put(fact.getPath(), fact);
         }
+
         return result;
     }
 
-    private boolean matchesAllFilters(Map<String, QueryAttributeFact> factsByPath, PredicateQueryRequestDTO request) {
-        return request.getFilters() == null
-                || request.getFilters().isEmpty()
-                || request.getFilters().stream().allMatch(filter -> matchesFilter(factsByPath, filter));
-    }
-
-    private boolean matchesFilter(Map<String, QueryAttributeFact> factsByPath, PredicateFilterDTO filter) {
-        QueryAttributeFact fact = factsByPath.get(filter.getPath());
-        Object documentValue = fact == null ? null : fact.getValue();
-
-        try {
-            return filter.matches(documentValue);
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(
-                    "Invalid indexed filter: " + filter.getPath() + " " + filter.getOperator() + " " + filter.getValue(),
-                    exception
-            );
-        }
-    }
-
-    private Map<String, Object> selectFields(Map<String, QueryAttributeFact> factsByPath, List<String> returnFields) {
+    /**
+     * Converts one grouped fact record into the flat path-value response representation.
+     */
+    private Map<String, Object> factValuesByPath(Map<String, QueryAttributeFact> factsByPath) {
         Map<String, Object> result = new LinkedHashMap<>();
-
-        if (returnFields == null || returnFields.isEmpty()) {
-            factsByPath.forEach((path, fact) -> result.put(path, fact.getValue()));
-            return result;
-        }
-
-        for (String returnField : returnFields) {
-            QueryAttributeFact fact = factsByPath.get(returnField);
-            if (fact != null) {
-                result.put(returnField, fact.getValue());
-            }
-        }
-
+        factsByPath.forEach((path, fact) -> result.put(path, fact.getValue()));
         return result;
     }
 }

@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,5 +19,5 @@ public interface LogicalDppRepository extends JpaRepository<LogicalDpp, String> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<LogicalDpp> findWithLockByDppId(String dppId);
 
-    List<LogicalDpp> findAllBySubjectType(SubjectType subjectType);
+    List<LogicalDpp> findAllBySubjectTypeIn(Collection<SubjectType> subjectTypes);
 }

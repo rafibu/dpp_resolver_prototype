@@ -45,10 +45,6 @@ public class PredicateQueryService {
             throw new IllegalArgumentException("execution_mode is required");
         }
 
-        if (request.getSubjectType() == null || request.getSubjectType().isBlank()) {
-            throw new IllegalArgumentException("subject_type is required");
-        }
-
         switch (request.getResultMode()) {
             case SUM -> {
                 if (request.getAggregatePath() == null || request.getAggregatePath().isBlank()) {

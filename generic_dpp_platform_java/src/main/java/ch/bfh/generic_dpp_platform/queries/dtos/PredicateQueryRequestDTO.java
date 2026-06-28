@@ -41,10 +41,9 @@ public class PredicateQueryRequestDTO {
     private QueryExecutionMode executionMode = QueryExecutionMode.INDEXED;
 
     /**
-     * The subject type of the DPPs to query.
+     * The subject types of the DPPs to query. If empty or null, all DPPs will be returned.
      */
-    @NotNull
-    private String subjectType;
+    private List<String> subjectTypes;
 
     /**
      * A list of filters that define the conditions applied to the queried data.<br>

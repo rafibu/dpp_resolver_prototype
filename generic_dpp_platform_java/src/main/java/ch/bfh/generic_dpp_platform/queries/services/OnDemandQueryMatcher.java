@@ -14,7 +14,10 @@ import ch.bfh.generic_dpp_platform.queries.helpers.PredicateQueryHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
@@ -79,7 +82,7 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
     protected List<Object> executeTraverseQuery(TraverseQueryRequestDTO request) {
         List<Object> matches = new LinkedList<>();
         for (TraverseSourceScopeDTO sourceScope : request.getSources()) {
-            List<Object> scopeMatches = getAllDppsForSubjectType(sourceScope.getSubjectType())
+            List<Object> scopeMatches = getAllDppsForSubjectTypes(List.of(sourceScope.getSubjectType()))
                     .stream()
                     .map(this::getLatestRevisionForDpp)
                     .map(DppRevision::getDppDocument)
@@ -162,7 +165,7 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
     }
 
     private Stream<Map<String, Object>> matchingDocuments(PredicateQueryRequestDTO request) {
-        return getAllDppsForSubjectType(request.getSubjectType()).stream()
+        return getAllDppsForSubjectTypes(request.getSubjectTypes()).stream()
                 .map(this::getLatestRevisionForDpp)
                 .map(DppRevision::getDppDocument)
                 .filter(document -> matchesAllFilters(document, request));
@@ -182,12 +185,12 @@ public class OnDemandQueryMatcher extends AbstractQueryMatcher {
     }
 
 
-    private List<LogicalDpp> getAllDppsForSubjectType(String subjectType) {
-        Optional<SubjectType> subjectTypeEntity = subjectTypeRepository.findByName(subjectType);
+    private List<LogicalDpp> getAllDppsForSubjectTypes(List<String> subjectTypes) {
+        List<SubjectType> subjectTypeEntity = subjectTypeRepository.findAllByNameIn(subjectTypes);
         if (subjectTypeEntity.isEmpty()) {
             return List.of();
         }
-        return dppRepository.findAllBySubjectType(subjectTypeEntity.get());
+        return dppRepository.findAllBySubjectTypeIn(subjectTypeEntity);
     }
 
     private DppRevision getLatestRevisionForDpp(LogicalDpp dpp) {
