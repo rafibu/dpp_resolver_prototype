@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from typing import Any, Optional
 
 
@@ -79,16 +79,38 @@ class FederatedPredicateQueryRequest(BaseModel):
 
     ``timeout_ms`` is the only field not forwarded to platforms; it bounds the
     whole federated fan-out. The platform-local body is produced by
-    :meth:`to_platform_body`.
+    :meth:`to_platform_body`. ``subject_types`` is optional: omitted, ``null``,
+    and ``[]`` all mean that each platform searches all local subject types.
+    ``subject_type`` is accepted as a legacy input field only; new requests send
+    ``subject_types``.
     """
 
     result_mode: QueryResultMode
     execution_mode: QueryExecutionMode = QueryExecutionMode.INDEXED
-    subject_type: str
+    subject_types: Optional[list[str]] = None
     filters: list[PredicateFilter] = Field(default_factory=list)
     return_fields: Optional[list[str]] = None
     aggregate_path: Optional[str] = None
     timeout_ms: Optional[int] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_subject_type(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "subject_types" in data:
+            return data
+        legacy = data.get("subject_type")
+        if legacy is None:
+            return data
+        copied = dict(data)
+        copied["subject_types"] = [legacy]
+        return copied
+
+    @property
+    def subject_type(self) -> Optional[str]:
+        """Compatibility accessor for older callers that expect one type."""
+        if self.subject_types and len(self.subject_types) == 1:
+            return self.subject_types[0]
+        return None
 
     def to_platform_body(self) -> dict[str, Any]:
         """Build the snake_case platform-local query body.
@@ -99,7 +121,6 @@ class FederatedPredicateQueryRequest(BaseModel):
         body: dict[str, Any] = {
             "result_mode": self.result_mode.value,
             "execution_mode": self.execution_mode.value,
-            "subject_type": self.subject_type,
             "filters": [
                 {
                     "path": f.path,
@@ -109,6 +130,8 @@ class FederatedPredicateQueryRequest(BaseModel):
                 for f in self.filters
             ],
         }
+        if self.subject_types:
+            body["subject_types"] = list(self.subject_types)
         if self.return_fields is not None:
             body["return_fields"] = self.return_fields
         if self.aggregate_path is not None:

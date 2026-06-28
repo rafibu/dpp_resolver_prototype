@@ -10,7 +10,7 @@ from query_client.models import (
 
 
 def _request(**overrides):
-    base = {"result_mode": "SELECT", "subject_type": "battery", "filters": []}
+    base = {"result_mode": "SELECT", "subject_types": ["battery"], "filters": []}
     base.update(overrides)
     return FederatedPredicateQueryRequest.model_validate(base)
 

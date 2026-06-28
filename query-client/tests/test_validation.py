@@ -7,7 +7,7 @@ from query_client.validation import QueryValidationError, validate_request
 def _request(**overrides):
     base = {
         "result_mode": "SELECT",
-        "subject_type": "battery",
+        "subject_types": ["battery"],
         "filters": [],
     }
     base.update(overrides)
@@ -85,6 +85,7 @@ def test_gt_requires_numeric_value():
     # numeric string is accepted
     validate_request(_request(filters=[{"path": "x", "operator": "GT", "value": "12.5"}]))
     validate_request(_request(filters=[{"path": "x", "operator": "GT", "value": 5}]))
+    validate_request(_request(filters=[{"path": "manufacturing.date", "operator": "GTE", "value": "2024-01-01"}]))
 
 
 def test_gt_rejects_boolean_value():
@@ -106,3 +107,10 @@ def test_unknown_operator_rejected_by_pydantic():
         _request(filters=[{"path": "x", "operator": "BETWEEN", "value": [1, 2]}])
     with pytest.raises(pydantic.ValidationError):
         _request(filters=[{"path": "x", "operator": "CONTAINS", "value": "a"}])
+
+
+def test_subject_types_are_optional_but_not_blank():
+    validate_request(_request(subject_types=[]))
+    validate_request(_request(subject_types=None))
+    with pytest.raises(QueryValidationError):
+        validate_request(_request(subject_types=["battery", " "]))

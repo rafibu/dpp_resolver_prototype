@@ -1,7 +1,6 @@
 """Unit tests for the in-memory job store."""
 
 import asyncio
-
 import pytest
 
 from query_client.job_store import JobStore
@@ -10,7 +9,7 @@ from query_client.models import FederatedPredicateQueryRequest, JobStatus
 
 def _request():
     return FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "COUNT", "subject_type": "battery"}
+        {"result_mode": "COUNT", "subject_types": ["battery"]}
     )
 
 

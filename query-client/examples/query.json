@@ -1,7 +1,7 @@
 {
   "result_mode": "SUM",
   "execution_mode": "INDEXED",
-  "subject_type": "battery",
+  "subject_types": ["battery"],
   "filters": [
     { "path": "status", "operator": "EQ", "value": "active" },
     { "path": "material_composition.mass_kg", "operator": "GT", "value": 0 }

@@ -4,6 +4,7 @@ import json
 import pytest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+
 from query_client.models import (
     CombinedQueryResult,
     FederatedPredicateQueryRequest,
@@ -18,7 +19,7 @@ from query_client.models import (
 
 
 def _request(**overrides):
-    base = {"result_mode": "SELECT", "subject_type": "battery"}
+    base = {"result_mode": "SELECT", "subject_types": ["battery"]}
     base.update(overrides)
     return FederatedPredicateQueryRequest.model_validate(base)
 
@@ -37,11 +38,12 @@ def test_to_platform_body_excludes_timeout_and_keeps_snake_case():
     )
     body = request.to_platform_body()
 
-    assert set(body) == {"result_mode", "execution_mode", "subject_type", "filters", "return_fields"}
+    assert set(body) == {"result_mode", "execution_mode", "subject_types", "filters", "return_fields"}
     assert "timeout_ms" not in body
     assert "aggregate_path" not in body  # not a SUM query
     assert body["result_mode"] == "SELECT"
     assert body["execution_mode"] == "ON_DEMAND"
+    assert body["subject_types"] == ["battery"]
     assert body["return_fields"] == ["status", "mass_kg"]
     assert body["filters"][1] == {"path": "mass_kg", "operator": "GT", "value": 10}
     assert body["filters"][2]["value"] == ["red", "blue"]
@@ -60,6 +62,20 @@ def test_to_platform_body_defaults_execution_mode_indexed():
     body = _request().to_platform_body()
     assert body["execution_mode"] == "INDEXED"
     assert body["filters"] == []
+
+
+def test_to_platform_body_omits_empty_subject_types_for_all_type_query():
+    body = _request(subject_types=[]).to_platform_body()
+    assert "subject_types" not in body
+
+
+def test_legacy_subject_type_input_is_accepted_but_not_emitted():
+    request = FederatedPredicateQueryRequest.model_validate(
+        {"result_mode": "SELECT", "subject_type": "battery"}
+    )
+    assert request.subject_types == ["battery"]
+    assert request.subject_type == "battery"
+    assert request.to_platform_body()["subject_types"] == ["battery"]
 
 
 def test_platform_response_preserves_unknown_fields():

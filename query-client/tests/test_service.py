@@ -5,7 +5,6 @@ slow responses (for federation timeouts) without a real network.
 """
 
 import asyncio
-
 import httpx
 import pytest
 
@@ -79,7 +78,7 @@ async def test_select_full_flow():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery", "filters": []}
+        {"result_mode": "SELECT", "subject_types": ["battery"], "filters": []}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -108,7 +107,7 @@ async def test_count_sums_across_platforms():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "COUNT", "subject_type": "battery"}
+        {"result_mode": "COUNT", "subject_types": ["battery"]}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -129,7 +128,7 @@ async def test_sum_aggregates_with_decimal():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SUM", "subject_type": "battery", "aggregate_path": "mass_kg"}
+        {"result_mode": "SUM", "subject_types": ["battery"], "aggregate_path": "mass_kg"}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -146,7 +145,7 @@ async def test_partial_when_one_platform_fails():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery"}
+        {"result_mode": "SELECT", "subject_types": ["battery"]}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -168,7 +167,7 @@ async def test_timeout_marks_slow_platform():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery", "timeout_ms": 200}
+        {"result_mode": "SELECT", "subject_types": ["battery"], "timeout_ms": 200}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -189,7 +188,7 @@ async def test_failed_when_all_platforms_fail():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "COUNT", "subject_type": "battery"}
+        {"result_mode": "COUNT", "subject_types": ["battery"]}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -206,7 +205,7 @@ async def test_invalid_platform_shape_is_failed_not_fatal():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery"}
+        {"result_mode": "SELECT", "subject_types": ["battery"]}
     )
     result = await service.run_to_completion(request)
     await service.aclose()
@@ -223,7 +222,7 @@ async def test_background_start_and_poll():
     }
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery"}
+        {"result_mode": "SELECT", "subject_types": ["battery"]}
     )
     job = await service.start(request)
     assert job.status in (JobStatus.PENDING, JobStatus.RUNNING)
@@ -247,7 +246,7 @@ async def test_resolver_failure_marks_job_failed():
     handlers = {"resolver": _bad_resolver}
     service = _service_with(handlers)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "COUNT", "subject_type": "battery"}
+        {"result_mode": "COUNT", "subject_types": ["battery"]}
     )
     result = await service.run_to_completion(request)
     await service.aclose()

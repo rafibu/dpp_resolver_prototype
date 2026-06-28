@@ -7,6 +7,7 @@ values or evaluates predicates - that remains the platform's responsibility.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from .models import (
@@ -36,6 +37,9 @@ def validate_request(request: FederatedPredicateQueryRequest) -> None:
 
     Raises :class:`QueryValidationError` on the first violation found.
     """
+    for index, subject_type in enumerate(request.subject_types or []):
+        if not subject_type or not subject_type.strip():
+            raise QueryValidationError(f"subject_types[{index}] must not be blank")
     _validate_result_mode_fields(request)
     for index, filter_ in enumerate(request.filters):
         _validate_filter(filter_, index)
@@ -82,7 +86,7 @@ def _validate_filter(filter_: PredicateFilter, index: int) -> None:
         return
 
     if operator in _NUMERIC_REQUIRED:
-        _require_numeric_scalar(value, where)
+        _require_ordered_scalar(value, where)
         return
 
     if operator is PredicateOperator.IN:
@@ -97,21 +101,17 @@ def _require_scalar(value: Any, where: str) -> None:
         raise QueryValidationError(f"{where}: value must be a single scalar")
 
 
-def _require_numeric_scalar(value: Any, where: str) -> None:
+def _require_ordered_scalar(value: Any, where: str) -> None:
     if value is None:
-        raise QueryValidationError(f"{where}: a numeric value is required")
+        raise QueryValidationError(f"{where}: a numeric or ISO date value is required")
     if isinstance(value, bool) or isinstance(value, (list, tuple, dict)):
-        raise QueryValidationError(f"{where}: value must be a single numeric scalar")
+        raise QueryValidationError(f"{where}: value must be a single numeric or ISO date scalar")
     if isinstance(value, (int, float)):
         return
-    # Accept numeric strings (e.g. "42.5") since JSON clients may send them.
     if isinstance(value, str):
-        try:
-            float(value)
+        if _is_numeric_string(value) or _is_iso_date(value):
             return
-        except ValueError:
-            pass
-    raise QueryValidationError(f"{where}: value must be numeric")
+    raise QueryValidationError(f"{where}: value must be numeric or an ISO date/date-time")
 
 
 def _require_non_empty_array(value: Any, where: str) -> None:
@@ -119,3 +119,25 @@ def _require_non_empty_array(value: Any, where: str) -> None:
         raise QueryValidationError(f"{where}: IN requires an array value")
     if len(value) == 0:
         raise QueryValidationError(f"{where}: IN requires a non-empty array value")
+
+
+def _is_numeric_string(value: str) -> bool:
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_iso_date(value: str) -> bool:
+    text = value.strip()
+    if not text:
+        return False
+    try:
+        if "T" not in text:
+            datetime.strptime(text, "%Y-%m-%d")
+            return True
+        datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return True
+    except ValueError:
+        return False

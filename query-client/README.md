@@ -37,8 +37,9 @@ This module implements only the predicate-retrieval part of that orchestration:
 The generic Java and Python platforms expose `GET /query/predicate` and bind
 flattened query parameters such as `resultMode` and `filters[0].path`. This
 client now uses that contract by default, including repeated
-`filters[i].value` parameters for `IN` filters. A non-GET method remains an
-explicit legacy override for deployments that expose a JSON-body endpoint.
+`subjectTypes` parameters and repeated `filters[i].value` parameters for `IN`
+filters. A non-GET method remains an explicit legacy override for deployments
+that expose a JSON-body endpoint.
 
 ## Requirements
 
@@ -95,7 +96,7 @@ OpenAPI docs are then available at `http://localhost:8090/docs`.
 {
   "result_mode": "SELECT | COUNT | SUM",
   "execution_mode": "INDEXED | ON_DEMAND",
-  "subject_type": "battery",
+  "subject_types": ["battery"],
   "filters": [{ "path": "status", "operator": "EQ", "value": "active" }],
   "return_fields": ["status"],
   "aggregate_path": "material_composition.mass_kg",
@@ -103,22 +104,81 @@ OpenAPI docs are then available at `http://localhost:8090/docs`.
 }
 ```
 
-- `result_mode` and `subject_type` are required.
+- `result_mode` is required.
 - `execution_mode` defaults to `INDEXED`.
-- `filters` is optional; empty matches all revisions of the subject type. Filters
-  are AND-combined by the platform (the client never adds OR semantics).
+- `subject_types` is optional. Omitted, `null`, or `[]` means all DPP subject
+  types. One value restricts the query to one type; several values restrict it
+  to that set. Legacy input named `subject_type` is accepted, but `subject_types`
+  takes precedence and new requests are serialized with `subject_types`.
+- `filters` is optional; empty matches all current revisions in the selected
+  subject-type scope. Filters are AND-combined by the platform (the client never
+  adds OR semantics).
 - `return_fields` is valid only for `SELECT`.
 - `aggregate_path` is required for `SUM`, forbidden for `SELECT`/`COUNT`.
 - Operators: `EQ, NEQ, EXISTS, NOT_EXISTS, IN, GT, GTE, LT, LTE`.
   - `EXISTS`/`NOT_EXISTS` must not carry a value.
-  - `EQ`/`NEQ` require one scalar; `GT/GTE/LT/LTE` one numeric scalar; `IN` a
-    non-empty array.
+  - `EQ`/`NEQ` require one scalar; `GT/GTE/LT/LTE` one numeric or date scalar;
+    `IN` a non-empty array.
   - `BETWEEN`/`CONTAINS` are not supported.
+- Predicate paths refer to projected facts, not arbitrary raw payload paths.
 
 The forwarded **platform-local** JSON body contains only `result_mode`,
-`execution_mode`, `subject_type`, `filters`, `return_fields`, `aggregate_path`
-(snake_case JSON). See the compatibility note above before using it with the
-generic platforms.
+`execution_mode`, `subject_types`, `filters`, `return_fields`, `aggregate_path`
+(snake_case JSON), omitting `subject_types` for all-type queries. See the
+compatibility note above before using it with the generic platforms.
+
+#### Copyable request examples
+
+All subject types from one factory in a date range:
+
+```json
+{
+  "result_mode": "SELECT",
+  "execution_mode": "INDEXED",
+  "filters": [
+    { "path": "manufacturing.facilityId", "operator": "EQ", "value": "factory-a" },
+    { "path": "manufacturing.date", "operator": "GTE", "value": "2024-01-01" },
+    { "path": "manufacturing.date", "operator": "LTE", "value": "2024-12-31" }
+  ],
+  "return_fields": ["manufacturing.facilityId", "manufacturing.date"]
+}
+```
+
+Several factories in a date range:
+
+```json
+{
+  "result_mode": "COUNT",
+  "filters": [
+    { "path": "manufacturing.facilityId", "operator": "IN", "value": ["factory-a", "factory-b", "factory-c"] },
+    { "path": "manufacturing.date", "operator": "GTE", "value": "2024-01-01" },
+    { "path": "manufacturing.date", "operator": "LTE", "value": "2024-12-31" }
+  ]
+}
+```
+
+Factories supplying a store, DPPs containing lead, and total lead mass use the
+same projected-fact model:
+
+```json
+{ "result_mode": "SELECT", "filters": [
+  { "path": "logistics.destinationStoreId", "operator": "EQ", "value": "store-17" },
+  { "path": "logistics.deliveryDate", "operator": "GTE", "value": "2024-01-01" },
+  { "path": "logistics.deliveryDate", "operator": "LTE", "value": "2024-12-31" }
+] }
+```
+
+```json
+{ "result_mode": "SELECT", "subject_types": ["pv_module", "battery_pack"], "filters": [
+  { "path": "materialComposition.materialId", "operator": "EQ", "value": "Pb" }
+] }
+```
+
+```json
+{ "result_mode": "SUM", "subject_types": ["pv_module", "battery_pack"], "filters": [
+  { "path": "materialComposition.materialId", "operator": "EQ", "value": "Pb" }
+], "aggregate_path": "materialComposition.mass" }
+```
 
 ## CLI (reproducible runs)
 
@@ -136,7 +196,7 @@ from query_client import FederatedPredicateQueryRequest, run_federated_query
 
 request = FederatedPredicateQueryRequest.model_validate({
     "result_mode": "COUNT",
-    "subject_type": "battery",
+    "subject_types": ["battery"],
     "filters": [{"path": "status", "operator": "EQ", "value": "active"}],
 })
 result = await run_federated_query(request)

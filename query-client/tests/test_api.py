@@ -9,8 +9,8 @@ transport, so no real network is used.
 import asyncio
 import httpx
 import pytest
-from query_client.main import create_app
 
+from query_client.main import create_app
 from support import (
     json_handler,
     make_service,
@@ -60,7 +60,7 @@ async def test_start_poll_result_select_flow():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         start = await client.post(
             "/api/v1/federated-queries/predicate",
-            json={"result_mode": "SELECT", "subject_type": "battery"},
+            json={"result_mode": "SELECT", "subject_types": ["battery"]},
         )
         assert start.status_code == 202
         body = start.json()
@@ -92,7 +92,7 @@ async def test_invalid_request_returns_422():
         # aggregate_path is required for SUM -> semantic validation error.
         resp = await client.post(
             "/api/v1/federated-queries/predicate",
-            json={"result_mode": "SUM", "subject_type": "battery"},
+            json={"result_mode": "SUM", "subject_types": ["battery"]},
         )
     assert resp.status_code == 422
     await service.aclose()
@@ -105,7 +105,7 @@ async def test_pydantic_validation_error_returns_422():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/federated-queries/predicate",
-            json={"result_mode": "NONSENSE", "subject_type": "battery"},
+            json={"result_mode": "NONSENSE", "subject_types": ["battery"]},
         )
     assert resp.status_code == 422
     await service.aclose()
@@ -135,7 +135,7 @@ async def test_partial_result_while_running_then_completes():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         start = (await client.post(
             "/api/v1/federated-queries/predicate",
-            json={"result_mode": "SELECT", "subject_type": "battery", "timeout_ms": 5000},
+            json={"result_mode": "SELECT", "subject_types": ["battery"], "timeout_ms": 5000},
         )).json()
 
         # Immediately fetch the result: it should be a partial RUNNING snapshot.
@@ -160,7 +160,7 @@ async def test_delete_cancels_running_job():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         start = (await client.post(
             "/api/v1/federated-queries/predicate",
-            json={"result_mode": "SELECT", "subject_type": "battery", "timeout_ms": 10000},
+            json={"result_mode": "SELECT", "subject_types": ["battery"], "timeout_ms": 10000},
         )).json()
         await asyncio.sleep(0.02)  # let it reach RUNNING
         deleted = await client.delete(start["status_url"])

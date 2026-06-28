@@ -1,7 +1,6 @@
 """Tests for the run_query CLI logic (no network; run_federated_query patched)."""
 
 import json
-
 import pytest
 
 import query_client.run_query as run_query
@@ -20,7 +19,7 @@ def _result(status: JobStatus, **extra) -> FederatedQueryResultResponse:
         "job_id": "job-1",
         "status": status,
         "query": FederatedPredicateQueryRequest.model_validate(
-            {"result_mode": "COUNT", "subject_type": "battery"}
+            {"result_mode": "COUNT", "subject_types": ["battery"]}
         ),
         "timeout_ms": 1000,
         "created_at": datetime.now(timezone.utc),
@@ -50,7 +49,7 @@ def test_cli_prints_result_json_and_exits_zero(tmp_path, capsys, monkeypatch):
         return _result(JobStatus.SUCCESS)
 
     monkeypatch.setattr(run_query, "run_federated_query", fake)
-    request_path = _write_request(tmp_path, {"result_mode": "COUNT", "subject_type": "battery"})
+    request_path = _write_request(tmp_path, {"result_mode": "COUNT", "subject_types": ["battery"]})
 
     exit_code = run_query.main(["--request", request_path])
     assert exit_code == 0
@@ -69,7 +68,7 @@ def test_cli_partial_exits_zero(tmp_path, capsys, monkeypatch):
         return _result(JobStatus.PARTIAL, complete=False, failed_platforms=1)
 
     monkeypatch.setattr(run_query, "run_federated_query", fake)
-    request_path = _write_request(tmp_path, {"result_mode": "COUNT", "subject_type": "battery"})
+    request_path = _write_request(tmp_path, {"result_mode": "COUNT", "subject_types": ["battery"]})
     assert run_query.main(["--request", request_path]) == 0
 
 
@@ -78,7 +77,7 @@ def test_cli_failed_exits_one(tmp_path, capsys, monkeypatch):
         return _result(JobStatus.FAILED, complete=False, successful_platforms=0, failed_platforms=1)
 
     monkeypatch.setattr(run_query, "run_federated_query", fake)
-    request_path = _write_request(tmp_path, {"result_mode": "COUNT", "subject_type": "battery"})
+    request_path = _write_request(tmp_path, {"result_mode": "COUNT", "subject_types": ["battery"]})
     assert run_query.main(["--request", request_path]) == 1
 
 
@@ -87,7 +86,7 @@ def test_cli_validation_error_exits_two(tmp_path, capsys, monkeypatch):
         raise QueryValidationError("aggregate_path is required for result_mode SUM")
 
     monkeypatch.setattr(run_query, "run_federated_query", fake)
-    request_path = _write_request(tmp_path, {"result_mode": "SUM", "subject_type": "battery"})
+    request_path = _write_request(tmp_path, {"result_mode": "SUM", "subject_types": ["battery"]})
     assert run_query.main(["--request", request_path]) == 2
     err = capsys.readouterr().err
     assert "Invalid query request" in err
@@ -99,7 +98,7 @@ def test_cli_malformed_request_raises(tmp_path, monkeypatch):
 
     monkeypatch.setattr(run_query, "run_federated_query", fake)
     # Unknown result_mode fails pydantic validation before the query runs.
-    request_path = _write_request(tmp_path, {"result_mode": "WRONG", "subject_type": "battery"})
+    request_path = _write_request(tmp_path, {"result_mode": "WRONG", "subject_types": ["battery"]})
     import pydantic
 
     with pytest.raises(pydantic.ValidationError):

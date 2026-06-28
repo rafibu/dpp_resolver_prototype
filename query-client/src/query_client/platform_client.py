@@ -114,15 +114,18 @@ def build_predicate_params(body: dict[str, Any]) -> list[tuple[str, str]]:
     """Encode the generic-platform ``@ModelAttribute`` GET contract.
 
     The Java controller binds camelCase top-level fields and indexed filter
-    properties.  Repeating ``filters[i].value`` represents an ``IN`` list.
+    properties.  Repeating ``subjectTypes`` restricts the query to one or more
+    subject types; omitting it means all subject types. Repeating
+    ``filters[i].value`` represents an ``IN`` list.
     This is intentionally the same shape as the Angular QueryService and the
     workload-generator clients.
     """
     params: list[tuple[str, str]] = [
         ("resultMode", _scalar(body["result_mode"])),
         ("executionMode", _scalar(body["execution_mode"])),
-        ("subjectType", _scalar(body["subject_type"])),
     ]
+    for subject_type in body.get("subject_types") or []:
+        params.append(("subjectTypes", _scalar(subject_type)))
     for index, filter_ in enumerate(body.get("filters", [])):
         params.extend([
             (f"filters[{index}].path", _scalar(filter_["path"])),

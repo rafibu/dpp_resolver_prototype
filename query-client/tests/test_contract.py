@@ -28,7 +28,7 @@ async def test_forwarded_request_uses_flattened_get_params_without_timeout():
         {
             "result_mode": "SELECT",
             "execution_mode": "ON_DEMAND",
-            "subject_type": "battery",
+            "subject_types": ["battery"],
             "return_fields": ["status"],
             "timeout_ms": 7000,
             "filters": [
@@ -44,7 +44,7 @@ async def test_forwarded_request_uses_flattened_get_params_without_timeout():
     assert params == [
         ("resultMode", "SELECT"),
         ("executionMode", "ON_DEMAND"),
-        ("subjectType", "battery"),
+        ("subjectTypes", "battery"),
         ("filters[0].path", "status"),
         ("filters[0].operator", "EQ"),
         ("filters[0].value", "active"),
@@ -73,7 +73,7 @@ async def test_request_method_path_and_content_type():
     )
     service = make_service(transport, config=config)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery"}
+        {"result_mode": "SELECT", "subject_types": []}
     )
     await service.run_to_completion(request)
     await service.aclose()
@@ -84,6 +84,7 @@ async def test_request_method_path_and_content_type():
         assert req.method == "GET"
         assert req.url.path == "/query/predicate"
         assert req.url.params["resultMode"] == "SELECT"
+        assert "subjectTypes" not in req.url.params
 
 
 @pytest.mark.asyncio
@@ -97,7 +98,7 @@ async def test_sum_forwards_aggregate_path_only():
     )
     service = make_service(transport)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SUM", "subject_type": "battery", "aggregate_path": "material.mass_kg"}
+        {"result_mode": "SUM", "subject_types": ["battery"], "aggregate_path": "material.mass_kg"}
     )
     await service.run_to_completion(request)
     await service.aclose()
@@ -122,7 +123,7 @@ async def test_configurable_path_is_used():
     )
     service = make_service(transport, config=config)
     request = FederatedPredicateQueryRequest.model_validate(
-        {"result_mode": "SELECT", "subject_type": "battery"}
+        {"result_mode": "SELECT", "subject_types": ["battery"]}
     )
     await service.run_to_completion(request)
     await service.aclose()

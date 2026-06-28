@@ -3,13 +3,12 @@
 import httpx
 import pytest
 from decimal import Decimal
-from query_client.config import Config
+
 from query_client.models import (
     FederatedPredicateQueryRequest,
     JobStatus,
     PlatformCallStatus,
 )
-
 from support import (
     count_payload,
     error_handler,
@@ -30,7 +29,7 @@ FOUR_PLATFORMS = [
 
 
 def _request(**overrides):
-    base = {"result_mode": "SELECT", "subject_type": "battery"}
+    base = {"result_mode": "SELECT", "subject_types": ["battery"]}
     base.update(overrides)
     return FederatedPredicateQueryRequest.model_validate(base)
 
