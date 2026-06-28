@@ -20,7 +20,7 @@ import {toErrorMessage} from '../../core/http-error.utils';
 /**
  * How a scenario card behaves:
  *  - `run`: triggers a Factory scenario over HTTP and polls its status (S1–S5).
- *  - `navigate`: opens a dedicated scenario page (S4 — Query Evaluation).
+ *  - `navigate`: opens a dedicated scenario page (S4: Query Evaluation).
  *  - `placeholder`: present but not runnable here (S5 has no HTTP integration).
  */
 type ScenarioKind = 'run' | 'navigate' | 'placeholder';
@@ -87,7 +87,7 @@ export class ScenarioRunnerComponent {
       id: 's4',
       kind: 'run',
       icon: 'manage_search',
-      title: 'S4 — Query Evaluation',
+      title: 'S4: Query Evaluation',
       subtitle: 'Predicate & traverse query evaluation · INDEXED/ON_DEMAND equivalence · timing/result export',
       route: '/query-builder'
     },
@@ -95,7 +95,7 @@ export class ScenarioRunnerComponent {
       id: 's5',
       kind: 'run',
       icon: 'cloud_off',
-      title: 'S5 — Offline Validation',
+      title: 'S5: Offline Validation',
       subtitle: 'Validate cached referenced-platform data during an offline period'
     }
   ];

@@ -28,11 +28,11 @@ describe('S4ScenarioComponent', () => {
     });
   });
 
-  it('renders the S4 — Query Evaluation page referencing predicate and traverse benchmarks', () => {
+  it('renders the S4: Query Evaluation page referencing predicate and traverse benchmarks', () => {
     const fixture = TestBed.createComponent(S4ScenarioComponent);
     fixture.detectChanges();
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('S4 — Query Evaluation');
+    expect(text).toContain('S4: Query Evaluation');
     expect(text).toContain('Predicate query benchmark');
     expect(text).toContain('Traverse query benchmark');
   });

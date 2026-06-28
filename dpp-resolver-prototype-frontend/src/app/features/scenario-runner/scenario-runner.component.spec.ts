@@ -40,10 +40,10 @@ describe('ScenarioRunnerComponent', () => {
     const fixture = TestBed.createComponent(ScenarioRunnerComponent);
     fixture.detectChanges();
     const s4 = fixture.componentInstance.scenarios.find(scenario => scenario.id === 's4');
-    expect(s4?.title).toBe('S4 — Query Evaluation');
+    expect(s4?.title).toBe('S4: Query Evaluation');
     expect(s4?.kind).toBe('run');
     expect(s4?.route).toBe('/query-builder');
-    expect(fixture.nativeElement.textContent).toContain('S4 — Query Evaluation');
+    expect(fixture.nativeElement.textContent).toContain('S4: Query Evaluation');
     fixture.componentInstance.runScenario('s4');
     expect(factoryServiceSpy.runScenario).toHaveBeenCalledWith('s4');
   });
@@ -52,7 +52,7 @@ describe('ScenarioRunnerComponent', () => {
     const fixture = TestBed.createComponent(ScenarioRunnerComponent);
     fixture.detectChanges();
     const s5 = fixture.componentInstance.scenarios.find(scenario => scenario.id === 's5');
-    expect(s5?.title).toBe('S5 — Offline Validation');
+    expect(s5?.title).toBe('S5: Offline Validation');
     expect(s5?.kind).toBe('run');
     fixture.componentInstance.runScenario('s5');
     expect(factoryServiceSpy.runScenario).toHaveBeenCalledWith('s5');

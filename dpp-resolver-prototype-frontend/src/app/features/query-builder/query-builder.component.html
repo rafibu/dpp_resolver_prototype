@@ -1,7 +1,7 @@
 <section class="query-builder">
   <header class="page-header">
     <div>
-      <p class="eyebrow">S4 — Query Evaluation</p>
+      <p class="eyebrow">S4: Query Evaluation</p>
       <h1>Query Builder</h1>
       <p class="lede">
         Build well-formed predicate and reverse-traverse queries against a live platform.
@@ -92,9 +92,21 @@
         <div class="filter-row">
           <mat-form-field appearance="outline" class="path-field">
             <mat-label>Path</mat-label>
-            <mat-select [ngModel]="row.path" (ngModelChange)="onFilterPathChange(row, $event)">
+            <input matInput [ngModel]="row.path" (ngModelChange)="onFilterPathChange(row, $event)"
+                   [matAutocomplete]="pathAuto" placeholder="any.field.path">
+            <mat-autocomplete #pathAuto="matAutocomplete"
+                              (optionSelected)="onFilterPathChange(row, $event.option.value)">
               @for (parameter of predicateParameters(); track parameter.path) {
                 <mat-option [value]="parameter.path">{{ parameter.label }} · {{ parameter.valueType }}</mat-option>
+              }
+            </mat-autocomplete>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="type-field">
+            <mat-label>Type</mat-label>
+            <mat-select [ngModel]="row.valueType" (ngModelChange)="onFilterValueTypeChange(row, $event)">
+              @for (type of valueTypes; track type) {
+                <mat-option [value]="type">{{ type }}</mat-option>
               }
             </mat-select>
           </mat-form-field>
@@ -172,22 +184,37 @@
       @if (resultMode === QueryResultMode.SELECT) {
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Return fields (optional)</mat-label>
-          <mat-select [(ngModel)]="returnFields" multiple>
-            @for (parameter of predicateParameters(); track parameter.path) {
-              <mat-option [value]="parameter.path">{{ parameter.label }}</mat-option>
+          <mat-chip-grid #returnChips aria-label="Return fields">
+            @for (field of returnFields; track field) {
+              <mat-chip-row (removed)="removeReturnField(field)">
+                {{ field }}
+                <button matChipRemove [attr.aria-label]="'Remove ' + field"><mat-icon>cancel</mat-icon></button>
+              </mat-chip-row>
             }
-          </mat-select>
-          <mat-hint>Leave empty to return all fields.</mat-hint>
+          </mat-chip-grid>
+          <input placeholder="Add any field path…"
+                 [matChipInputFor]="returnChips"
+                 [matAutocomplete]="returnAuto"
+                 [(ngModel)]="returnFieldInput"
+                 [ngModelOptions]="{standalone: true}"
+                 (matChipInputTokenEnd)="addReturnField($event)">
+          <mat-autocomplete #returnAuto="matAutocomplete" (optionSelected)="addReturnFieldFromOption($event)">
+            @for (parameter of predicateParameters(); track parameter.path) {
+              <mat-option [value]="parameter.path">{{ parameter.label }} · {{ parameter.path }}</mat-option>
+            }
+          </mat-autocomplete>
+          <mat-hint>Leave empty to return all fields. Suggestions are helpers — any path is accepted.</mat-hint>
         </mat-form-field>
       } @else if (resultMode === QueryResultMode.SUM) {
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Aggregate path (numeric)</mat-label>
-          <mat-select [(ngModel)]="aggregatePath">
+          <input matInput [(ngModel)]="aggregatePath" [matAutocomplete]="aggAuto" placeholder="any.numeric.path">
+          <mat-autocomplete #aggAuto="matAutocomplete">
             @for (parameter of numericParameters(); track parameter.path) {
-              <mat-option [value]="parameter.path">{{ parameter.label }}</mat-option>
+              <mat-option [value]="parameter.path">{{ parameter.label }} · {{ parameter.path }}</mat-option>
             }
-          </mat-select>
-          <mat-hint>SUM requires a numeric field.</mat-hint>
+          </mat-autocomplete>
+          <mat-hint>SUM expects a numeric field. Suggestions are helpers — any path is accepted.</mat-hint>
         </mat-form-field>
       }
     }

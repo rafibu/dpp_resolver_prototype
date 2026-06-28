@@ -1,10 +1,11 @@
 import {Component, DestroyRef, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
+import {MatAutocompleteModule, MatAutocompleteSelectedEvent} from '@angular/material/autocomplete';
 import {MatButtonModule} from '@angular/material/button';
 import {MatButtonToggleModule} from '@angular/material/button-toggle';
 import {MatCardModule} from '@angular/material/card';
-import {MatChipsModule} from '@angular/material/chips';
+import {MatChipInputEvent, MatChipsModule} from '@angular/material/chips';
 import {MatDividerModule} from '@angular/material/divider';
 import {MatFormFieldModule} from '@angular/material/form-field';
 import {MatIconModule} from '@angular/material/icon';
@@ -72,6 +73,7 @@ interface ResultView {
   imports: [
     CommonModule,
     FormsModule,
+    MatAutocompleteModule,
     MatButtonModule,
     MatButtonToggleModule,
     MatCardModule,
@@ -99,6 +101,9 @@ export class QueryBuilderComponent {
   public readonly QueryExecutionMode = QueryExecutionMode;
   public readonly PredicateOperator = PredicateOperator;
 
+  /** Selectable value types when filtering on a path the metadata doesn't describe. */
+  public readonly valueTypes: QueryValueType[] = ['TEXT', 'NUMBER', 'BOOLEAN', 'DATE', 'ENUM', 'REFERENCE'];
+
   public platforms = this.federationService.platforms;
   public platformId = signal<string | null>(null);
 
@@ -110,6 +115,7 @@ export class QueryBuilderComponent {
   public subjectTypes: string[] = [];
   public filters: FilterRow[] = [];
   public returnFields: string[] = [];
+  public returnFieldInput = '';
   public aggregatePath = '';
   public predicateMetadata = signal<SubjectTypeMetadata | null>(null);
 
@@ -178,6 +184,7 @@ export class QueryBuilderComponent {
   public onSubjectTypesChange(subjectTypes: string[]): void {
     this.subjectTypes = [...subjectTypes];
     this.returnFields = [];
+    this.returnFieldInput = '';
     this.aggregatePath = '';
     this.filters = [];
     this.loadPredicateMetadata(this.metadataSubjectType());
@@ -214,21 +221,71 @@ export class QueryBuilderComponent {
   }
 
   public onFilterPathChange(row: FilterRow, path: string): void {
-    const parameter = this.predicateParameters().find(candidate => candidate.path === path);
     row.path = path;
-    row.valueType = parameter?.valueType ?? 'TEXT';
-    row.enumValues = parameter?.enumValues ?? [];
-    row.operators = parameter?.operators ?? this.metadataService.operatorsForValueType(row.valueType);
+    const parameter = this.predicateParameters().find(candidate => candidate.path === path);
+    // Known paths adopt the schema/fallback value type; unknown (free-typed) paths
+    // keep the user's current type so any field can be filtered. Suggestions guide,
+    // they don't constrain.
+    const valueType = parameter?.valueType ?? row.valueType;
+    this.applyFilterValueType(row, valueType, parameter?.enumValues ?? [], parameter?.operators);
+  }
+
+  public onFilterValueTypeChange(row: FilterRow, valueType: QueryValueType): void {
+    if (valueType === row.valueType) {
+      return;
+    }
+    this.applyFilterValueType(row, valueType, [], undefined);
+  }
+
+  /** Apply a value type to a filter row, refreshing operators and clearing stale values. */
+  private applyFilterValueType(
+    row: FilterRow,
+    valueType: QueryValueType,
+    enumValues: unknown[],
+    operators?: PredicateOperator[]
+  ): void {
+    const typeChanged = valueType !== row.valueType;
+    row.valueType = valueType;
+    row.enumValues = enumValues;
+    row.operators = operators ?? this.metadataService.operatorsForValueType(valueType);
     if (!row.operators.includes(row.operator)) {
       row.operator = row.operators[0];
     }
-    row.textValue = '';
-    row.boolValue = true;
-    row.inValues = [];
+    if (typeChanged) {
+      row.textValue = '';
+      row.boolValue = true;
+      row.inValues = [];
+    }
   }
 
   public onFilterOperatorChange(row: FilterRow, operator: PredicateOperator): void {
     row.operator = operator;
+  }
+
+  // -------------------------------------------------------------------------
+  // Return fields (SELECT) — free-form with metadata-driven suggestions
+  // -------------------------------------------------------------------------
+
+  public addReturnField(event: MatChipInputEvent): void {
+    this.appendReturnField(event.value);
+    event.chipInput?.clear();
+    this.returnFieldInput = '';
+  }
+
+  public addReturnFieldFromOption(event: MatAutocompleteSelectedEvent): void {
+    this.appendReturnField(event.option.value);
+    this.returnFieldInput = '';
+  }
+
+  public removeReturnField(field: string): void {
+    this.returnFields = this.returnFields.filter(existing => existing !== field);
+  }
+
+  private appendReturnField(value: string): void {
+    const field = (value ?? '').trim();
+    if (field && !this.returnFields.includes(field)) {
+      this.returnFields = [...this.returnFields, field];
+    }
   }
 
   public needsValueInput(row: FilterRow): boolean {
@@ -373,7 +430,8 @@ export class QueryBuilderComponent {
       return false;
     }
     if (this.resultMode === QueryResultMode.SUM) {
-      return !!this.aggregatePath && this.numericParameters().some(parameter => parameter.path === this.aggregatePath);
+      // Any non-blank path is allowed; the numeric parameters are suggestions only.
+      return !isBlank(this.aggregatePath);
     }
     return true;
   }
