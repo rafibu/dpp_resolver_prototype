@@ -155,6 +155,36 @@ def test_predicate_equivalence_detects_mismatch():
     assert not s4.predicate_results_equivalent("SELECT", {"matches": [{"serial_number": "A"}]}, {"matches": []})
 
 
+def test_predicate_select_equivalence_uses_s4_source_identity_across_projection_shapes():
+    assert s4.predicate_results_equivalent(
+        "SELECT",
+        {
+            "matches": [
+                {
+                    "workload_s4.source_dpp_id": "dpp-2",
+                    "manufacturing.facilityId": "factory-a",
+                },
+                {
+                    "workload_s4.source_dpp_id": "dpp-1",
+                    "manufacturing.facilityId": "factory-a",
+                },
+            ]
+        },
+        {
+            "matches": [
+                {
+                    "workload_s4": {"source_dpp_id": "dpp-1"},
+                    "manufacturing": {"facilityId": "factory-a"},
+                },
+                {
+                    "workload_s4": {"source_dpp_id": "dpp-2"},
+                    "manufacturing": {"facilityId": "factory-a"},
+                },
+            ]
+        },
+    )
+
+
 def test_summary_calculates_speedup_and_mismatch():
     dataset = s4.generate_s4_dataset(seed=5, scale="small")
     records = [

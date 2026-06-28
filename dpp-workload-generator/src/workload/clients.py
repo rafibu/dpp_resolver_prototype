@@ -107,6 +107,16 @@ def _predicate_query_value(value: Any) -> str:
     return str(value)
 
 
+def _is_revision_response(data: Any) -> bool:
+    return (
+        isinstance(data, dict)
+        and "version" in data
+        and "schema_version" in data
+        and "dpp_payload" in data
+        and "payload_hash" in data
+    )
+
+
 def build_traverse_query_params(request: Dict[str, Any]) -> list[tuple[str, str]]:
     """Encode the flattened Java ``GET /query/traverse`` request shape.
 
@@ -253,7 +263,20 @@ class PlatformClient(BaseClient):
     async def get_revision(self, dpp_id: str, version: int | None = None) -> DppResponse:
         path = f"/dpps/{dpp_id}" if version is None else f"/dpps/{dpp_id}/{version}"
         resp = await self._request("GET", path)
-        return DppResponse.model_validate(resp.json())
+        data = resp.json()
+        if _is_revision_response(data):
+            return DppResponse.model_validate(data)
+        if version is None and isinstance(data, dict) and isinstance(data.get("revisions"), list):
+            revisions = data["revisions"]
+            if not revisions:
+                raise WorkloadError(f"DPP {dpp_id} has no revisions")
+            current = max(revisions, key=lambda item: int(item.get("version", 0)) if isinstance(item, dict) else 0)
+            if not isinstance(current, dict) or current.get("version") is None:
+                raise WorkloadError(f"DPP {dpp_id} detail response does not expose a current revision version")
+            # GET /dpps/{id} is a detail envelope on both generic platforms; the
+            # exact revision endpoint carries the full immutable revision DTO.
+            return await self.get_revision(dpp_id, int(current["version"]))
+        return DppResponse.model_validate(data)
 
     async def get_detail(self, dpp_id: str) -> dict:
         resp = await self._request("GET", f"/dpps/{dpp_id}")

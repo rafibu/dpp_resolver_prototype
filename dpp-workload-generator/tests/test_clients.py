@@ -79,6 +79,44 @@ async def test_platform_not_found(httpx_mock, platform_info):
 
 
 @pytest.mark.asyncio
+async def test_platform_get_revision_follows_detail_envelope_to_current_revision(httpx_mock, platform_info):
+    httpx_mock.add_response(
+        method="GET",
+        url="http://platform-a:8082/dpps/issuerA-pv-001",
+        json={
+            "dpp_id": "issuerA-pv-001",
+            "subject_type": "pv_module",
+            "revisions": [
+                {"version": 1, "schema_ref": "pv_module/1.0", "hash": "hash1", "payload": {"foo": "one"}},
+                {"version": 2, "schema_ref": "pv_module/1.0", "hash": "hash2", "payload": {"foo": "two"}},
+            ],
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="http://platform-a:8082/dpps/issuerA-pv-001/2",
+        json={
+            "dpp_id": "issuerA-pv-001",
+            "version": 2,
+            "schema_version": {"subject_type": "pv_module", "major_version": 1, "minor_version": 0},
+            "dpp_payload": {"foo": "two"},
+            "payload_hash": "hash2",
+            "created_at": "2026-05-03T13:00:00Z",
+        },
+    )
+
+    async with PlatformClient(platform_info) as client:
+        resp = await client.get_revision("issuerA-pv-001")
+
+    assert resp.version == 2
+    assert resp.dpp_payload == {"foo": "two"}
+    assert [str(request.url) for request in httpx_mock.get_requests()] == [
+        "http://platform-a:8082/dpps/issuerA-pv-001",
+        "http://platform-a:8082/dpps/issuerA-pv-001/2",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_platform_predicate_query_uses_java_compatible_get_parameters(httpx_mock, platform_info):
     httpx_mock.add_response(
         method="GET",

@@ -1081,6 +1081,10 @@ def predicate_results_equivalent(
     if result_mode == "SELECT":
         indexed_matches = indexed.get("matches") or []
         on_demand_matches = on_demand.get("matches") or []
+        indexed_ids = _s4_source_ids(indexed_matches)
+        on_demand_ids = _s4_source_ids(on_demand_matches)
+        if indexed_ids is not None and on_demand_ids is not None:
+            return indexed_ids == on_demand_ids
         return _canonical_match_set(indexed_matches) == _canonical_match_set(on_demand_matches)
     if result_mode == "COUNT":
         return indexed.get("count") == on_demand.get("count")
@@ -1565,6 +1569,26 @@ def _canonical_match_set(matches: Any) -> tuple[str, ...]:
     return tuple(sorted(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str) for value in values))
 
 
+def _s4_source_ids(matches: Any) -> tuple[str, ...] | None:
+    values = matches if isinstance(matches, list) else []
+    identities: list[str] = []
+    for match in values:
+        source_id = _s4_source_id(match)
+        if source_id is None:
+            return None
+        identities.append(str(source_id))
+    return tuple(sorted(identities))
+
+
+def _s4_source_id(match: Any) -> Any | None:
+    if not isinstance(match, dict):
+        return None
+    metadata = match.get("workload_s4")
+    if isinstance(metadata, dict) and metadata.get("source_dpp_id") is not None:
+        return metadata["source_dpp_id"]
+    return match.get("workload_s4.source_dpp_id")
+
+
 def _traverse_source_ids(matches: Any) -> tuple[str, ...]:
     values = matches if isinstance(matches, list) else []
     identities: list[str] = []
@@ -1572,10 +1596,7 @@ def _traverse_source_ids(matches: Any) -> tuple[str, ...]:
         if not isinstance(match, dict):
             identities.append(json.dumps(match, sort_keys=True, default=str))
             continue
-        metadata = match.get("workload_s4")
-        source_id = (
-                        metadata.get("source_dpp_id") if isinstance(metadata, dict) else None
-                    ) or match.get("workload_s4.source_dpp_id")
+        source_id = _s4_source_id(match)
         # The fallback retains useful mismatch diagnostics for a non-S4 or
         # malformed response instead of falsely treating all such matches equal.
         identities.append(str(source_id) if source_id is not None else json.dumps(match, sort_keys=True, default=str))
