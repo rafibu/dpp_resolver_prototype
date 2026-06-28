@@ -16,7 +16,7 @@ It is not part of the federated DPP ecosystem. It is a measurement harness that 
 | Runs scenario S1: federated reference stability under target evolution and issuer migration |
 | Runs scenario S2: independent schema evolution                                              |
 | Runs scenario S3: schema-level cycle rejection (Invariant I6)                               |
-| Runs scenario S4: indexed versus on-demand predicate and traverse-query evaluation           |
+| Runs scenario S4: indexed versus on-demand predicate and traverse-query evaluation          |
 | Runs scenario S5: offline validation after platform unavailability                          |
 
 The generator discovers the live topology by calling `GET /federation` on the Factory. It does not need to be told manually where platforms or the Resolver are. S1–S4 are the paper's evaluation scenarios; S5 is a supplemental offline-validation scenario retained outside that evaluation.
@@ -29,6 +29,13 @@ traversal requests, compares `INDEXED` with `ON_DEMAND`, and checks that the two
 execution modes produce equivalent logical results.
 
 - Predicate retrieval covers `SELECT`, `COUNT`, and `SUM` over current local revisions.
+- Predicate requests use optional repeated `subjectTypes`; omitting it queries all
+  DPP subject types hosted by the target platform, while one or more values
+  restrict the local query to those types.
+- Scenario 4 includes the reviewer-facing projected-fact cases: one factory over
+  a manufacturing date range, several factories over a date range, factories
+  supplying a store over a delivery date range, DPPs containing lead, and total
+  comparable lead mass.
 - Reverse traversal looks for current source revisions that reference a target logical DPP or a pinned target revision.
 - Source scopes restrict traversal to predecessor subject types and reference paths. They stand in for the resolver's schema-level hard-reference scope.
 - `PlatformClient` uses the generic-platform `GET /query/predicate` and `GET /query/traverse` contracts, including Java-style flattened query parameters, so the same workload runs against both implementations.
@@ -250,7 +257,21 @@ workload scenario s5 --output-dir output/scenarios
 
 S1, S2, S3, and S4 are evaluation scenarios. S4 exports raw and summarized predicate and traverse-query benchmark results. S5 writes a Markdown report for offline validation after a referenced platform becomes unavailable; it is retained as a supplemental scenario and is not part of the actual evaluation.
 
-S4 creates or reuses six role-specific platforms identified by deterministic `s4`-prefixed issuers, without resetting or modifying unrelated platforms. Its scale presets are `small` (300 DPPs), `medium` (5,000 DPPs, the default), and `large` (25,000 DPPs). It writes `*-predicate-results.json` and `*-predicate-summary.json`, containing predicate and traverse records, per-query INDEXED/ON_DEMAND measurements, semantic equivalence checks, and speedup factors. The traverse dataset includes a skewed current-reference graph and reference-changing revisions. Re-running with the same seed and scale reuses the S4 dataset; a conflicting deterministic dataset is rejected rather than overwritten.
+S4 creates or reuses six role-specific platforms identified by deterministic `s4`-prefixed issuers, without resetting or modifying unrelated platforms. Its scale presets are `small` (300 DPPs), `medium` (5,000 DPPs, the default), and `large` (25,000 DPPs). It writes `*-predicate-results.json` and `*-predicate-summary.json`, containing predicate and traverse records, per-query INDEXED/ON_DEMAND measurements, semantic equivalence checks, and speedup factors. The predicate dataset mixes PV modules, batteries, inverters, installations, delivery batches, and store batches while exposing common projected facts such as `manufacturing.facilityId`, `manufacturing.date`, `logistics.destinationStoreId`, `logistics.deliveryDate`, `materialComposition.materialId`, `materialComposition.mass`, and lifecycle fields. The traverse dataset includes a skewed current-reference graph and reference-changing revisions. Re-running with the same seed and scale reuses the S4 dataset; a conflicting deterministic dataset is rejected rather than overwritten.
+
+The deterministic S4 predicate suite includes:
+
+- `q1_factory_a_date_range_all_types`: all objects from `factory-a` in 2024.
+- `q2_multi_factory_date_range_all_types`: all objects from `factory-a`, `factory-b`, or `factory-c` in 2024.
+- `q3_store_17_suppliers_date_range`: delivered goods for `store-17`, from which supplying factories can be deduplicated.
+- `q4_dpps_containing_lead`: PV modules and battery packs with `materialComposition.materialId EQ Pb`.
+- `q5_total_lead_mass`: `SUM materialComposition.mass` for lead-bearing PV modules and battery packs. This aggregate assumes the generated units are comparable.
+
+Reproduce the scenario with:
+
+```bash
+workload scenario s4 --scale small --output-dir output/scenarios
+```
 
 ### Plotting
 

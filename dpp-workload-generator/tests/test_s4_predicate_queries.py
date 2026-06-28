@@ -26,6 +26,15 @@ def _platforms() -> dict[str, PlatformInfo]:
     }
 
 
+def _has_path(payload: dict, path: str) -> bool:
+    current = payload
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return True
+
+
 def test_dataset_generation_is_deterministic_and_non_uniform():
     first = s4.generate_s4_dataset(seed=41, scale="small")
     second = s4.generate_s4_dataset(seed=41, scale="small")
@@ -43,22 +52,24 @@ def test_generated_payloads_are_nested_and_cover_query_fields():
     module = next(dpp for dpp in dataset.dpps if dpp.subject_type == "pv_module")
 
     assert {"identity", "technical", "material_composition", "lifecycle", "traceability"}.issubset(module.payload)
-    assert {"contains_lead", "lead_mass_kg", "nominal_power_w", "disposal_status"}.issubset(module.payload)
+    assert {"manufacturing", "logistics", "materialComposition", "contains_lead", "lead_mass_kg"}.issubset(module.payload)
+    assert module.payload["materialComposition"]["unit"] == "kg"
     assert any("disposal_date" not in dpp.payload for dpp in dataset.dpps if dpp.subject_type == "pv_module")
 
     subject_payloads = {
         subject_type: next(dpp.payload for dpp in dataset.dpps if dpp.subject_type == subject_type)
-        for subject_type in {query.subject_type for query in s4.build_s4_query_suite()}
+        for query in s4.build_s4_query_suite()
+        for subject_type in (query.subject_types or ("pv_module",))
     }
     for query in s4.build_s4_query_suite():
-        payload = subject_payloads[query.subject_type]
+        payload = subject_payloads[(query.subject_types or ("pv_module",))[0]]
         for filter_ in query.filters:
             if filter_["operator"] != "NOT_EXISTS":
-                assert filter_["path"] in payload
+                assert _has_path(payload, filter_["path"])
         for field in query.return_fields:
-            assert field in payload
+            assert _has_path(payload, field)
         if query.aggregate_path:
-            assert query.aggregate_path in payload
+            assert _has_path(payload, query.aggregate_path)
 
 
 def test_revisions_change_projected_current_state_values():
@@ -77,15 +88,18 @@ def test_revisions_change_projected_current_state_values():
 
 
 def test_query_suite_builds_indexed_and_on_demand_requests():
-    query = next(query for query in s4.build_s4_query_suite() if query.query_id == "q2_high_power_modules_by_country")
+    query = next(query for query in s4.build_s4_query_suite() if query.query_id == "q2_multi_factory_date_range_all_types")
 
     indexed = query.request("INDEXED")
     on_demand = query.request("ON_DEMAND")
 
     assert indexed["execution_mode"] == "INDEXED"
     assert on_demand["execution_mode"] == "ON_DEMAND"
-    assert indexed["filters"][1]["value"] == ["CN", "DE", "US"]
-    assert indexed["subject_type"] == "pv_module"
+    assert indexed["filters"][0]["value"] == ["factory-a", "factory-b", "factory-c"]
+    assert "subject_types" not in indexed
+
+    lead = next(query for query in s4.build_s4_query_suite() if query.query_id == "q4_dpps_containing_lead")
+    assert lead.request("INDEXED")["subject_types"] == ["pv_module", "battery_pack"]
 
 
 def test_traverse_dataset_is_deterministic_skewed_and_revised():
@@ -150,8 +164,8 @@ def test_summary_calculates_speedup_and_mismatch():
             seed=5,
             scale="small",
             platform_id="platform-s4-2",
-            subject_type="pv_module",
-            query_id="q1_modules_containing_lead",
+            subject_type="pv_module,battery_pack",
+            query_id="q4_dpps_containing_lead",
             result_mode="SELECT",
             execution_mode="INDEXED",
             request_payload={},
@@ -170,8 +184,8 @@ def test_summary_calculates_speedup_and_mismatch():
             seed=5,
             scale="small",
             platform_id="platform-s4-2",
-            subject_type="pv_module",
-            query_id="q1_modules_containing_lead",
+            subject_type="pv_module,battery_pack",
+            query_id="q4_dpps_containing_lead",
             result_mode="SELECT",
             execution_mode="ON_DEMAND",
             request_payload={},
@@ -187,7 +201,7 @@ def test_summary_calculates_speedup_and_mismatch():
     ]
 
     summary = s4.summarize_s4_benchmark(records, dataset, s4.S4Materialization(1, 0, 0))
-    q1 = summary["queries"][0]
+    q1 = next(query for query in summary["queries"] if query["query_id"] == "q4_dpps_containing_lead")
 
     assert q1["speedup_factor"] == 3.0
     assert q1["equivalent"] is False
@@ -307,7 +321,7 @@ async def test_benchmark_records_indexed_and_on_demand_and_detects_mismatch(monk
                 response = {"count": 3}
             else:
                 response = {"aggregate": 12.75}
-            if request["subject_type"] == "inverter" and mode == "ON_DEMAND":
+            if request.get("subject_types") == ["pv_module", "battery_pack"] and mode == "ON_DEMAND":
                 response = {"count": 4}
             return PredicateQueryExecution(response=response, status_code=200)
 
@@ -328,10 +342,15 @@ async def test_benchmark_records_indexed_and_on_demand_and_detects_mismatch(monk
     records = await s4.execute_s4_benchmark(dataset, _platforms(), "run")
     summary = s4.summarize_s4_benchmark(records, dataset, s4.S4Materialization(300, 0, 60))
 
+    expected_predicate_pairs = sum(
+        len(s4._target_platforms_for_query(query, _platforms()))
+        for query in s4.build_s4_query_suite()
+    )
     assert len(records) == (
-        len(s4.build_s4_query_suite()) + len(s4.build_s4_traverse_query_suite(dataset))
+        expected_predicate_pairs + len(s4.build_s4_traverse_query_suite(dataset))
     ) * 2
     assert {record.execution_mode for record in records} == {"INDEXED", "ON_DEMAND"}
     assert {record.query_category for record in records} == {"PREDICATE", "TRAVERSE"}
-    q8 = next(query for query in summary["queries"] if query["query_id"] == "q8_repairable_inverters_with_failures")
-    assert q8["equivalent"] is False
+    mismatches = [query for query in summary["queries"] if query["query_id"] == "q5_total_lead_mass"]
+    assert mismatches
+    assert any(query["equivalent"] is False for query in mismatches)

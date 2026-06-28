@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 
 from workload.clients import PlatformClient, ResolverClient, IssueDppSpec, DppSchemaVersion, DppResponse, \
-    DppNotFoundError, WorkloadError
+    DppNotFoundError, WorkloadError, build_predicate_query_params
 from workload.federation import PlatformInfo, PlatformStatus
 
 
@@ -91,7 +91,7 @@ async def test_platform_predicate_query_uses_java_compatible_get_parameters(http
         execution = await client.query_predicate({
             "result_mode": "COUNT",
             "execution_mode": "INDEXED",
-            "subject_type": "pv_module",
+            "subject_types": ["pv_module", "battery_pack"],
             "filters": [
                 {"path": "production_country", "operator": "IN", "value": ["CH", "DE"]},
                 {"path": "contains_lead", "operator": "EQ", "value": True},
@@ -104,9 +104,20 @@ async def test_platform_predicate_query_uses_java_compatible_get_parameters(http
     assert request.method == "GET"
     assert request.url.params.get("resultMode") == "COUNT"
     assert request.url.params.get("executionMode") == "INDEXED"
-    assert request.url.params.get("subjectType") == "pv_module"
+    assert request.url.params.get_list("subjectTypes") == ["pv_module", "battery_pack"]
     assert request.url.params.get_list("filters[0].value") == ["CH", "DE"]
     assert request.url.params.get("filters[1].value") == "true"
+
+
+def test_predicate_query_params_omit_subject_types_for_all_type_query():
+    params = build_predicate_query_params({
+        "result_mode": "COUNT",
+        "execution_mode": "INDEXED",
+        "filters": [],
+    })
+
+    assert ("resultMode", "COUNT") in params
+    assert not any(key == "subjectTypes" for key, _ in params)
 
 
 @pytest.mark.asyncio

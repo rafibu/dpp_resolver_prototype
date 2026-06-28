@@ -137,20 +137,25 @@ class S4Query:
     """A fixed platform-local benchmark query with AND-connected filters."""
 
     query_id: str
-    subject_type: str
     result_mode: str
+    subject_types: tuple[str, ...] = ()
     filters: tuple[dict[str, Any], ...] = ()
     return_fields: tuple[str, ...] = ()
     aggregate_path: str | None = None
+
+    @property
+    def subject_type(self) -> str:
+        return ",".join(self.subject_types) if self.subject_types else "ALL"
 
     def request(self, execution_mode: str) -> dict[str, Any]:
         """Build the snake_case client request for one execution mode."""
         request: dict[str, Any] = {
             "result_mode": self.result_mode,
             "execution_mode": execution_mode,
-            "subject_type": self.subject_type,
             "filters": [copy.deepcopy(filter_) for filter_ in self.filters],
         }
+        if self.subject_types:
+            request["subject_types"] = list(self.subject_types)
         if self.return_fields:
             request["return_fields"] = list(self.return_fields)
         if self.aggregate_path is not None:
@@ -424,72 +429,72 @@ def validate_s4_dataset_quality(dataset: S4Dataset) -> None:
 
 
 def build_s4_query_suite() -> tuple[S4Query, ...]:
-    """Return the fixed SELECT, COUNT, and SUM workload used for S4 evaluation."""
+    """Return the reviewer-facing cross-type predicate workload used by S4."""
     return (
         S4Query(
-            "q1_modules_containing_lead",
-            "pv_module",
+            "q1_factory_a_date_range_all_types",
             "SELECT",
-            filters=({"path": "contains_lead", "operator": "EQ", "value": True},),
-            return_fields=("serial_number", "model", "lead_mass_kg", "production_country"),
-        ),
-        S4Query(
-            "q2_high_power_modules_by_country",
-            "pv_module",
-            "COUNT",
             filters=(
-                {"path": "nominal_power_w", "operator": "GTE", "value": 400},
-                {"path": "production_country", "operator": "IN", "value": ["CN", "DE", "US"]},
+                {"path": "manufacturing.facilityId", "operator": "EQ", "value": "factory-a"},
+                {"path": "manufacturing.date", "operator": "GTE", "value": "2024-01-01"},
+                {"path": "manufacturing.date", "operator": "LTE", "value": "2024-12-31"},
+            ),
+            return_fields=(
+                "workload_s4.source_dpp_id",
+                "serial_number",
+                "manufacturing.facilityId",
+                "manufacturing.date",
             ),
         ),
         S4Query(
-            "q3_sum_lead_mass_active_modules",
-            "pv_module",
+            "q2_multi_factory_date_range_all_types",
+            "SELECT",
+            filters=(
+                {"path": "manufacturing.facilityId", "operator": "IN", "value": ["factory-a", "factory-b", "factory-c"]},
+                {"path": "manufacturing.date", "operator": "GTE", "value": "2024-03-01"},
+                {"path": "manufacturing.date", "operator": "LTE", "value": "2024-09-30"},
+            ),
+            return_fields=(
+                "workload_s4.source_dpp_id",
+                "serial_number",
+                "manufacturing.facilityId",
+                "manufacturing.date",
+            ),
+        ),
+        S4Query(
+            "q3_store_17_suppliers_date_range",
+            "SELECT",
+            filters=(
+                {"path": "logistics.destinationStoreId", "operator": "EQ", "value": "store-17"},
+                {"path": "logistics.deliveryDate", "operator": "GTE", "value": "2024-01-01"},
+                {"path": "logistics.deliveryDate", "operator": "LTE", "value": "2024-12-31"},
+            ),
+            return_fields=(
+                "workload_s4.source_dpp_id",
+                "manufacturing.facilityId",
+                "logistics.destinationStoreId",
+                "logistics.deliveryDate",
+            ),
+        ),
+        S4Query(
+            "q4_dpps_containing_lead",
+            "SELECT",
+            subject_types=("pv_module", "battery_pack"),
+            filters=({"path": "materialComposition.materialId", "operator": "EQ", "value": "Pb"},),
+            return_fields=(
+                "workload_s4.source_dpp_id",
+                "serial_number",
+                "materialComposition.materialId",
+                "materialComposition.mass",
+                "materialComposition.unit",
+            ),
+        ),
+        S4Query(
+            "q5_total_lead_mass",
             "SUM",
-            filters=(
-                {"path": "contains_lead", "operator": "EQ", "value": True},
-                {"path": "disposal_status", "operator": "NEQ", "value": "recycled"},
-            ),
-            aggregate_path="lead_mass_kg",
-        ),
-        S4Query(
-            "q4_modules_without_disposal_date",
-            "pv_module",
-            "SELECT",
-            filters=({"path": "disposal_date", "operator": "NOT_EXISTS"},),
-            return_fields=("serial_number", "model", "operational_status", "disposal_status"),
-        ),
-        S4Query(
-            "q5_installations_with_fire_incidents",
-            "pv_installation",
-            "COUNT",
-            filters=({"path": "has_fire_incident", "operator": "EQ", "value": True},),
-        ),
-        S4Query(
-            "q6_sum_recovered_aluminium",
-            "recycling_batch",
-            "SUM",
-            filters=({"path": "toxic_leak_reported", "operator": "EQ", "value": False},),
-            aggregate_path="recovered_aluminium_kg",
-        ),
-        S4Query(
-            "q7_batteries_with_cobalt",
-            "battery_pack",
-            "SELECT",
-            filters=(
-                {"path": "chemistry", "operator": "IN", "value": ["NMC", "NCA"]},
-                {"path": "cobalt_mass_kg", "operator": "GT", "value": 0.8},
-            ),
-            return_fields=("serial_number", "chemistry", "capacity_kwh", "cobalt_mass_kg"),
-        ),
-        S4Query(
-            "q8_repairable_inverters_with_failures",
-            "inverter",
-            "COUNT",
-            filters=(
-                {"path": "failure_count", "operator": "GT", "value": 0},
-                {"path": "repairable", "operator": "EQ", "value": True},
-            ),
+            subject_types=("pv_module", "battery_pack"),
+            filters=({"path": "materialComposition.materialId", "operator": "EQ", "value": "Pb"},),
+            aggregate_path="materialComposition.mass",
         ),
     )
 
@@ -830,62 +835,61 @@ async def execute_s4_benchmark(
     """Run each fixed query in INDEXED and ON_DEMAND mode against its owner platform."""
     records: list[S4BenchmarkRecord] = []
     for query in build_s4_query_suite():
-        role = _ROLE_BY_SUBJECT_TYPE[query.subject_type]
-        platform = platforms[role]
-        async with PlatformClient(platform) as client:
-            for execution_mode in ("INDEXED", "ON_DEMAND"):
-                request = query.request(execution_mode)
-                started = time.perf_counter()
-                try:
-                    execution = await client.query_predicate(request)
-                    response = execution.response
-                    records.append(
-                        S4BenchmarkRecord(
-                            scenario_name=S4_SCENARIO_ID,
-                            run_id=run_id,
-                            seed=dataset.seed,
-                            scale=dataset.scale,
-                            platform_id=platform.platform_id,
-                            subject_type=query.subject_type,
-                            query_id=query.query_id,
-                            result_mode=query.result_mode,
-                            query_category="PREDICATE",
-                            execution_mode=execution_mode,
-                            request_payload=request,
-                            http_status=execution.status_code,
-                            duration_ms=(time.perf_counter() - started) * 1000,
-                            count=_response_count(response),
-                            aggregate=response.get("aggregate"),
-                            match_count=_response_match_count(response),
-                            success=True,
-                            error_message=None,
-                            response=response,
+        for platform in _target_platforms_for_query(query, platforms):
+            async with PlatformClient(platform) as client:
+                for execution_mode in ("INDEXED", "ON_DEMAND"):
+                    request = query.request(execution_mode)
+                    started = time.perf_counter()
+                    try:
+                        execution = await client.query_predicate(request)
+                        response = execution.response
+                        records.append(
+                            S4BenchmarkRecord(
+                                scenario_name=S4_SCENARIO_ID,
+                                run_id=run_id,
+                                seed=dataset.seed,
+                                scale=dataset.scale,
+                                platform_id=platform.platform_id,
+                                subject_type=query.subject_type,
+                                query_id=query.query_id,
+                                result_mode=query.result_mode,
+                                query_category="PREDICATE",
+                                execution_mode=execution_mode,
+                                request_payload=request,
+                                http_status=execution.status_code,
+                                duration_ms=(time.perf_counter() - started) * 1000,
+                                count=_response_count(response),
+                                aggregate=response.get("aggregate"),
+                                match_count=_response_match_count(response),
+                                success=True,
+                                error_message=None,
+                                response=response,
+                            )
                         )
-                    )
-                except Exception as exc:
-                    records.append(
-                        S4BenchmarkRecord(
-                            scenario_name=S4_SCENARIO_ID,
-                            run_id=run_id,
-                            seed=dataset.seed,
-                            scale=dataset.scale,
-                            platform_id=platform.platform_id,
-                            subject_type=query.subject_type,
-                            query_id=query.query_id,
-                            result_mode=query.result_mode,
-                            query_category="PREDICATE",
-                            execution_mode=execution_mode,
-                            request_payload=request,
-                            http_status=_exception_http_status(exc),
-                            duration_ms=(time.perf_counter() - started) * 1000,
-                            count=None,
-                            aggregate=None,
-                            match_count=None,
-                            success=False,
-                            error_message=str(exc),
-                            response=None,
+                    except Exception as exc:
+                        records.append(
+                            S4BenchmarkRecord(
+                                scenario_name=S4_SCENARIO_ID,
+                                run_id=run_id,
+                                seed=dataset.seed,
+                                scale=dataset.scale,
+                                platform_id=platform.platform_id,
+                                subject_type=query.subject_type,
+                                query_id=query.query_id,
+                                result_mode=query.result_mode,
+                                query_category="PREDICATE",
+                                execution_mode=execution_mode,
+                                request_payload=request,
+                                http_status=_exception_http_status(exc),
+                                duration_ms=(time.perf_counter() - started) * 1000,
+                                count=None,
+                                aggregate=None,
+                                match_count=None,
+                                success=False,
+                                error_message=str(exc),
+                                response=None,
+                            )
                         )
-                    )
     for query in build_s4_traverse_query_suite(dataset):
         role = _ROLE_BY_SUBJECT_TYPE[query.source_subject_type]
         platform = platforms[role]
@@ -946,52 +950,80 @@ async def execute_s4_benchmark(
     return records
 
 
+def _target_platforms_for_query(query: S4Query, platforms: dict[str, PlatformInfo]) -> list[PlatformInfo]:
+    if not query.subject_types:
+        return [platforms[definition.role] for definition in S4_PLATFORM_DEFINITIONS]
+    roles = {
+        _ROLE_BY_SUBJECT_TYPE[subject_type]
+        for subject_type in query.subject_types
+    }
+    return [platforms[definition.role] for definition in S4_PLATFORM_DEFINITIONS if definition.role in roles]
+
+
 def summarize_s4_benchmark(
         records: list[S4BenchmarkRecord],
         dataset: S4Dataset,
         materialization: S4Materialization,
 ) -> dict[str, Any]:
     """Calculate per-query indexed/on-demand equivalence and performance summaries."""
-    grouped: dict[tuple[str, str], dict[str, S4BenchmarkRecord]] = {}
+    grouped: dict[tuple[str, str, str], dict[str, S4BenchmarkRecord]] = {}
     for record in records:
-        grouped.setdefault((record.query_category, record.query_id), {})[record.execution_mode] = record
+        grouped.setdefault((record.query_category, record.query_id, record.platform_id), {})[record.execution_mode] = record
 
     query_summaries: list[dict[str, Any]] = []
     for query in build_s4_query_suite():
-        modes = grouped.get(("PREDICATE", query.query_id), {})
-        indexed = modes.get("INDEXED")
-        on_demand = modes.get("ON_DEMAND")
-        equivalent = bool(
-            indexed
-            and on_demand
-            and indexed.success
-            and on_demand.success
-            and predicate_results_equivalent(query.result_mode, indexed.response or {}, on_demand.response or {})
-        )
-        indexed_duration = indexed.duration_ms if indexed else None
-        on_demand_duration = on_demand.duration_ms if on_demand else None
-        speedup = (
-            on_demand_duration / indexed_duration
-            if indexed_duration is not None and on_demand_duration is not None and indexed_duration > 0
-            else None
-        )
-        query_summaries.append(
+        platform_ids = sorted(
             {
-                "query_id": query.query_id,
-                "query_category": "PREDICATE",
-                "subject_type": query.subject_type,
-                "result_mode": query.result_mode,
-                "duration_indexed_ms": indexed_duration,
-                "duration_on_demand_ms": on_demand_duration,
-                "speedup_factor": speedup,
-                "equivalent": equivalent,
-                "indexed_response": indexed.response if indexed else None,
-                "on_demand_response": on_demand.response if on_demand else None,
+                record.platform_id
+                for record in records
+                if record.query_category == "PREDICATE" and record.query_id == query.query_id
             }
         )
+        for platform_id in dict.fromkeys(platform_ids):
+            modes = grouped.get(("PREDICATE", query.query_id, platform_id), {})
+            indexed = modes.get("INDEXED")
+            on_demand = modes.get("ON_DEMAND")
+            equivalent = bool(
+                indexed
+                and on_demand
+                and indexed.success
+                and on_demand.success
+                and predicate_results_equivalent(query.result_mode, indexed.response or {}, on_demand.response or {})
+            )
+            indexed_duration = indexed.duration_ms if indexed else None
+            on_demand_duration = on_demand.duration_ms if on_demand else None
+            speedup = (
+                on_demand_duration / indexed_duration
+                if indexed_duration is not None and on_demand_duration is not None and indexed_duration > 0
+                else None
+            )
+            query_summaries.append(
+                {
+                    "query_id": query.query_id,
+                    "query_category": "PREDICATE",
+                    "platform_id": platform_id,
+                    "subject_type": query.subject_type,
+                    "subject_types": list(query.subject_types),
+                    "result_mode": query.result_mode,
+                    "duration_indexed_ms": indexed_duration,
+                    "duration_on_demand_ms": on_demand_duration,
+                    "speedup_factor": speedup,
+                    "equivalent": equivalent,
+                    "indexed_response": indexed.response if indexed else None,
+                    "on_demand_response": on_demand.response if on_demand else None,
+                }
+            )
 
     for query in build_s4_traverse_query_suite(dataset):
-        modes = grouped.get(("TRAVERSE", query.query_id), {})
+        platform_id = next(
+            (
+                record.platform_id
+                for record in records
+                if record.query_category == "TRAVERSE" and record.query_id == query.query_id
+            ),
+            "",
+        )
+        modes = grouped.get(("TRAVERSE", query.query_id, platform_id), {})
         indexed = modes.get("INDEXED")
         on_demand = modes.get("ON_DEMAND")
         equivalent = bool(
@@ -1012,6 +1044,7 @@ def summarize_s4_benchmark(
             {
                 "query_id": query.query_id,
                 "query_category": "TRAVERSE",
+                "platform_id": platform_id,
                 "subject_type": query.subject_type,
                 "source_subject_type": query.source_subject_type,
                 "result_mode": "TRAVERSE",
@@ -1072,26 +1105,30 @@ def annotate_s4_equivalence(
         dataset: S4Dataset,
 ) -> list[S4BenchmarkRecord]:
     """Write each query-pair's semantic equivalence back into its raw records."""
-    by_key: dict[tuple[str, str], dict[str, S4BenchmarkRecord]] = {}
+    by_key: dict[tuple[str, str, str], dict[str, S4BenchmarkRecord]] = {}
     for record in records:
-        by_key.setdefault((record.query_category, record.query_id), {})[record.execution_mode] = record
+        by_key.setdefault((record.query_category, record.query_id, record.platform_id), {})[record.execution_mode] = record
 
-    equivalence: dict[tuple[str, str], bool] = {}
+    equivalence: dict[tuple[str, str, str], bool] = {}
     for query in build_s4_query_suite():
-        modes = by_key.get(("PREDICATE", query.query_id), {})
-        indexed, on_demand = modes.get("INDEXED"), modes.get("ON_DEMAND")
-        equivalence[("PREDICATE", query.query_id)] = bool(
-            indexed and on_demand and indexed.success and on_demand.success
-            and predicate_results_equivalent(query.result_mode, indexed.response or {}, on_demand.response or {})
-        )
+        for key, modes in by_key.items():
+            if key[0] != "PREDICATE" or key[1] != query.query_id:
+                continue
+            indexed, on_demand = modes.get("INDEXED"), modes.get("ON_DEMAND")
+            equivalence[key] = bool(
+                indexed and on_demand and indexed.success and on_demand.success
+                and predicate_results_equivalent(query.result_mode, indexed.response or {}, on_demand.response or {})
+            )
     for query in build_s4_traverse_query_suite(dataset):
-        modes = by_key.get(("TRAVERSE", query.query_id), {})
-        indexed, on_demand = modes.get("INDEXED"), modes.get("ON_DEMAND")
-        equivalence[("TRAVERSE", query.query_id)] = bool(
-            indexed and on_demand and indexed.success and on_demand.success
-            and traverse_results_equivalent(indexed.response or {}, on_demand.response or {})
-        )
-    return [replace(record, equivalence=equivalence.get((record.query_category, record.query_id))) for record in
+        for key, modes in by_key.items():
+            if key[0] != "TRAVERSE" or key[1] != query.query_id:
+                continue
+            indexed, on_demand = modes.get("INDEXED"), modes.get("ON_DEMAND")
+            equivalence[key] = bool(
+                indexed and on_demand and indexed.success and on_demand.success
+                and traverse_results_equivalent(indexed.response or {}, on_demand.response or {})
+            )
+    return [replace(record, equivalence=equivalence.get((record.query_category, record.query_id, record.platform_id))) for record in
             records]
 
 
@@ -1106,8 +1143,8 @@ def required_s4_non_empty_checks(records: list[S4BenchmarkRecord]) -> list[dict[
         _required_s4_non_empty_check(
             records,
             query_category="PREDICATE",
-            query_id="q1_modules_containing_lead",
-            description="Predicate sentinel: modules containing lead must produce matches",
+            query_id="q4_dpps_containing_lead",
+            description="Predicate sentinel: lead-containing DPPs must produce matches",
         ),
         _required_s4_non_empty_check(
             records,
@@ -1130,10 +1167,14 @@ def _required_s4_non_empty_check(
         for record in records
         if record.query_category == query_category and record.query_id == query_id
     ]
-    counts = {
-        record.execution_mode: record.match_count
-        for record in matching_records
-    }
+    counts: dict[str, int | None] = {}
+    for execution_mode in ("INDEXED", "ON_DEMAND"):
+        mode_counts = [
+            record.match_count
+            for record in matching_records
+            if record.execution_mode == execution_mode and record.match_count is not None
+        ]
+        counts[execution_mode] = sum(mode_counts) if mode_counts else None
     passed = (
             counts.get("INDEXED") is not None
             and counts.get("ON_DEMAND") is not None
@@ -1321,12 +1362,15 @@ def _build_payload(
     elif subject_type == "battery_pack":
         chemistry = _weighted_choice(rng, (("LFP", 0.48), ("NMC", 0.36), ("NCA", 0.16)))
         cobalt = 0.0 if chemistry == "LFP" else round(0.35 + rng.random() * 2.8, 3)
+        contains_lead = ordinal % 5 == 0
         payload.update(
             {
                 "capacity_kwh": round(4 + rng.random() * 96, 3),
                 "chemistry": chemistry,
                 "lithium_mass_kg": round(0.8 + rng.random() * 12, 3),
                 "cobalt_mass_kg": cobalt,
+                "contains_lead": contains_lead,
+                "lead_mass_kg": round(0.05 + rng.random() * 0.35, 4) if contains_lead else 0.0,
                 "has_thermal_event_history": rng.random() < 0.055,
                 "recycling_required": rng.random() < 0.34,
             }
@@ -1372,7 +1416,54 @@ def _build_payload(
                 "hazardous_substance_flag": rng.random() < 0.08,
             }
         )
+    _add_common_projected_facts(payload, subject_type, ordinal)
     return payload
+
+
+def _add_common_projected_facts(payload: dict[str, Any], subject_type: str, ordinal: int) -> None:
+    """Add S4 reviewer-use-case projected facts shared across subject types."""
+    facility_id = ("factory-a", "factory-b", "factory-c", "factory-d")[ordinal % 4]
+    manufacturing_date = f"2024-{(ordinal % 12) + 1:02d}-{(ordinal % 28) + 1:02d}"
+    destination_store = "store-17" if ordinal % 3 == 0 else f"store-{10 + (ordinal % 9)}"
+    delivery_date = f"2024-{((ordinal + 2) % 12) + 1:02d}-{((ordinal + 5) % 28) + 1:02d}"
+
+    payload["manufacturing"] = {
+        "facilityId": facility_id,
+        "date": manufacturing_date,
+    }
+    payload["logistics"] = {
+        "destinationStoreId": destination_store,
+        "deliveryDate": delivery_date,
+    }
+    payload["lifecycle"].update(
+        {
+            "disposalMethod": payload.get("disposal_method", payload.get("disposal_status", "none")),
+            "disposalDate": payload.get("disposal_date", ""),
+        }
+    )
+    _sync_material_projection(payload, subject_type)
+
+
+def _sync_material_projection(payload: dict[str, Any], subject_type: str) -> None:
+    contains_lead = bool(payload.get("contains_lead"))
+    lead_mass = float(payload.get("lead_mass_kg") or 0.0)
+    if contains_lead and lead_mass > 0:
+        material_id = "Pb"
+        mass = round(lead_mass, 4)
+    elif subject_type == "inverter":
+        material_id = "Cu"
+        mass = round(float(payload.get("copper_mass_kg") or 0.0), 4)
+    elif subject_type == "battery_pack":
+        material_id = "Li"
+        mass = round(float(payload.get("lithium_mass_kg") or 0.0), 4)
+    else:
+        material_id = "Al"
+        mass = round(float(payload.get("frame_aluminium_mass_kg") or payload.get("recovered_aluminium_kg") or 0.0), 4)
+    payload["materialComposition"] = {
+        "materialId": material_id,
+        "mass": mass,
+        "unit": "kg",
+    }
 
 
 def _revise_payload(payload: dict[str, Any], subject_type: str, index: int) -> dict[str, Any]:
@@ -1415,6 +1506,7 @@ def _revise_payload(payload: dict[str, Any], subject_type: str, index: int) -> d
     else:
         revised["quality_score"] = round(min(100, revised["quality_score"] + 1.5), 3)
         revised["technical"]["quality_score"] = revised["quality_score"]
+    _sync_material_projection(revised, subject_type)
     return revised
 
 
@@ -1442,7 +1534,11 @@ def _schema_accepts_s4_payload(subject_type: str, schema: dict[str, Any]) -> boo
 
 
 def _s4_payload_keys(subject_type: str) -> set[str]:
-    common = {"serial_number", "manufacturer", "model", "production_year", "production_country", "workload_s4"}
+    common = {
+        "serial_number", "manufacturer", "model", "production_year",
+        "production_country", "workload_s4", "manufacturing", "logistics",
+        "materialComposition",
+    }
     specific = {
         "pv_module": {"nominal_power_w", "contains_lead", "lead_mass_kg"},
         "inverter": {"rated_power_kw", "max_ac_power_watts", "failure_count"},

@@ -58,12 +58,14 @@ def build_predicate_query_params(request: Dict[str, Any]) -> list[tuple[str, str
 
     The Java platform binds a ``PredicateQueryRequestDTO`` with Spring's
     ``@ModelAttribute``. Its top-level names are camelCase and each AND-connected
-    filter is represented as ``filters[<index>].<field>``. Repeated values encode
-    the ``IN`` operator and repeated ``returnFields`` values encode projection.
+    filter is represented as ``filters[<index>].<field>``. Repeated
+    ``subjectTypes`` values restrict the candidate subject types; omitting the
+    parameter queries all subject types. Repeated filter values encode the ``IN``
+    operator and repeated ``returnFields`` values encode projection.
     Keeping this translation here makes the S4 benchmark use the same request
     shape for both Java and Python platform implementations.
     """
-    required = ("result_mode", "execution_mode", "subject_type")
+    required = ("result_mode", "execution_mode")
     missing = [field for field in required if request.get(field) is None]
     if missing:
         raise ValueError(f"Predicate query request is missing: {', '.join(missing)}")
@@ -71,8 +73,12 @@ def build_predicate_query_params(request: Dict[str, Any]) -> list[tuple[str, str
     params: list[tuple[str, str]] = [
         ("resultMode", _predicate_query_value(request["result_mode"])),
         ("executionMode", _predicate_query_value(request["execution_mode"])),
-        ("subjectType", _predicate_query_value(request["subject_type"])),
     ]
+    subject_types = request.get("subject_types")
+    if subject_types is None and request.get("subject_type") is not None:
+        subject_types = [request["subject_type"]]
+    for subject_type in subject_types or []:
+        params.append(("subjectTypes", _predicate_query_value(subject_type)))
     for index, filter_ in enumerate(request.get("filters") or []):
         if "path" not in filter_ or "operator" not in filter_:
             raise ValueError(f"Predicate filter {index} requires path and operator")
