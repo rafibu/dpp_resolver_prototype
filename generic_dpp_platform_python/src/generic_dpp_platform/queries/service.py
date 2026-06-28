@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections import OrderedDict
+from decimal import Decimal, InvalidOperation
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from numbers import Number
 from typing import Any, Protocol
@@ -11,6 +12,8 @@ from typing import Any, Protocol
 from .helpers import is_numeric, matches_filter, matches_value, resolve_path, select_fields
 from .index import FACT_COLLECTION, REFERENCE_COLLECTION
 from .models import (
+    PredicateFilter,
+    PredicateOperator,
     PredicateQueryRequest,
     PredicateQueryResponse,
     QueryExecutionMode,
@@ -22,20 +25,36 @@ from .models import (
 
 
 class FactRepository(Protocol):
-    def find_all_by_subject_type(self, subject_type: str) -> Any: ...
+    def find_by_request(
+        self,
+        request: PredicateQueryRequest,
+        subject_types: list[str] | None,
+        return_fields: list[str] | None = None,
+    ) -> Any: ...
 
 
 class MongoFactRepository:
-    """Reads the materialized attribute facts for indexed predicate retrieval."""
+    """Reads DB-filtered materialized facts for indexed predicate retrieval."""
 
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._db = db
 
-    async def find_all_by_subject_type(self, subject_type: str) -> list[dict[str, Any]]:
-        """Return the current attribute facts for one local subject type."""
-        return await self._db[FACT_COLLECTION].find(
-            {"subject_type": subject_type}, {"_id": 0}
-        ).to_list(None)
+    async def find_by_request(
+        self,
+        request: PredicateQueryRequest,
+        subject_types: list[str] | None,
+        return_fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return matching facts using a MongoDB aggregation pipeline.
+
+        Facts are stored one document per projected path, so the pipeline groups
+        facts by logical DPP ID, applies every predicate to that grouped record,
+        then unwinds only the matching groups. This keeps normal indexed
+        predicate filtering inside MongoDB instead of fetching the whole index
+        into Python and filtering there.
+        """
+        pipeline = _indexed_predicate_pipeline(request, subject_types, return_fields)
+        return await self._db[FACT_COLLECTION].aggregate(pipeline).to_list(None)
 
 
 class IndexedQueryMatcher:
@@ -48,32 +67,34 @@ class IndexedQueryMatcher:
     def __init__(self, repository: FactRepository) -> None:
         self._repository = repository
 
-    async def matching_fact_groups(self, request: PredicateQueryRequest) -> list[dict[str, dict[str, Any]]]:
+    async def matching_fact_groups(
+        self,
+        request: PredicateQueryRequest,
+        subject_types: list[str] | None,
+        return_fields: list[str] | None = None,
+    ) -> list[dict[str, dict[str, Any]]]:
         """Return current local fact groups that satisfy every predicate."""
-        facts = self._repository.find_all_by_subject_type(request.subject_type)
+        facts = self._repository.find_by_request(request, subject_types, return_fields)
         if inspect.isawaitable(facts):
             facts = await facts
         grouped: OrderedDict[str, dict[str, dict[str, Any]]] = OrderedDict()
         for fact in facts:
             grouped.setdefault(fact["logical_dpp_id"], OrderedDict())[fact["path"]] = fact
-        return [
-            facts_by_path
-            for facts_by_path in grouped.values()
-            if _facts_match_request(facts_by_path, request)
-        ]
+        return list(grouped.values())
 
-    async def select(self, request: PredicateQueryRequest) -> list[dict[str, Any]]:
+    async def select(self, request: PredicateQueryRequest, subject_types: list[str] | None) -> list[dict[str, Any]]:
         """Project requested attribute facts from each matching local group."""
-        return [_select_indexed_fields(group, request.return_fields) for group in await self.matching_fact_groups(request)]
+        groups = await self.matching_fact_groups(request, subject_types, request.return_fields)
+        return [_select_indexed_fields(group, request.return_fields) for group in groups]
 
-    async def count(self, request: PredicateQueryRequest) -> int:
+    async def count(self, request: PredicateQueryRequest, subject_types: list[str] | None) -> int:
         """Count local fact groups that satisfy every predicate."""
-        return len(await self.matching_fact_groups(request))
+        return len(await self.matching_fact_groups(request, subject_types))
 
-    async def sum(self, request: PredicateQueryRequest) -> float:
+    async def sum(self, request: PredicateQueryRequest, subject_types: list[str] | None) -> float:
         """Sum the requested numeric attribute fact over matching local groups."""
         total = 0.0
-        for group in await self.matching_fact_groups(request):
+        for group in await self.matching_fact_groups(request, subject_types):
             fact = group.get(request.aggregate_path or "")
             if fact is None:
                 continue
@@ -130,34 +151,35 @@ async def query_predicate(
     validate_request(request)
     platform_config = await db.platform_config.find_one({}, {"_id": 0})
     platform_id = (platform_config or {}).get("issuer_id", "")
+    requested_subject_types = await _resolve_requested_subject_types(db, request)
 
-    if not await db.subject_types.find_one({"name": request.subject_type}):
+    if requested_subject_types == []:
         return empty_response(request, platform_id)
 
     if request.execution_mode is QueryExecutionMode.INDEXED:
         matcher: IndexedQueryMatcher | OnDemandQueryMatcher = IndexedQueryMatcher(MongoFactRepository(db))
     else:
-        matcher = OnDemandQueryMatcher(await _current_payloads_for_subject_type(db, request.subject_type))
+        matcher = OnDemandQueryMatcher(await _current_payloads_for_subject_types(db, requested_subject_types))
 
     if request.result_mode is QueryResultMode.SELECT:
         return PredicateQueryResponse(
             result_mode=request.result_mode,
             execution_mode=request.execution_mode,
             platform_id=platform_id,
-            matches=await matcher.select(request) if isinstance(matcher, IndexedQueryMatcher) else matcher.select(request),
+            matches=await matcher.select(request, requested_subject_types) if isinstance(matcher, IndexedQueryMatcher) else matcher.select(request),
         )
     if request.result_mode is QueryResultMode.COUNT:
         return PredicateQueryResponse(
             result_mode=request.result_mode,
             execution_mode=request.execution_mode,
             platform_id=platform_id,
-            count=await matcher.count(request) if isinstance(matcher, IndexedQueryMatcher) else matcher.count(request),
+            count=await matcher.count(request, requested_subject_types) if isinstance(matcher, IndexedQueryMatcher) else matcher.count(request),
         )
     return PredicateQueryResponse(
         result_mode=request.result_mode,
         execution_mode=request.execution_mode,
         platform_id=platform_id,
-        aggregate=await matcher.sum(request) if isinstance(matcher, IndexedQueryMatcher) else matcher.sum(request),
+        aggregate=await matcher.sum(request, requested_subject_types) if isinstance(matcher, IndexedQueryMatcher) else matcher.sum(request),
     )
 
 
@@ -190,8 +212,10 @@ async def query_traverse(
 
 def validate_request(request: PredicateQueryRequest) -> None:
     """Apply the Java service's request-level validation rules."""
-    if not request.subject_type or not request.subject_type.strip():
-        raise ValueError("subject_type is required")
+    if request.subject_types is not None:
+        for index, subject_type in enumerate(request.subject_types):
+            if not subject_type or not subject_type.strip():
+                raise ValueError(f"subject_types[{index}] must not be blank")
     if request.result_mode is QueryResultMode.SUM:
         if request.aggregate_path is None or not request.aggregate_path.strip():
             raise ValueError("aggregate_path is required for SUM queries")
@@ -235,12 +259,30 @@ def empty_response(request: PredicateQueryRequest, platform_id: str) -> Predicat
     )
 
 
-async def _current_payloads_for_subject_type(
+async def _resolve_requested_subject_types(
     db: AsyncIOMotorDatabase,
-    subject_type: str,
+    request: PredicateQueryRequest,
+) -> list[str] | None:
+    """Return canonical restricted subject types, or ``None`` for all types."""
+    if not request.subject_types:
+        return None
+
+    requested = {subject_type.lower(): subject_type for subject_type in request.subject_types}
+    actual: list[str] = []
+    async for subject_type in db.subject_types.find({}, {"_id": 0, "name": 1}):
+        name = subject_type.get("name")
+        if isinstance(name, str) and name.lower() in requested:
+            actual.append(name)
+    return actual
+
+
+async def _current_payloads_for_subject_types(
+    db: AsyncIOMotorDatabase,
+    subject_types: list[str] | None,
 ) -> list[dict[str, Any]]:
     payloads: list[dict[str, Any]] = []
-    async for logical_dpp in db.logical_dpps.find({"subject_type": subject_type}, {"_id": 0}):
+    query = {} if subject_types is None else {"subject_type": {"$in": subject_types}}
+    async for logical_dpp in db.logical_dpps.find(query, {"_id": 0}):
         revision = await db.dpp_revisions.find_one(
             {
                 "dpp_id": logical_dpp["dpp_id"],
@@ -298,7 +340,7 @@ async def _on_demand_traverse_matches(
     """Load current source payloads and inspect ``$ref`` objects at query time."""
     matches: list[dict[str, Any]] = []
     for source_scope in request.sources:
-        for document in await _current_payloads_for_subject_type(db, source_scope.subject_type):
+        for document in await _current_payloads_for_subject_types(db, [source_scope.subject_type]):
             if _document_contains_matching_reference(document, source_scope, request):
                 matches.append(document)
     return matches
@@ -358,6 +400,159 @@ def _reference_matches(reference_object: dict[str, Any], request: TraverseQueryR
     elif isinstance(reference_object.get("version"), Number) and not isinstance(reference_object.get("version"), bool):
         revision = int(reference_object["version"])
     return request.revision_number is None or request.revision_number == revision
+
+
+def _indexed_predicate_pipeline(
+    request: PredicateQueryRequest,
+    subject_types: list[str] | None,
+    return_fields: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Build the one-fact-per-path MongoDB pipeline for indexed predicates."""
+    pipeline: list[dict[str, Any]] = []
+    if subject_types:
+        pipeline.append({"$match": {"subject_type": {"$in": subject_types}}})
+
+    pipeline.append(
+        {
+            "$group": {
+                "_id": "$logical_dpp_id",
+                "facts": {"$push": "$$ROOT"},
+            }
+        }
+    )
+
+    predicate_matches = [_predicate_group_match(filter_) for filter_ in request.filters]
+    if predicate_matches:
+        pipeline.append({"$match": {"$and": predicate_matches}})
+
+    pipeline.extend(
+        [
+            {"$unwind": "$facts"},
+            {"$replaceRoot": {"newRoot": "$facts"}},
+        ]
+    )
+    if return_fields:
+        pipeline.append({"$match": {"path": {"$in": return_fields}}})
+    pipeline.extend(
+        [
+            {"$project": {"_id": 0}},
+            {"$sort": {"logical_dpp_id": 1, "path": 1}},
+        ]
+    )
+    return pipeline
+
+
+def _predicate_group_match(filter_: PredicateFilter) -> dict[str, Any]:
+    """Translate one predicate to a grouped-facts Mongo query fragment."""
+    operator = filter_.operator
+    if operator is PredicateOperator.NOT_EXISTS:
+        return {
+            "facts": {
+                "$not": {
+                    "$elemMatch": {
+                        "path": filter_.path,
+                        "$or": _fact_exists_conditions(),
+                    }
+                }
+            }
+        }
+
+    elem_match: dict[str, Any] = {"path": filter_.path}
+    if operator is PredicateOperator.EXISTS:
+        elem_match["$or"] = _fact_exists_conditions()
+    elif operator is PredicateOperator.EQ:
+        elem_match.update(_or_conditions(_value_equal_conditions(filter_.value)))
+    elif operator is PredicateOperator.NEQ:
+        elem_match["$or"] = _fact_exists_conditions()
+        equal_conditions = _value_equal_conditions(filter_.value)
+        if equal_conditions:
+            elem_match["$nor"] = equal_conditions
+    elif operator is PredicateOperator.IN:
+        values = filter_.value if isinstance(filter_.value, (list, tuple, set)) else []
+        elem_match.update(_or_conditions(_value_equal_conditions_for_values(values)))
+    elif operator in {PredicateOperator.GT, PredicateOperator.GTE, PredicateOperator.LT, PredicateOperator.LTE}:
+        elem_match.update(_or_conditions(_ordered_value_conditions(operator, filter_.value)))
+    else:
+        raise ValueError(f"Unsupported predicate operator: {operator}")
+    return {"facts": {"$elemMatch": elem_match}}
+
+
+def _or_conditions(conditions: list[dict[str, Any]]) -> dict[str, Any]:
+    if conditions:
+        return {"$or": conditions}
+    return {"__never_matches__": True}
+
+
+def _fact_exists_conditions() -> list[dict[str, Any]]:
+    return [
+        {"value_text": {"$exists": True, "$ne": None}},
+        {"value_number": {"$exists": True, "$ne": None}},
+        {"value_boolean": {"$exists": True, "$ne": None}},
+    ]
+
+
+def _value_equal_conditions_for_values(values: Any) -> list[dict[str, Any]]:
+    conditions: list[dict[str, Any]] = []
+    for value in values:
+        conditions.extend(_value_equal_conditions(value))
+    return conditions
+
+
+def _value_equal_conditions(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if isinstance(value, bool):
+        return [{"value_boolean": value}]
+    if is_numeric(value):
+        return [{"value_number": float(value)}]
+
+    text = str(value)
+    conditions: list[dict[str, Any]] = [{"value_text": text}]
+    parsed_bool = _parse_bool_string(text)
+    if parsed_bool is not None:
+        conditions.append({"value_boolean": parsed_bool})
+    parsed_number = _parse_number(text)
+    if parsed_number is not None:
+        conditions.append({"value_number": parsed_number})
+    return conditions
+
+
+def _ordered_value_conditions(operator: PredicateOperator, value: Any) -> list[dict[str, Any]]:
+    mongo_operator = {
+        PredicateOperator.GT: "$gt",
+        PredicateOperator.GTE: "$gte",
+        PredicateOperator.LT: "$lt",
+        PredicateOperator.LTE: "$lte",
+    }[operator]
+    conditions: list[dict[str, Any]] = []
+    parsed_number = _parse_number(value)
+    if parsed_number is not None:
+        conditions.append({"value_number": {mongo_operator: parsed_number}})
+    elif value is not None:
+        # ISO date and date-time facts are stored as strings; lexical ordering
+        # matches chronological ordering for the normalized representations used
+        # by the workload and query examples.
+        conditions.append({"value_text": {mongo_operator: str(value)}})
+    return conditions
+
+
+def _parse_bool_string(value: str) -> bool | None:
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    return None
+
+
+def _parse_number(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if is_numeric(value):
+        return float(value)
+    try:
+        return float(Decimal(str(value)))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _facts_match_request(facts_by_path: dict[str, dict[str, Any]], request: PredicateQueryRequest) -> bool:

@@ -24,7 +24,7 @@ def _request(**overrides: Any) -> PredicateQueryRequest:
     values: dict[str, Any] = {
         "result_mode": QueryResultMode.SELECT,
         "execution_mode": QueryExecutionMode.INDEXED,
-        "subject_type": "Battery",
+        "subject_types": ["Battery"],
     }
     values.update(overrides)
     return PredicateQueryRequest(**values)
@@ -44,7 +44,7 @@ def test_enums_parse_and_serialize_as_java_wire_values() -> None:
         {
             "result_mode": "COUNT",
             "execution_mode": "ON_DEMAND",
-            "subject_type": "Battery",
+            "subject_types": ["Battery"],
             "filters": [{"path": "chemistry", "operator": "EQ", "value": "NMC"}],
         }
     )
@@ -55,7 +55,7 @@ def test_enums_parse_and_serialize_as_java_wire_values() -> None:
     assert request.model_dump(mode="json") == {
         "result_mode": "COUNT",
         "execution_mode": "ON_DEMAND",
-        "subject_type": "Battery",
+        "subject_types": ["Battery"],
         "filters": [{"path": "chemistry", "operator": "EQ", "value": "NMC"}],
         "return_fields": None,
         "aggregate_path": None,
@@ -74,7 +74,7 @@ def test_filter_validation_requires_fields_and_a_known_operator() -> None:
     [
         (_request(result_mode=QueryResultMode.SUM), "aggregate_path is required"),
         (_request(result_mode=QueryResultMode.COUNT, aggregate_path="weight_kg"), "only supported for SUM"),
-        (_request(subject_type="   "), "subject_type is required"),
+        (_request(subject_types=["   "]), "subject_types\\[0] must not be blank"),
     ],
 )
 def test_request_validation_matches_java_result_mode_rules(
@@ -152,16 +152,19 @@ def test_missing_paths_do_not_match_neq_and_not_exists_only_matches_missing() ->
 async def test_indexed_matcher_groups_facts_and_can_use_a_mock_repository() -> None:
     class FakeRepository:
         def __init__(self) -> None:
-            self.subject_types: list[str] = []
+            self.calls: list[tuple[list[str] | None, list[str] | None]] = []
 
-        async def find_all_by_subject_type(self, subject_type: str) -> list[dict[str, Any]]:
-            self.subject_types.append(subject_type)
+        async def find_by_request(
+            self,
+            request: PredicateQueryRequest,
+            subject_types: list[str] | None,
+            return_fields: list[str] | None = None,
+        ) -> list[dict[str, Any]]:
+            self.calls.append((subject_types, return_fields))
             return [
                 _fact("a", "chemistry", value_text="NMC"),
                 _fact("a", "weight_kg", value_number=320),
                 _fact("a", "manufacturer.country", value_text="CH"),
-                _fact("b", "chemistry", value_text="LFP"),
-                _fact("b", "weight_kg", value_number=410),
             ]
 
     repository = FakeRepository()
@@ -174,9 +177,9 @@ async def test_indexed_matcher_groups_facts_and_can_use_a_mock_repository() -> N
         return_fields=["chemistry", "manufacturer.country"],
     )
 
-    assert await matcher.select(request) == [{"chemistry": "NMC", "manufacturer.country": "CH"}]
-    assert await matcher.count(request) == 1
-    assert repository.subject_types == ["Battery", "Battery"]
+    assert await matcher.select(request, ["Battery"]) == [{"chemistry": "NMC", "manufacturer.country": "CH"}]
+    assert await matcher.count(request, ["Battery"]) == 1
+    assert repository.calls == [(["Battery"], ["chemistry", "manufacturer.country"]), (["Battery"], None)]
 
 
 def test_on_demand_matching_select_count_sum_and_java_return_fields() -> None:
@@ -223,3 +226,42 @@ def test_indexed_return_fields_and_result_construction() -> None:
     assert empty_response(
         _request(result_mode=QueryResultMode.SUM, aggregate_path="weight_kg"), "issuerA"
     ).aggregate == 0.0
+
+
+def test_indexed_pipeline_contains_subject_and_predicate_constraints() -> None:
+    from generic_dpp_platform.queries.service import _indexed_predicate_pipeline
+
+    request = _request(
+        filters=[
+            PredicateFilter(path="manufacturing.facilityId", operator="IN", value=["factory-a", "factory-b"]),
+            PredicateFilter(path="manufacturing.date", operator="GTE", value="2024-01-01"),
+        ],
+        return_fields=["serial_number"],
+    )
+
+    pipeline = _indexed_predicate_pipeline(request, ["PV_MODULE", "BATTERY"], request.return_fields)
+
+    assert pipeline[0] == {"$match": {"subject_type": {"$in": ["PV_MODULE", "BATTERY"]}}}
+    assert any("$group" in stage for stage in pipeline)
+    assert {
+        "facts": {
+            "$elemMatch": {
+                "path": "manufacturing.facilityId",
+                "$or": [
+                    {"value_text": "factory-a"},
+                    {"value_text": "factory-b"},
+                ],
+            }
+        }
+    } in pipeline[2]["$match"]["$and"]
+    assert {"$match": {"path": {"$in": ["serial_number"]}}} in pipeline
+
+
+def test_subject_types_omitted_null_empty_and_legacy_single_type() -> None:
+    assert PredicateQueryRequest.model_validate({"result_mode": "COUNT"}).subject_types is None
+    assert PredicateQueryRequest.model_validate({"result_mode": "COUNT", "subject_types": None}).subject_types is None
+    assert PredicateQueryRequest.model_validate({"result_mode": "COUNT", "subject_types": []}).subject_types == []
+    assert PredicateQueryRequest.model_validate({"result_mode": "COUNT", "subject_type": "PV_MODULE"}).subject_types == ["PV_MODULE"]
+    assert PredicateQueryRequest.model_validate(
+        {"result_mode": "COUNT", "subject_type": "BATTERY", "subject_types": ["PV_MODULE"]}
+    ).subject_types == ["PV_MODULE"]

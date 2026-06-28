@@ -9,7 +9,7 @@ controller.
 from __future__ import annotations
 
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Any
 
 
@@ -50,12 +50,36 @@ class PredicateFilter(BaseModel):
 
 
 class PredicateQueryRequest(BaseModel):
+    """Platform-local predicate query over projected facts.
+
+    ``subject_types`` is optional by design: an omitted field, explicit ``null``,
+    or an empty list all mean that the platform should search all local DPP
+    subject types. A non-empty list restricts the candidate current revisions to
+    those subject types. The legacy ``subject_type`` field is accepted only as a
+    compatibility fallback; ``subject_types`` takes precedence.
+    """
+
     result_mode: QueryResultMode
     execution_mode: QueryExecutionMode = QueryExecutionMode.INDEXED
-    subject_type: str
+    subject_types: list[str] | None = None
+    subject_type: str | None = Field(default=None, exclude=True)
     filters: list[PredicateFilter] = Field(default_factory=list)
     return_fields: list[str] | None = None
     aggregate_path: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_subject_type(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "subject_types" in data:
+            return data
+        legacy = data.get("subject_type")
+        if legacy is None:
+            return data
+        copied = dict(data)
+        copied["subject_types"] = [legacy]
+        return copied
 
 
 class PredicateQueryResponse(BaseModel):

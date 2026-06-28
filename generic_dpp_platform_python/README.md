@@ -69,22 +69,33 @@ result merging.
 
 | Method | Path | Local query | Purpose |
 |---|---|---|---|
-| `GET` | `/query/predicate` | Predicate retrieval | Evaluates AND-connected predicates for one subject type and returns `SELECT`, `COUNT`, or `SUM`. |
+| `GET` | `/query/predicate` | Predicate retrieval | Evaluates AND-connected predicates for all or selected subject types and returns `SELECT`, `COUNT`, or `SUM`. |
 | `GET` | `/query/traverse` | Reverse traversal | Finds current source revisions in supplied source scopes that reference a target logical DPP or exact revision. |
 
 The Python endpoints deliberately mirror Java-style query-parameter binding:
-predicate requests use `resultMode`, `executionMode`, and `subjectType`; filters
-use `filters[0].path`, `filters[0].operator`, and `filters[0].value`; repeated
-`returnFields` select fields. Traverse requests use `subjectType`, `dppId`,
+predicate requests use `resultMode`, `executionMode`, and repeated `subjectTypes`;
+omitting `subjectTypes`, passing JSON `null`, or passing an empty list all mean
+"search every DPP subject type hosted by this platform". When `subjectTypes` has
+one or more values, the query is restricted to those types. The legacy
+`subjectType` query parameter is still accepted as a single-type fallback, but
+new callers should send `subjectTypes`. Filters use `filters[0].path`,
+`filters[0].operator`, and `filters[0].value`; repeated `filters[i].value`
+parameters express `IN` values, and repeated `returnFields` select fields.
+Traverse requests use `subjectType`, `dppId`,
 optional `revisionNumber`, `executionMode`, and source scopes such as
 `sources[0].subjectType` and `sources[0].referencePaths[0]`.
 
 `ON_DEMAND` scans the current revision payloads. `INDEXED` evaluates the same
 local candidates through materialized attribute facts rebuilt on issue and
 revise. The index is an execution optimization: it does not change the derived
-query semantics. Reverse traversal scopes its scan to source subject types
-supplied by the caller; those scopes are normally derived from the resolver's
-schema dependency graph.
+query semantics. Predicate paths refer to schema-projected facts, not arbitrary
+raw payload paths. Predicates are AND-connected, and supported operators are
+`EQ`, `NEQ`, `EXISTS`, `NOT_EXISTS`, `IN`, `GT`, `GTE`, `LT`, and `LTE`.
+Ordered comparisons are intended for numeric values and normalized date strings.
+Missing projected facts do not satisfy normal comparisons; use `EXISTS` or
+`NOT_EXISTS` when absence is part of the query. Reverse traversal scopes its scan
+to source subject types supplied by the caller; those scopes are normally derived
+from the resolver's schema dependency graph.
 
 The current prototype returns projected payload fields or source documents,
 plus the responding `platform_id`. A client that needs every match to carry a
@@ -417,6 +428,30 @@ curl http://localhost:8082/dpps/issuerA-product-001/2
 ```bash
 curl -X POST http://localhost:8082/schemas/battery/cacheSchema
 ```
+
+### Query projected facts across all subject types
+```bash
+curl -g "http://localhost:8082/query/predicate?resultMode=SELECT&executionMode=INDEXED&filters[0].path=manufacturing.facilityId&filters[0].operator=EQ&filters[0].value=factory-a&filters[1].path=manufacturing.date&filters[1].operator=GTE&filters[1].value=2024-01-01&filters[2].path=manufacturing.date&filters[2].operator=LTE&filters[2].value=2024-12-31&returnFields=manufacturing.facilityId&returnFields=manufacturing.date"
+```
+
+### Query one or more subject types
+```bash
+curl -g "http://localhost:8082/query/predicate?resultMode=SELECT&executionMode=INDEXED&subjectTypes=pv_module&subjectTypes=battery_pack&filters[0].path=materialComposition.materialId&filters[0].operator=EQ&filters[0].value=Pb&returnFields=materialComposition.materialId&returnFields=materialComposition.mass&returnFields=materialComposition.unit"
+```
+
+### Multi-factory date query with IN
+```bash
+curl -g "http://localhost:8082/query/predicate?resultMode=COUNT&executionMode=INDEXED&filters[0].path=manufacturing.facilityId&filters[0].operator=IN&filters[0].value=factory-a&filters[0].value=factory-b&filters[0].value=factory-c&filters[1].path=manufacturing.date&filters[1].operator=GTE&filters[1].value=2024-01-01&filters[2].path=manufacturing.date&filters[2].operator=LTE&filters[2].value=2024-12-31"
+```
+
+### Total comparable lead mass
+```bash
+curl -g "http://localhost:8082/query/predicate?resultMode=SUM&executionMode=INDEXED&subjectTypes=pv_module&subjectTypes=battery_pack&filters[0].path=materialComposition.materialId&filters[0].operator=EQ&filters[0].value=Pb&aggregatePath=materialComposition.mass"
+```
+
+The `SUM` example is valid only when the projected mass values use comparable
+units. Query results are derived views over projected facts and do not modify
+authoritative DPP revisions.
 
 ## Configuration
 

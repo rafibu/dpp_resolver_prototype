@@ -21,6 +21,7 @@ from ..database import get_database
 
 router = APIRouter()
 _FILTER_PARAM = re.compile(r"^filters\[(\d+)]\.(path|operator|value)$")
+_SUBJECT_TYPES_PARAM = re.compile(r"^(subjectTypes|subject_types)\[(\d+)]$")
 _TRAVERSE_SOURCE_PARAM = re.compile(r"^sources\[(\d+)]\.(subjectType|subject_type)$")
 _TRAVERSE_REFERENCE_PATH_PARAM = re.compile(
     r"^sources\[(\d+)]\.(referencePaths|reference_paths)(?:\[(\d+)])?$"
@@ -56,11 +57,16 @@ def _parse_request(request: Request) -> PredicateQueryRequest:
     params = request.query_params
     filters: dict[int, dict[str, Any]] = defaultdict(dict)
     filter_values: dict[tuple[int, str], list[str]] = defaultdict(list)
+    indexed_subject_types: dict[int, str] = {}
 
     for key, value in params.multi_items():
         match = _FILTER_PARAM.match(key)
         if match:
             filter_values[(int(match.group(1)), match.group(2))].append(value)
+            continue
+        subject_types_match = _SUBJECT_TYPES_PARAM.match(key)
+        if subject_types_match:
+            indexed_subject_types[int(subject_types_match.group(2))] = value
 
     for (index, field), values in filter_values.items():
         if field == "value":
@@ -68,10 +74,17 @@ def _parse_request(request: Request) -> PredicateQueryRequest:
         else:
             filters[index][field] = values[-1]
 
+    subject_types = _all(params, "subjectTypes", "subject_types")
+    if indexed_subject_types:
+        subject_types.extend(value for _, value in sorted(indexed_subject_types.items()))
+    if not subject_types:
+        legacy_subject_type = _first(params, "subjectType", "subject_type")
+        subject_types = [legacy_subject_type] if legacy_subject_type is not None else None
+
     data: dict[str, Any] = {
         "result_mode": _first(params, "resultMode", "result_mode"),
         "execution_mode": _first(params, "executionMode", "execution_mode") or "INDEXED",
-        "subject_type": _first(params, "subjectType", "subject_type"),
+        "subject_types": subject_types,
         "filters": [filters[index] for index in sorted(filters)],
         "return_fields": _all(params, "returnFields", "return_fields") or None,
         "aggregate_path": _first(params, "aggregatePath", "aggregate_path"),

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import pytest
+from datetime import UTC, datetime
 from httpx import AsyncClient
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
 from typing import Any
 
 _SCHEMA_VERSION = {"subject_type": "pv_module", "major_version": 1, "minor_version": 0}
+_DEFAULT_QUERY_SUBJECT_TYPES = ("pv_module",)
 
 
 def _payload(
@@ -35,10 +37,14 @@ def _payload(
     return payload
 
 
-async def _issue(http_client: AsyncClient, dpp_id: str, payload: dict[str, Any]) -> None:
+async def _issue(http_client: AsyncClient, dpp_id: str, payload: dict[str, Any], subject_type: str = "pv_module") -> None:
     response = await http_client.post(
         "/dpps/issue",
-        json={"dpp_id": dpp_id, "schema_version": _SCHEMA_VERSION, "dpp_payload": payload},
+        json={
+            "dpp_id": dpp_id,
+            "schema_version": {**_SCHEMA_VERSION, "subject_type": subject_type},
+            "dpp_payload": payload,
+        },
     )
     assert response.status_code == 201, response.text
 
@@ -89,6 +95,7 @@ async def _query(
     result_mode: str,
     execution_mode: str,
     *,
+    subject_types: tuple[str, ...] | list[str] | None = _DEFAULT_QUERY_SUBJECT_TYPES,
     filters: list[dict[str, Any]] | None = None,
     return_fields: list[str] | None = None,
     aggregate_path: str | None = None,
@@ -96,8 +103,9 @@ async def _query(
     params: list[tuple[str, str]] = [
         ("resultMode", result_mode),
         ("executionMode", execution_mode),
-        ("subjectType", "pv_module"),
     ]
+    for subject_type in subject_types or []:
+        params.append(("subjectTypes", subject_type))
     for index, filter_ in enumerate(filters or []):
         params.extend(
             [
@@ -113,6 +121,19 @@ async def _query(
     if aggregate_path is not None:
         params.append(("aggregatePath", aggregate_path))
     return await http_client.get("/query/predicate", params=params)
+
+
+async def _register_schema(test_db: AsyncIOMotorDatabase, subject_type: str) -> None:
+    await test_db.subject_types.insert_one({"name": subject_type, "description": None})
+    await test_db.schemas.insert_one(
+        {
+            "subject_type": subject_type,
+            "major_version": 1,
+            "minor_version": 0,
+            "schema_document": {"type": "object", "additionalProperties": True},
+            "published_at": datetime.now(UTC),
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -269,6 +290,86 @@ async def test_predicate_operators_count_sum_and_filterless_current_dpps(
 
 
 @pytest.mark.asyncio
+async def test_subject_types_omitted_single_and_multiple_match_same_predicates(
+    http_client: AsyncClient,
+    test_db: AsyncIOMotorDatabase,
+    pv_setup,
+) -> None:
+    await _seed_current_batteries(http_client)
+    await _register_schema(test_db, "battery")
+    await _issue(
+        http_client,
+        "issuerA-pack-1",
+        _payload("Pack A", "PACK-001", "NMC", weight_kg=100, recyclable=True, country="CH"),
+        subject_type="battery",
+    )
+
+    filters = [{"path": "chemistry", "operator": "EQ", "value": "NMC"}]
+    omitted = await _query(http_client, "COUNT", "INDEXED", subject_types=None, filters=filters)
+    empty = await _query(http_client, "COUNT", "ON_DEMAND", subject_types=[], filters=filters)
+    pv_only = await _query(http_client, "COUNT", "INDEXED", subject_types=["pv_module"], filters=filters)
+    both = await _query(http_client, "COUNT", "ON_DEMAND", subject_types=["pv_module", "battery"], filters=filters)
+
+    assert omitted.json()["count"] == 4
+    assert empty.json()["count"] == 4
+    assert pv_only.json()["count"] == 3
+    assert both.json()["count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_cross_type_factory_date_query_is_equivalent_indexed_and_on_demand(
+    http_client: AsyncClient,
+    test_db: AsyncIOMotorDatabase,
+    pv_setup,
+) -> None:
+    await _register_schema(test_db, "battery")
+    await _issue(
+        http_client,
+        "issuerA-pv-factory-a",
+        {
+            "serial_number": "PV-A",
+            "manufacturer": "Acme",
+            "manufacturing": {"facilityId": "factory-a", "date": "2024-06-01"},
+        },
+    )
+    await _issue(
+        http_client,
+        "issuerA-pack-factory-a",
+        {
+            "serial_number": "BAT-A",
+            "manufacturer": "Acme",
+            "manufacturing": {"facilityId": "factory-a", "date": "2024-07-15"},
+        },
+        subject_type="battery",
+    )
+    await _issue(
+        http_client,
+        "issuerA-pv-factory-b",
+        {
+            "serial_number": "PV-B",
+            "manufacturer": "Acme",
+            "manufacturing": {"facilityId": "factory-b", "date": "2024-07-01"},
+        },
+    )
+
+    query_kwargs = {
+        "subject_types": None,
+        "filters": [
+            {"path": "manufacturing.facilityId", "operator": "EQ", "value": "factory-a"},
+            {"path": "manufacturing.date", "operator": "GTE", "value": "2024-01-01"},
+            {"path": "manufacturing.date", "operator": "LTE", "value": "2024-12-31"},
+        ],
+        "return_fields": ["serial_number", "manufacturing.facilityId", "manufacturing.date"],
+    }
+    indexed = await _query(http_client, "SELECT", "INDEXED", **query_kwargs)
+    on_demand = await _query(http_client, "SELECT", "ON_DEMAND", **query_kwargs)
+
+    assert indexed.status_code == on_demand.status_code == 200
+    assert sorted(match["serial_number"] for match in indexed.json()["matches"]) == ["BAT-A", "PV-A"]
+    assert sorted(match["serial_number"] for match in on_demand.json()["matches"]) == ["BAT-A", "PV-A"]
+
+
+@pytest.mark.asyncio
 async def test_sum_requires_aggregate_path_and_unknown_subject_type_has_empty_java_shape(
     http_client: AsyncClient,
     pv_setup,
@@ -281,7 +382,7 @@ async def test_sum_requires_aggregate_path_and_unknown_subject_type_has_empty_ja
 
     unknown = await http_client.get(
         "/query/predicate",
-        params={"resultMode": "COUNT", "executionMode": "ON_DEMAND", "subjectType": "unknown"},
+        params={"resultMode": "COUNT", "executionMode": "ON_DEMAND", "subjectTypes": "unknown"},
     )
     assert unknown.status_code == 200
     assert unknown.json() == {
