@@ -61,7 +61,8 @@ export interface PredicateFilter {
 export interface PredicateQueryRequest {
   result_mode: QueryResultMode;
   execution_mode: QueryExecutionMode;
-  subject_type: string;
+  /** Optional; omitted or empty means all DPP subject types. */
+  subject_types?: string[];
   filters: PredicateFilter[];
   /** SELECT only. */
   return_fields?: string[];

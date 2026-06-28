@@ -20,6 +20,7 @@ import {
  * JSON body. Top-level field names are camelCase, AND-connected predicate
  * filters are `filters[<index>].<field>`, repeated `filters[i].value` encodes an
  * IN list, repeated `returnFields` encodes the SELECT projection, and traverse
+ * optional predicate subject-type scopes are repeated `subjectTypes`, traverse
  * source scopes are `sources[<index>].subjectType` /
  * `sources[<index>].referencePaths[<j>]`. This mirrors the reference encoder in
  * `dpp-workload-generator/src/workload/clients.py` so the frontend, the Java
@@ -79,8 +80,11 @@ export class QueryService {
   static buildPredicateParams(request: PredicateQueryRequest): HttpParams {
     let params = new HttpParams()
       .set('resultMode', request.result_mode)
-      .set('executionMode', request.execution_mode)
-      .set('subjectType', request.subject_type);
+      .set('executionMode', request.execution_mode);
+
+    for (const subjectType of request.subject_types ?? []) {
+      params = params.append('subjectTypes', subjectType);
+    }
 
     request.filters.forEach((filter, index) => {
       params = params

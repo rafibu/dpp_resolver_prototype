@@ -65,12 +65,10 @@ export class QueryMetadataService {
           PredicateOperator.GTE, PredicateOperator.LT, PredicateOperator.LTE
         ];
       case 'DATE':
-        // Generic platforms store dates as ISO strings and do not provide a
-        // temporal comparison type.  Keeping date comparisons out of the UI
-        // prevents lexicographic comparisons from looking like calendar math.
         return [
           PredicateOperator.EQ, PredicateOperator.NEQ, PredicateOperator.EXISTS,
-          PredicateOperator.NOT_EXISTS, PredicateOperator.IN
+          PredicateOperator.NOT_EXISTS, PredicateOperator.IN, PredicateOperator.GT,
+          PredicateOperator.GTE, PredicateOperator.LT, PredicateOperator.LTE
         ];
       case 'BOOLEAN':
         return [

@@ -93,10 +93,19 @@ describe('QueryBuilderComponent', () => {
     expect(component.buildPredicateRequest()).toEqual({
       result_mode: 'SELECT',
       execution_mode: 'INDEXED',
-      subject_type: 'pv_module',
+      subject_types: ['pv_module'],
       filters: [{path: 'contains_lead', operator: 'EQ', value: true}],
       return_fields: ['serial_number']
     });
+  });
+
+  it('omits subject_types when no predicate subject type is selected', () => {
+    const {component} = createComponent();
+    component.onSubjectTypesChange([]);
+    component.resultMode = QueryResultMode.COUNT;
+    const request = component.buildPredicateRequest();
+    expect(request?.subject_types).toBeUndefined();
+    expect(component.isPredicateValid()).toBe(true);
   });
 
   it('omits the value for EXISTS / NOT_EXISTS filters', () => {
@@ -195,7 +204,7 @@ describe('QueryBuilderComponent', () => {
 
   it('requires known enum selections and preserves enum scalar types', () => {
     const {component} = createComponent();
-    component.subjectType = 'custom';
+    component.onSubjectTypesChange(['custom']);
     component.predicateMetadata.set({
       subjectType: 'custom',
       predicateParameters: [{
@@ -295,7 +304,7 @@ describe('QueryBuilderComponent', () => {
     component.execute();
     expect(queryServiceSpy.executePredicate).toHaveBeenCalledWith('http://pa', expect.objectContaining({
       result_mode: 'COUNT',
-      subject_type: 'pv_module'
+      subject_types: ['pv_module']
     }));
   });
 

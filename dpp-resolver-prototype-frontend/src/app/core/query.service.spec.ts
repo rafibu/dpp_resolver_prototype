@@ -30,7 +30,7 @@ describe('QueryService', () => {
       const request: PredicateQueryRequest = {
         result_mode: QueryResultMode.SELECT,
         execution_mode: QueryExecutionMode.INDEXED,
-        subject_type: 'pv_module',
+        subject_types: ['pv_module', 'battery_pack'],
         filters: [
           {path: 'nominal_power_w', operator: PredicateOperator.EQ, value: 0},
           {path: 'lead_mass_kg', operator: PredicateOperator.GT, value: 12.5},
@@ -45,7 +45,7 @@ describe('QueryService', () => {
 
       expect(params.get('resultMode')).toBe('SELECT');
       expect(params.get('executionMode')).toBe('INDEXED');
-      expect(params.get('subjectType')).toBe('pv_module');
+      expect(params.getAll('subjectTypes')).toEqual(['pv_module', 'battery_pack']);
       expect(params.get('filters[0].value')).toBe('0');
       expect(params.get('filters[1].value')).toBe('12.5');
       // Booleans are rendered as lowercase strings to match Java parsing.
@@ -61,7 +61,7 @@ describe('QueryService', () => {
       const params = QueryService.buildPredicateParams({
         result_mode: QueryResultMode.SUM,
         execution_mode: QueryExecutionMode.ON_DEMAND,
-        subject_type: 'pv_module',
+        subject_types: ['pv_module'],
         filters: [],
         aggregate_path: 'lead_mass_kg'
       });
@@ -100,7 +100,6 @@ describe('QueryService', () => {
       service.executePredicate('http://platform-a/', {
         result_mode: QueryResultMode.COUNT,
         execution_mode: QueryExecutionMode.INDEXED,
-        subject_type: 'pv_module',
         filters: []
       }).subscribe(execution => {
         durationSeen = execution.durationMs;
@@ -109,6 +108,7 @@ describe('QueryService', () => {
       const req = httpMock.expectOne(request =>
         request.method === 'GET' && request.url === 'http://platform-a/query/predicate');
       expect(req.request.params.get('resultMode')).toBe('COUNT');
+      expect(req.request.params.has('subjectTypes')).toBe(false);
       req.flush({result_mode: 'COUNT', execution_mode: 'INDEXED', platform_id: 'platform-a', count: 5});
       expect(durationSeen).toBeGreaterThanOrEqual(0);
     });

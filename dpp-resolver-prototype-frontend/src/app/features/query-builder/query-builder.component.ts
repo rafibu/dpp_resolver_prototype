@@ -107,7 +107,7 @@ export class QueryBuilderComponent {
   // Predicate form
   public resultMode: QueryResultMode = QueryResultMode.SELECT;
   public executionMode: QueryExecutionMode = QueryExecutionMode.INDEXED;
-  public subjectType = '';
+  public subjectTypes: string[] = [];
   public filters: FilterRow[] = [];
   public returnFields: string[] = [];
   public aggregatePath = '';
@@ -156,10 +156,9 @@ export class QueryBuilderComponent {
     this.platformId.set(platformId);
     this.result.set(null);
     this.error.set(null);
-    const subjectTypes = this.availableSubjectTypes();
-    if (subjectTypes.length && !subjectTypes.includes(this.subjectType)) {
-      this.onSubjectTypeChange(subjectTypes[0]);
-    }
+    const available = new Set(this.availableSubjectTypes());
+    this.subjectTypes = this.subjectTypes.filter(subjectType => available.has(subjectType));
+    this.loadPredicateMetadata(this.metadataSubjectType());
   }
 
   public setQueryType(type: QueryType): void {
@@ -173,11 +172,15 @@ export class QueryBuilderComponent {
   // -------------------------------------------------------------------------
 
   public onSubjectTypeChange(subjectType: string): void {
-    this.subjectType = subjectType;
+    this.onSubjectTypesChange(subjectType ? [subjectType] : []);
+  }
+
+  public onSubjectTypesChange(subjectTypes: string[]): void {
+    this.subjectTypes = [...subjectTypes];
     this.returnFields = [];
     this.aggregatePath = '';
     this.filters = [];
-    this.loadPredicateMetadata(subjectType);
+    this.loadPredicateMetadata(this.metadataSubjectType());
   }
 
   public predicateParameters(): QueryParameterMetadata[] {
@@ -263,17 +266,16 @@ export class QueryBuilderComponent {
   // -------------------------------------------------------------------------
 
   public buildPredicateRequest(): PredicateQueryRequest | null {
-    if (!this.subjectType) {
-      return null;
-    }
     const request: PredicateQueryRequest = {
       result_mode: this.resultMode,
       execution_mode: this.executionMode,
-      subject_type: this.subjectType,
       filters: this.filters
         .filter(row => !!row.path)
         .map(row => this.toFilter(row))
     };
+    if (this.subjectTypes.length) {
+      request.subject_types = [...this.subjectTypes];
+    }
     if (this.resultMode === QueryResultMode.SELECT && this.returnFields.length) {
       request.return_fields = [...this.returnFields];
     }
@@ -367,9 +369,6 @@ export class QueryBuilderComponent {
   }
 
   public isPredicateValid(): boolean {
-    if (!this.subjectType) {
-      return false;
-    }
     if (this.filters.some(row => this.filterError(row) !== null)) {
       return false;
     }
@@ -514,6 +513,10 @@ export class QueryBuilderComponent {
       },
       error: () => { /* keep fallback metadata */ }
     });
+  }
+
+  private metadataSubjectType(): string {
+    return this.subjectTypes[0] ?? this.availableSubjectTypes()[0] ?? '';
   }
 
   private loadSourceMetadata(subjectType: string): void {

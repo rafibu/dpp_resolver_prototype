@@ -9,6 +9,9 @@ This is more a convenience tool for testing and debugging the Resolver Prototype
 - Platform management: spawn, pause, resume, reset, delete, and inspect logs.
 - DPP platform detail views with DPP lists, revision history, JSON viewing, creation, and revision editing.
 - Resolver detail view with subject types, supporting platforms, schemas, schema viewing/editing, and resolver logs.
+- Query builder for projected-fact predicate requests, including all-type queries
+  with no selected subject type, multi-select subject type restrictions, `IN`,
+  and date-range operators.
 - Scenario runner for S1, S2, S3, and S4 with copyable status and rendered reports.
 - Visual error and status feedback for failed backend calls.
 

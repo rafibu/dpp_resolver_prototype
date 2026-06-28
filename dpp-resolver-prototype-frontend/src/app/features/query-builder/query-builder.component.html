@@ -63,12 +63,13 @@
         </mat-form-field>
 
         <mat-form-field appearance="outline">
-          <mat-label>Subject type</mat-label>
-          <mat-select [ngModel]="subjectType" (ngModelChange)="onSubjectTypeChange($event)">
+          <mat-label>Subject types</mat-label>
+          <mat-select [ngModel]="subjectTypes" (ngModelChange)="onSubjectTypesChange($event)" multiple>
             @for (type of availableSubjectTypes(); track type) {
               <mat-option [value]="type">{{ type }}</mat-option>
             }
           </mat-select>
+          <mat-hint>Leave empty to query all subject types.</mat-hint>
         </mat-form-field>
       </div>
 
